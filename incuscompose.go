@@ -41,8 +41,6 @@ type Project = cTypes.Project
 
 // LoadProjectOptions holds configuration for LoadProject.
 type LoadProjectOptions struct {
-	Options
-
 	// Project name
 	Name string
 
@@ -60,10 +58,6 @@ type LoadProjectOptions struct {
 
 	// OsEnv includes OS environment variables for interpolation (default: false)
 	OsEnv bool
-}
-
-func (o *LoadProjectOptions) options() *Options {
-	return &o.Options
 }
 
 // LoadProjectOption is a functional option for LoadProject.
@@ -114,9 +108,6 @@ func LoadProjectOsEnv() LoadProjectOption {
 // NewLoadProjectOptions creates LoadProjectOptions with the given options applied.
 func NewLoadProjectOptions(opts ...LoadProjectOption) LoadProjectOptions {
 	res := LoadProjectOptions{
-		Options: Options{
-			Verbosity: DefaultVerbosity,
-		},
 		Files: []string{},
 	}
 

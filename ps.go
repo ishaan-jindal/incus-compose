@@ -1,6 +1,7 @@
 package incuscompose
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -100,6 +101,8 @@ func Ps(client *icclient.Client, project *Project, opts ...PsOption) error {
 		return err
 	}
 
+	var rErrs error
+
 	var statuses []ContainerStatus
 
 	for serviceName, service := range project.Services {
@@ -111,18 +114,22 @@ func Ps(client *icclient.Client, project *Project, opts ...PsOption) error {
 			}
 		}
 
-		containerName := containerNameForService(&service)
+		instance, _, err := client.InstanceFromService(service)
+		if err != nil {
+			rErrs = errors.Join(rErrs, err)
+			continue
+		}
 
 		status := ContainerStatus{
-			Service:   serviceName,
-			Container: containerName,
+			Service:   service.Name,
+			Container: instance.Name,
 			Image:     service.Image,
 			Status:    "Not created",
 			Addresses: []string{},
 		}
 
 		// Get container info
-		inst, _, err := client.Incus().GetInstanceFull(containerName)
+		inst, _, err := client.Incus().GetInstanceFull(instance.Name)
 		if err == nil {
 			status.Status = inst.State.Status
 
@@ -149,7 +156,7 @@ func Ps(client *icclient.Client, project *Project, opts ...PsOption) error {
 		printStatusTable(options.Output, statuses)
 	}
 
-	return nil
+	return rErrs
 }
 
 func printStatusTable(w io.Writer, statuses []ContainerStatus) {
