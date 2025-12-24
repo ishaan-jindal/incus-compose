@@ -6,6 +6,12 @@ Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` 
 
 **Early Development** - This project is in its initial phase. APIs and behavior may change. Contributions and feedback are welcome!
 
+It does "up, down and ps" those are well tested.
+
+Compose projects get created with a incus project, storage pool volumes and as much bridge networks as you wish. Yes, it does also shift your Volumes transparently and it does bind mounts.
+
+No specials included (caps and so on).
+
 ## Why incus-compose?
 
 [Incus](https://linuxcontainers.org/incus/) provides powerful system containers and virtual machines, but lacks the declarative multi-container orchestration that Docker Compose offers. This tool bridges that gap, letting you:
