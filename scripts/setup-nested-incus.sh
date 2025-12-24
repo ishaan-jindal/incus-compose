@@ -1,13 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if ! command -v jq >/dev/null 2>&1; then
-    echo "This script requires: jq"
-    exit 1
-fi
-
-SCRIPT_DIR="$(dirname "$(realpath "$0")")"
-
 # Required: path to client certificate to inject
 CLIENT_CERT=""
 
@@ -17,7 +10,7 @@ CLIENT_CERT=""
 # Default values
 CONTAINER_NAME="incuscompose-test"
 IMAGE="images:debian/trixie"
-INCUS_REPO="stable"  # stable or lts
+INCUS_REPO="stable" # stable or lts
 FORCE="false"
 
 # Usage information
@@ -55,33 +48,33 @@ EOF
 # Parse arguments
 while getopts "c:n:i:r:fh" opt; do
     case ${opt} in
-        c)
-            CLIENT_CERT="${OPTARG}"
-            ;;
-        n)
-            CONTAINER_NAME="${OPTARG}"
-            ;;
-        i)
-            IMAGE="${OPTARG}"
-            ;;
-        r)
-            INCUS_REPO="${OPTARG}"
-            ;;
-        f)
-            FORCE="true"
-            ;;
-        h)
-            usage
-            ;;
-        \?)
-            echo "Invalid option: -${OPTARG}" >&2
-            echo "Use -h for help" >&2
-            exit 1
-            ;;
-        :)
-            echo "Option -${OPTARG} requires an argument" >&2
-            exit 1
-            ;;
+    c)
+        CLIENT_CERT="${OPTARG}"
+        ;;
+    n)
+        CONTAINER_NAME="${OPTARG}"
+        ;;
+    i)
+        IMAGE="${OPTARG}"
+        ;;
+    r)
+        INCUS_REPO="${OPTARG}"
+        ;;
+    f)
+        FORCE="true"
+        ;;
+    h)
+        usage
+        ;;
+    \?)
+        echo "Invalid option: -${OPTARG}" >&2
+        echo "Use -h for help" >&2
+        exit 1
+        ;;
+    :)
+        echo "Option -${OPTARG} requires an argument" >&2
+        exit 1
+        ;;
     esac
 done
 
@@ -101,17 +94,17 @@ shift $((OPTIND - 1))
 
 # Determine repository URL
 case "${INCUS_REPO}" in
-    stable)
-        REPO_URL="https://pkgs.zabbly.com/incus/stable"
-        ;;
-    lts)
-        REPO_URL="https://pkgs.zabbly.com/incus/lts-6.0"
-        ;;
-    *)
-        echo "Error: Unknown repository '${INCUS_REPO}'" >&2
-        echo "Valid options: stable, lts" >&2
-        exit 1
-        ;;
+stable)
+    REPO_URL="https://pkgs.zabbly.com/incus/stable"
+    ;;
+lts)
+    REPO_URL="https://pkgs.zabbly.com/incus/lts-6.0"
+    ;;
+*)
+    echo "Error: Unknown repository '${INCUS_REPO}'" >&2
+    echo "Valid options: stable, lts" >&2
+    exit 1
+    ;;
 esac
 
 echo "==> Configuration:"
@@ -139,7 +132,8 @@ incus launch "${IMAGE}" "${CONTAINER_NAME}" \
     -c security.nesting=true \
     -c security.privileged=true
 
-INSTALL_SCRIPT=$(cat <<'EOF'
+INSTALL_SCRIPT=$(
+    cat <<'EOF'
 #!/bin/bash
 set -euo pipefail
 
@@ -176,7 +170,8 @@ printf "%s" "${INSTALL_SCRIPT}" | sed "s|REPO_URL_PLACEHOLDER|${REPO_URL}|g" | i
 
 echo "==> Executing Incus init script"
 
-CONFIGURE_SCRIPT=$(cat <<'EOF'
+CONFIGURE_SCRIPT=$(
+    cat <<'EOF'
 #!/bin/bash
 set -euo pipefail
 
@@ -226,6 +221,6 @@ incus file push "${CLIENT_CERT}" "${CONTAINER_NAME}/root/client.crt"
 incus exec "${CONTAINER_NAME}" -- incus config trust add-certificate /root/client.crt --restricted=false
 incus exec "${CONTAINER_NAME}" -- rm /root/client.crt
 echo "    Certificate added with unrestricted access"
-
+echo ""
 echo -e "==> Container ready:\n\n"
 incus info "${CONTAINER_NAME}"
