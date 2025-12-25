@@ -95,10 +95,6 @@ func NewUpOptions(opts ...UpOption) UpOptions {
 
 // Up creates and starts containers for a compose project.
 //
-// Image Resolution:
-// Images are resolved to digest references and copied to the Incus server if needed.
-// The conf parameter provides access to configured remotes for image sources.
-//
 // Volume Handling:
 // Volumes are created after containers to read oci.uid/oci.gid for proper ownership.
 // Named volumes use the configured storage pool, bind mounts enable UID shifting.
@@ -133,7 +129,6 @@ func Up(conf *incusConfig.Config, client *icclient.Client, project *Project, opt
 
 		ref, err := icclient.ParseDockerRef(svc.Name, svc.Image)
 		if err != nil {
-			// TDDO(r3j0): Cleanup?
 			return err
 		}
 

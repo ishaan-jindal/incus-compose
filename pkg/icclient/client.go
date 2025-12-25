@@ -236,7 +236,6 @@ func (c *Client) IsTrace() bool {
 
 // Connect establishes a connection to the Incus server.
 // This must be called before any other operations.
-// Returns ErrDisconnected if called on an already connected client.
 func (c *Client) Connect() error {
 	args := &incusClient.ConnectionArgs{
 		InsecureSkipVerify: c.Config.InsecureSkipVerify,
@@ -676,7 +675,7 @@ func (c *Client) EnsurePoolVolume(name, uid, gid string, storagePool string) (*i
 	// Create volume with proper uid/gid
 	logger.Info("Creating volume")
 
-	volReq := api.StorageVolumesPost{
+	volReq := incusApi.StorageVolumesPost{
 		Name:        incusName,
 		Type:        "custom",
 		ContentType: "filesystem",
@@ -697,7 +696,6 @@ func (c *Client) EnsurePoolVolume(name, uid, gid string, storagePool string) (*i
 }
 
 // RemovePoolVolume removes a storage pool volume.
-// It searches all storage pools to find and delete the volume.
 // Returns nil if the volume doesn't exist.
 func (c *Client) RemovePoolVolume(name string, storagePool string) error {
 	if !c.connected {
