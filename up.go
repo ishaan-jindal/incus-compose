@@ -16,8 +16,8 @@ import (
 type UpOptions struct {
 	Options
 
-	// NoGlobalImages enables images per project
-	NoGlobalImages bool
+	// ProjectImages enables images per project
+	ProjectImages bool
 
 	// Recreate containers even if they exist
 	Recreate bool
@@ -41,10 +41,10 @@ var _ (OptionsType) = (*UpOptions)(nil)
 // UpOption is a functional option for Up.
 type UpOption func(*UpOptions)
 
-// UpNoGlobalImages enables images per project.
-func UpNoGlobalImages() UpOption {
+// UpProjectImages enables images per project.
+func UpProjectImages() UpOption {
 	return func(o *UpOptions) {
-		o.NoGlobalImages = true
+		o.ProjectImages = true
 	}
 }
 
@@ -101,6 +101,8 @@ func NewUpOptions(opts ...UpOption) UpOptions {
 func Up(conf *incusConfig.Config, client *icclient.Client, project *Project, opts ...UpOption) error {
 	options := NewUpOptions(opts...)
 
+	client.Config.UseProjectImages = options.ProjectImages
+
 	_, err := client.EnsureProject(project.Name, icclient.EnsureProjectCreate())
 	if err != nil {
 		return err
@@ -145,7 +147,7 @@ func Up(conf *incusConfig.Config, client *icclient.Client, project *Project, opt
 			return err
 		}
 
-		incusImage, err := client.EnsureImage(ref, imageServer, options.NoGlobalImages)
+		incusImage, err := client.EnsureImage(ref, imageServer)
 		if err != nil {
 			return err
 		}
@@ -169,7 +171,7 @@ func Up(conf *incusConfig.Config, client *icclient.Client, project *Project, opt
 
 	// Create and start services in order
 	for _, serviceName := range order {
-		instance, eTag, err := client.EnsureService(project.Services[serviceName], client.GlobalIncus(), options.NoGlobalImages, false)
+		instance, eTag, err := client.EnsureService(project.Services[serviceName], false)
 		if err != nil {
 			// TODO(r3j0): Cleanup!
 			return err

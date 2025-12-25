@@ -78,6 +78,9 @@ type Config struct {
 
 	// DescriptionFormat is the format string for resource descriptions (default: "incus-compose: %s")
 	DescriptionFormat string
+
+	// UseProjectImages indicates whether to use project specific images
+	UseProjectImages bool
 }
 
 // Option is a functional option for configuring the Client.
@@ -122,6 +125,13 @@ func NetworkPrefix(n string) Option {
 func DescriptionFormat(n string) Option {
 	return func(c *Config) {
 		c.DescriptionFormat = n
+	}
+}
+
+// UseProjectImages indicates whether to use project specific images.
+func UseProjectImages() Option {
+	return func(c *Config) {
+		c.UseProjectImages = true
 	}
 }
 
@@ -554,7 +564,7 @@ func (c *Client) RemoveNetwork(name string) error {
 // EnsureImage ensures an OCI/container image exists in the Incus image store.
 // If the image doesn't exist locally, it copies it from the provided image server.
 // The noProject parameter controls whether to store the image globally or in the current project.
-func (c *Client) EnsureImage(ref reference.Named, imageServer incusClient.ImageServer, noProject bool) (*incusApi.Image, error) {
+func (c *Client) EnsureImage(ref reference.Named, imageServer incusClient.ImageServer) (*incusApi.Image, error) {
 	if !c.connected {
 		return nil, ErrDisconnected
 	}
@@ -568,7 +578,7 @@ func (c *Client) EnsureImage(ref reference.Named, imageServer incusClient.ImageS
 	var err error
 	var alias *incusApi.ImageAliasesEntry
 	destImageServer := c.incus
-	if noProject {
+	if c.Config.UseProjectImages {
 		destImageServer = c.globalIncus
 	}
 
@@ -971,15 +981,17 @@ func (c *Client) StartInstance(instance *incusApi.Instance, eTag string, timeout
 }
 
 // EnsureService ensures an Incus instance exists for a compose-spec service.
+// Use EnsureImage to copy the image before running this.
+//
 // This translates the service definition into Incus instance configuration including:
 //   - Environment variables and labels
 //   - Network devices
 //   - Port proxies
 //   - Volumes (bind mounts and named volumes)
 //
-// If reCreate is true, any existing instance is deleted and recreated.
+// If recreate is true, any existing instance is deleted and recreated.
 // Returns the instance, ETag, and any error encountered.
-func (c *Client) EnsureService(service ServiceConfig, imageServer incusClient.InstanceServer, noImageProject bool, reCreate bool) (*incusApi.Instance, string, error) {
+func (c *Client) EnsureService(service ServiceConfig, recreate bool) (*incusApi.Instance, string, error) {
 	if !c.connected {
 		return nil, "", ErrDisconnected
 	}
@@ -993,7 +1005,7 @@ func (c *Client) EnsureService(service ServiceConfig, imageServer incusClient.In
 
 	instance, etag, err := c.InstanceFromService(service)
 	if err == nil {
-		if reCreate {
+		if recreate {
 			err = c.RemoveInstance(instance, etag, true)
 			if err != nil {
 				return nil, "", fmt.Errorf("failed to remove service %q: %w", service.Name, err)
@@ -1059,7 +1071,12 @@ func (c *Client) EnsureService(service ServiceConfig, imageServer incusClient.In
 		return nil, "", err
 	}
 
-	imgInfo, err := c.EnsureImage(ref, imageServer, noImageProject)
+	imageServer := c.globalIncus
+	if c.Config.UseProjectImages {
+		imageServer = c.incus
+	}
+
+	imgInfo, err := c.EnsureImage(ref, imageServer)
 	if err != nil {
 		return nil, "", err
 	}

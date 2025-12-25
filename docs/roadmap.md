@@ -9,24 +9,7 @@ up/down/ps works without all the specials other compose solutions provide.
 
 ## Planned Improvements
 
-### 1. API Design - Options Pattern
-
-- **Status:** Planned
-- **Goal:** Refactor functions like `EnsureService()` to use functional options instead of struct args
-- **Example:**
-
-  ```go
-  // Current (to be improved):
-  func EnsureService(service ServiceConfig, imageServer incusClient.InstanceServer,
-                     noImageProject bool, reCreate bool) (...)
-
-  // Target:
-  func EnsureService(service ServiceConfig, opts ...ServiceOption) (...)
-  ```
-
-- **Rationale:** More flexible, better API evolution, cleaner call sites
-
-### 2. Better Error Handling
+### 1. Better Error Handling
 
 - **Status:** Planned
 - **Goal:** Implement custom error types and better error catching patterns
@@ -47,12 +30,12 @@ up/down/ps works without all the specials other compose solutions provide.
   func (e *DisconnectedError) Unwrap() error { return e.Cause }
   ```
 
-### 3. Move icclient Package
+### 2. Move icclient Package
 
 - **Status:** Planned
 - **Goal:** Restructure icclient package location/organization
 
-### 4. Remote Handling with Custom Config
+### 3. Remote Handling with Custom Config
 
 - **Status:** Planned
 - **Goal:** Add own remote/server configuration management
@@ -65,7 +48,7 @@ up/down/ps works without all the specials other compose solutions provide.
   - Cert management
   - Default remote selection
 
-### 5. Worker Pool for Images and Tasks
+### 4. Worker Pool for Images and Tasks
 
 - **Status:** Planned
 - **Goal:** Implement concurrent worker pool for resource-intensive operations
@@ -78,7 +61,7 @@ up/down/ps works without all the specials other compose solutions provide.
   - Better resource utilization
   - Rate limiting/throttling control
 
-### 6. Progress Reporting to CLI
+### 5. Progress Reporting to CLI
 
 - **Status:** Planned (depends on #5)
 - **Goal:** Add real-time progress feedback for long-running operations
@@ -88,7 +71,7 @@ up/down/ps works without all the specials other compose solutions provide.
   - ETA calculations
   - Detailed operation logs
 
-### 7. Various Output Formats
+### 6. Various Output Formats
 
 - **Status:** Planned
 - **Goal:** Support multiple output formats for CLI commands
@@ -99,7 +82,7 @@ up/down/ps works without all the specials other compose solutions provide.
   - Custom templates?
 - **Commands:** ps, config, inspect, etc.
 
-### 8. Complete Compose Feature Parity
+### 7. Complete Compose Feature Parity
 
 - **Status:** Planned
 - **Goal:** Reach 50%+ feature completeness compared to Docker Compose
