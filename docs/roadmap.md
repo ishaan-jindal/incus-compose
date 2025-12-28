@@ -37,7 +37,7 @@ up/down/ps works without all the specials other compose solutions provide.
 
 ### 3. Progress Reporting to CLI
 
-- **Status:** Planned (depends on #5)
+- **Status:** Planned (depends on #2)
 - **Goal:** Add real-time progress feedback for long-running operations
 - **Features:**
   - Progress bars for image downloads

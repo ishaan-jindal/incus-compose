@@ -6,46 +6,52 @@ incus-compose implements a subset of the Compose Specification. This doc lists w
 
 ### Services
 
-- ✅ `image` - OCI images from any registry
-- ✅ `command` - Override container command
-- ✅ `working_dir` - Set working directory
-- ✅ `environment` - Environment variables
-- ✅ `labels` - Metadata (stored as `user.*` config)
-- ✅ `depends_on` - Service dependency order
-- ✅ `networks` - Multiple networks per service
-- ✅ `ports` - Port publishing
-- ✅ `volumes` - Named volumes and bind mounts
+- `image` - OCI images from any registry
+- `command` - Override container command
+- `working_dir` - Set working directory
+- `environment` - Environment variables
+- `labels` - Metadata (stored as `user.*` config)
+- `depends_on` - Service dependency order
+- `networks` - Multiple networks per service
+- `ports` - Port publishing
+- `volumes` - Named volumes and bind mounts
 
 ### Networks
 
-- ✅ Bridge networks (Incus default)
-- ✅ Network isolation between services
-- ✅ DNS resolution by service name
-- ❌ Custom network drivers
-- ❌ External networks (yet)
+- Bridge networks (Incus default)
+- Network isolation between services
+- DNS resolution by service name
+
+Not supported:
+
+- Custom network drivers
+- External networks (yet)
 
 ### Volumes
 
-- ✅ Named volumes (Incus custom storage volumes)
-- ✅ Bind mounts (local connections only)
-- ✅ Read-only volumes
-- ✅ Automatic UID/GID shifting
-- ❌ tmpfs volumes (not yet implemented)
-- ❌ Volume driver options
+- Named volumes (Incus custom storage volumes)
+- Bind mounts (local connections only)
+- Read-only volumes
+- Automatic UID/GID shifting
+
+Not supported:
+
+- tmpfs volumes (not yet implemented)
+- Volume driver options
 
 ### Environment
 
-- ✅ `.env` file loading
-- ✅ `env_file` directive
-- ✅ Variable interpolation
-- ✅ Default values: `${VAR:-default}`
-- ✅ Required variables: `${VAR?error message}`
+- `.env` file loading
+- `env_file` directive
+- Variable interpolation
+- Default values: `${VAR:-default}`
+- Required variables: `${VAR?error message}`
 
 ### Project
 
-- ✅ `name` - Project name
-- ✅ Project isolation (Incus projects)
-- ✅ Profiles - Compose profiles
+- `name` - Project name
+- Project isolation (Incus projects)
+- Profiles - Compose profiles
 
 ## Not Supported (Yet)
 
@@ -54,7 +60,7 @@ incus-compose implements a subset of the Compose Specification. This doc lists w
 Docker-style builds are not supported:
 
 ```yaml
-# ❌ Not supported
+# Not supported
 services:
   app:
     build: .
@@ -65,7 +71,7 @@ services:
 ### Health Checks
 
 ```yaml
-# ❌ Not implemented
+# Not implemented
 services:
   app:
     healthcheck:
@@ -77,13 +83,13 @@ services:
 ### Resource Limits
 
 ```yaml
-# ❌ Not implemented
+# Not implemented
 services:
   app:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 512M
 ```
 
@@ -97,7 +103,7 @@ incus config set myapp-app limits.memory 512MiB
 ### Restart Policies
 
 ```yaml
-# ❌ Not implemented
+# Not implemented
 services:
   app:
     restart: always
@@ -112,7 +118,7 @@ incus config set myapp-app boot.autostart true
 ### Secrets and Configs
 
 ```yaml
-# ❌ Not supported
+# Not supported
 secrets:
   db_password:
     file: ./db_password.txt
@@ -122,26 +128,30 @@ secrets:
 
 ### Extended Features
 
-- ❌ `extends` - Service extension
-- ❌ `scale` - Service scaling
-- ❌ `deploy` - Deployment configuration
-- ❌ `links` - Legacy linking (use networks)
-- ❌ `external_links` - Cross-project links
+Not supported:
+
+- `extends` - Service extension
+- `scale` - Service scaling
+- `deploy` - Deployment configuration
+- `links` - Legacy linking (use networks)
+- `external_links` - Cross-project links
 
 ## Behavioral Differences
 
 ### Port Publishing
 
 **Docker Compose:**
+
 ```yaml
 ports:
-  - "8080:80"  # iptables NAT rule
+  - "8080:80" # iptables NAT rule
 ```
 
 **incus-compose:**
+
 ```yaml
 ports:
-  - "8080:80"  # Incus proxy device
+  - "8080:80" # Incus proxy device
 ```
 
 Both work the same from outside, but Incus proxies are more efficient.
@@ -149,11 +159,13 @@ Both work the same from outside, but Incus proxies are more efficient.
 ### Network Naming
 
 **Docker Compose:**
+
 ```
 {project}_{network}  # e.g., myapp_frontend
 ```
 
 **incus-compose:**
+
 ```
 {project}-{network}  # e.g., myapp-frontend (if ≤13 chars)
 ic-{hash}            # e.g., ic-a1b2c3d4e5 (if >13 chars)
@@ -164,10 +176,12 @@ Network names are limited to 13 chars for dhclient compatibility.
 ### Volume Permissions
 
 **Docker Compose:**
+
 - Volumes owned by root by default
 - Manual chown often needed
 
 **incus-compose:**
+
 - Volumes automatically shifted to match container's UID/GID
 - Reads `oci.uid` and `oci.gid` from image
 - Files appear with correct ownership inside container
@@ -175,12 +189,14 @@ Network names are limited to 13 chars for dhclient compatibility.
 ### Environment Variables
 
 **Docker Compose:**
+
 ```bash
 export MY_VAR=value
 docker-compose up  # MY_VAR available
 ```
 
 **incus-compose:**
+
 ```bash
 export MY_VAR=value
 incus-compose up  # MY_VAR NOT available (security)

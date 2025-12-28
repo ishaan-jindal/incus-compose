@@ -14,7 +14,8 @@ User documentation for incus-compose.
 
 ## Understanding incus-compose
 
-- **[Why Incus?](why_incus.md)** - Benefits of Incus over OCI engines like Docker
+- **[Why Incus?](why-incus.md)** - Benefits of Incus over OCI engines like Docker
+- **[Architecture](architecture.md)** - Package structure and design patterns
 
 ## Planning and Development
 
@@ -62,6 +63,7 @@ incus-compose config --environment
 ### Common Patterns
 
 **Basic service:**
+
 ```yaml
 services:
   web:
@@ -71,11 +73,12 @@ services:
 ```
 
 **With dependencies:**
+
 ```yaml
 services:
   db:
     image: docker.io/postgres:16-alpine
-    
+
   app:
     image: docker.io/myapp:latest
     depends_on:
@@ -83,6 +86,7 @@ services:
 ```
 
 **With volumes:**
+
 ```yaml
 services:
   app:
@@ -96,6 +100,7 @@ volumes:
 ```
 
 **With environment:**
+
 ```yaml
 services:
   app:
@@ -118,4 +123,3 @@ services:
 
 - **Bugs/Features**: Open an issue on GitHub
 - **Questions**: Check existing documentation or open a discussion
-- **Contributing**: See `.rules` file for development conventions

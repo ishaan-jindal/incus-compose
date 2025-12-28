@@ -46,6 +46,7 @@ incus-compose up
 ```
 
 This will:
+
 - Create an Incus project named after your directory
 - Pull images if needed
 - Create networks and volumes
@@ -158,7 +159,7 @@ Published ports use Incus proxy devices (not iptables NAT):
 
 ```yaml
 ports:
-  - "8080:80"  # Host 8080 → Container 80
+  - "8080:80" # Host 8080 → Container 80
 ```
 
 ### Volumes
@@ -203,4 +204,4 @@ Projects are isolated: separate networks, volumes, and instances.
 
 - [Compose Compatibility](compose-compatibility.md) - What features are supported
 - [Environment Variables](environment-variables.md) - How env vars work
-- [Why Incus?](why_incus.md) - Benefits over Docker
+- [Why Incus?](why-incus.md) - Benefits over Docker

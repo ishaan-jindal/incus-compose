@@ -4,9 +4,6 @@
 # My AI rules not sure if commit them or not.
 .rules
 
-# AI only docs, maybe will publish.
-docs/AI/
-
 # Development files exclusively for this host.
 run/
 

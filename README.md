@@ -7,9 +7,9 @@ Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` 
 - **[Getting Started](docs/getting-started.md)** - Install and run your first compose project
 - **[Compose Compatibility](docs/compose-compatibility.md)** - What works and what doesn't
 - **[Environment Variables](docs/environment-variables.md)** - How env vars work
-- **[Why Incus?](docs/why_incus.md)** - Benefits over Docker
+- **[Why Incus?](docs/why-incus.md)** - Benefits over Docker
 
-📖 [Full Documentation](docs/) | 🗺️ [Roadmap](docs/roadmap.md)
+[Full Documentation](docs/) | [Roadmap](docs/roadmap.md)
 
 ## Status
 
@@ -95,13 +95,13 @@ services:
 EOF
 
 # Start services
-./incus-compose up
+./bin/incus-compose up
 
 # Check status
-./incus-compose ps
+./bin/incus-compose ps
 
 # Stop and remove
-./incus-compose down
+./bin/incus-compose down
 ```
 
 See [Getting Started](docs/getting-started.md) for detailed examples.
