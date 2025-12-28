@@ -22,11 +22,6 @@
     ],
     "ask": ["Bash(go:*)"],
     "deny": ["Bash(incus:*)", "Bash(incus-compose:*)"],
-    "additionalDirectories": [
-      "~/vendor/go/incus/",
-      "~/vendor/go/docker/compose/",
-      "~/projects/go/bketelsen/incus-compose"
-    ],
     "defaultMode": "acceptEdits"
   },
   "env": {
