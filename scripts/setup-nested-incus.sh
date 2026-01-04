@@ -11,7 +11,7 @@ CLIENT_CERT=""
 # This creates an isolated Incus instance accessible via HTTPS
 
 # Default values
-CONTAINER_NAME="incuscompose-test"
+CONTAINER_NAME="incus-compose-test"
 IMAGE="images:debian/trixie"
 INCUS_REPO="stable" # stable or lts
 FORCE="false"
@@ -49,10 +49,10 @@ OPTIONS:
 
 EXAMPLES:
 # Create with defaults (stable version)
-$(basename "$0") -c test/certs/incuscompose-test.crt
+$(basename "$0") -c test/certs/incus-compose-test.crt
 
 # Create with LTS version
-$(basename "$0") -c test/certs/incuscompose-test.crt -r lts
+$(basename "$0") -c test/certs/incus-compose-test.crt -r lts
 
 # Create with custom name
 $(basename "$0") -c test/certs/my-test.crt -n my-test -r lts

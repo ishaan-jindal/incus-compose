@@ -156,8 +156,8 @@ The `client` and `project` packages can be used programmatically:
 ```go
 import (
     "context"
-    "github.com/your-org/incus-compose/client"
-    "github.com/your-org/incus-compose/project"
+    "gitlab.com/r3j0/incus-compose/client"
+    "gitlab.com/r3j0/incus-compose/project"
 )
 
 // Create client
