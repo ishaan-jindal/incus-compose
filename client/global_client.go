@@ -230,13 +230,15 @@ func (c *GlobalClient) connectProvided() error {
 	c.Config.URL = info.URL
 	c.unix = info.SocketPath != ""
 
-	pIncus, ok := c.Config.ProvidedInstanceServer.(*incusClient.ProtocolIncus)
+	// Force "default" project for global client - project-scoped clients are created via EnsureProject.
+	pIncus, ok := c.Config.ProvidedInstanceServer.UseProject("default").(*incusClient.ProtocolIncus)
 	if !ok {
 		return fmt.Errorf("%w: cannot cast to ProtocolIncus", ErrConnectionFailed)
 	}
 
 	c.incus = pIncus
-	c.imageCache = c.Config.ProvidedImageCache
+	// Image cache always uses "default" project for shared caching across projects.
+	c.imageCache = c.Config.ProvidedImageCache.UseProject("default")
 	c.logger = c.logger.With("url", c.Config.URL)
 	c.connected = true
 	return nil
@@ -245,22 +247,24 @@ func (c *GlobalClient) connectProvided() error {
 func (c *GlobalClient) connectTLS() error {
 	certPath, err := filepath.Abs(c.Config.TLSClientCert)
 	if err != nil {
-		return fmt.Errorf("%w: cert path: %w", ErrConnectionFailed, err)
+		return ErrConnectionFailed.WithText("while reading cert").Wrap(err)
 	}
 
 	certData, err := os.ReadFile(certPath)
 	if err != nil {
-		return fmt.Errorf("%w: reading cert: %w", ErrConnectionFailed, err)
+		return ErrConnectionFailed.WithText("while reading cert").Wrap(err)
 	}
 
 	keyPath, err := filepath.Abs(c.Config.TLSClientKey)
 	if err != nil {
-		return fmt.Errorf("%w: key path: %w", ErrConnectionFailed, err)
+		// Not wrapping "err" so we hide the key path.
+		return ErrConnectionFailed.WithText(fmt.Sprintf("while reading key for cert %v", certPath))
 	}
 
 	keyData, err := os.ReadFile(keyPath)
 	if err != nil {
-		return fmt.Errorf("%w: reading key: %w", ErrConnectionFailed, err)
+		// Not wrapping "err" so we hide the key path.
+		return ErrConnectionFailed.WithText(fmt.Sprintf("while reading key for cert %v", certPath))
 	}
 
 	args := &incusClient.ConnectionArgs{
