@@ -111,6 +111,16 @@ func (r *Image) IsEnsured() bool {
 	return r.IncusAlias != nil
 }
 
+// Remote returns the image remote.
+func (r *Image) Remote() string {
+	return r.Config.Remote
+}
+
+// SetSource sets the source image server.
+func (r *Image) SetSource(imageServer incusClient.ImageServer) {
+	r.Config.Source = imageServer
+}
+
 // Ensure retrieves an existing image from cache or copies it if Create option is set.
 func (r *Image) Ensure(opts ...Option) error {
 	args := NewOptions(opts...)
@@ -157,7 +167,11 @@ func (r *Image) get() error {
 	// Check if image alias exists in cache
 	alias, eTag, err := r.Config.Cache.GetImageAlias(r.incusName)
 	if err != nil {
-		return ErrNotFound.WithResource(r).Wrap(err)
+		return ErrNotFound.Wrap(err)
+	}
+
+	if alias == nil {
+		return ErrNilPointer
 	}
 
 	r.IncusAlias = alias
@@ -221,7 +235,6 @@ func (r *Image) Delete(opts ...Option) error {
 
 	// Do the delete
 	err = r.client.hookOperation(ActionDelete, r, options, op, err)
-
 	if r.client.hookAfter != nil {
 		if err := r.client.hookAfter(ActionDelete, r, options, err); err != nil {
 			return err
