@@ -33,6 +33,13 @@ func TestImageParsing(t *testing.T) {
 			expectedIncusName: "docker.io/library/alpine:3.18",
 		},
 		{
+			name:              "full github reference",
+			imageName:         "ghcr.io/jonashackt/hello-world:latest",
+			expectedRemote:    "ghcr.io",
+			expectedImage:     "jonashackt/hello-world:latest",
+			expectedIncusName: "ghcr.io/jonashackt/hello-world:latest",
+		},
+		{
 			name:              "short reference defaults to docker.io",
 			imageName:         "nginx:alpine",
 			expectedRemote:    "docker.io",
@@ -69,6 +76,13 @@ func TestImageParsing(t *testing.T) {
 			expectedImage:     "library/alpine:latest",
 			expectedIncusName: "docker.io/library/alpine:latest",
 		},
+		{
+			name:              "it adds library",
+			imageName:         "docker.io/nginx:alpine",
+			expectedRemote:    "docker.io",
+			expectedImage:     "library/nginx:alpine",
+			expectedIncusName: "docker.io/library/nginx:alpine",
+		},
 	}
 
 	for _, tt := range tests {
@@ -90,7 +104,7 @@ func TestImageParsing(t *testing.T) {
 			}
 
 			assert.NoError(t, err)
-			assert.Equal(t, tt.expectedRemote, img.Config.Remote)
+			assert.Equal(t, tt.expectedRemote, img.Remote())
 			assert.Equal(t, tt.expectedImage, img.Config.Image)
 			assert.Equal(t, tt.expectedIncusName, img.IncusName())
 		})
@@ -109,6 +123,7 @@ type ImageSuite struct {
 	client       *Client
 	projectName  string
 	imageServer  incusClient.ImageServer
+	cleanup      []Resource
 }
 
 // SetupSuite runs once before all tests.
@@ -146,16 +161,40 @@ func (s *ImageSuite) SetupTest() {
 		s.T().Fatalf("Failed to create test project: %v", err)
 	}
 	s.client = client
+
+	s.cleanup = []Resource{}
 }
 
 // TearDownTest runs after each test - cleans up project.
 func (s *ImageSuite) TearDownTest() {
+	for _, r := range s.cleanup {
+		if SupportsAction(r, ActionDelete) {
+			_ = RunAction(r, ActionDelete, OptionForce())
+		}
+	}
+
 	_ = s.globalClient.DeleteProject(s.projectName, true)
 }
 
 // ----------------------------------------------------------------------------
 // Ensure Tests
 // ----------------------------------------------------------------------------
+func (s *ImageSuite) TestEnsure_WithCreate_Github() {
+	r, err := s.client.Resource(KindImage, "ghcr.io/jonashackt/hello-world:latest", &ImageConfig{
+		Source: s.imageServer,
+	})
+	s.Require().NoError(err)
+
+	err = RunAction(r, ActionEnsure, OptionCreate())
+	s.Require().NoError(err)
+	s.True(r.IsEnsured())
+
+	s.cleanup = append(s.cleanup, r)
+
+	image, ok := r.(*Image)
+	s.Require().True(ok)
+	s.NotNil(image.IncusAlias)
+}
 
 func (s *ImageSuite) TestEnsure_WithCreate() {
 	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{
@@ -166,6 +205,8 @@ func (s *ImageSuite) TestEnsure_WithCreate() {
 	err = RunAction(r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
+
+	s.cleanup = append(s.cleanup, r)
 
 	image, ok := r.(*Image)
 	s.Require().True(ok)
@@ -199,6 +240,8 @@ func (s *ImageSuite) TestEnsure_Idempotent() {
 	err = RunAction(r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
+
+	s.cleanup = append(s.cleanup, r)
 }
 
 func (s *ImageSuite) TestEnsure_WithoutCreate_ThenWithCreate() {
@@ -218,6 +261,8 @@ func (s *ImageSuite) TestEnsure_WithoutCreate_ThenWithCreate() {
 	err = RunAction(r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
+
+	s.cleanup = append(s.cleanup, r)
 }
 
 func (s *ImageSuite) TestEnsure_WithoutSource_Fails() {
@@ -243,6 +288,8 @@ func (s *ImageSuite) TestEnsure_ExistingImage_NewResource() {
 	err = RunAction(r1, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r1.IsEnsured())
+
+	s.cleanup = append(s.cleanup, r1)
 
 	// Get a new client for the same project
 	newClient, err := s.globalClient.getProject(s.projectName)
@@ -284,7 +331,7 @@ func (s *ImageSuite) TestResource_DifferentNamesAreDifferent() {
 	})
 	s.Require().NoError(err)
 
-	r2, err := s.client.Resource(KindImage, "docker.io/library/busybox:1.36", &ImageConfig{
+	r2, err := s.client.Resource(KindImage, "docker.io/library/busybox:1.37", &ImageConfig{
 		Source: s.imageServer,
 	})
 	s.Require().NoError(err)
@@ -433,6 +480,8 @@ func (s *ImageSuite) TestHook_DeleteAction() {
 	s.Require().NoError(err)
 	s.Equal(ActionEnsure, action)
 
+	s.cleanup = append(s.cleanup, r)
+
 	err = RunAction(r, ActionDelete)
 	s.Require().NoError(err)
 	s.Equal(ActionDelete, action)
@@ -451,6 +500,8 @@ func (s *ImageSuite) TestEnsure_ExistsOnNewClient() {
 
 	err = RunAction(r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
+
+	s.cleanup = append(s.cleanup, r)
 
 	// Get new client for same project
 	newClient, err := s.globalClient.getProject(s.projectName)
@@ -491,7 +542,7 @@ func (s *ImageSuite) TestConfig_RemoteAndImageParsed() {
 
 	image, ok := r.(*Image)
 	s.Require().True(ok)
-	s.Equal("docker.io", image.Config.Remote)
+	s.Equal("docker.io", image.Remote())
 	s.Equal("library/alpine:3.18", image.Config.Image)
 }
 

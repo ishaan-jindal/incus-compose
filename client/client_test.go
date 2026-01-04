@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/lmittmann/tint"
+	"github.com/lxc/incus/v6/shared/cliconfig"
 	"github.com/mattn/go-colorable"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
@@ -115,25 +116,54 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug - 4}))
 	}
 
-	url := os.Getenv("INCUS_COMPOSE_URL")
-	if url == "" {
-		return nil, ErrConnectionFailed
+	remote := "local"
+	envRemote, ok := os.LookupEnv("INCUS_REMOTE")
+	if ok {
+		remote = envRemote
 	}
 
-	cert := resolvePath(os.Getenv("INCUS_COMPOSE_CERT"))
-	key := resolvePath(os.Getenv("INCUS_COMPOSE_KEY"))
+	var opts []ClientOption
+	if url, ok := os.LookupEnv("INCUS_COMPOSE_URL"); ok && remote == "local" {
+		slog.DebugContext(ctx, "Connecting", "url", url)
 
-	opts := []ClientOption{
-		ClientURL(url),
-		ClientLogger(logger),
-		ClientInsecureSkipVerify(),
-	}
+		cert := resolvePath(os.Getenv("INCUS_COMPOSE_CERT"))
+		key := resolvePath(os.Getenv("INCUS_COMPOSE_KEY"))
 
-	if cert != "" {
-		opts = append(opts, ClientTLSClientCert(cert))
-	}
-	if key != "" {
-		opts = append(opts, ClientTLSClientKey(key))
+		opts = []ClientOption{
+			ClientURL(url),
+			ClientLogger(logger),
+			ClientInsecureSkipVerify(),
+		}
+
+		if cert != "" {
+			opts = append(opts, ClientTLSClientCert(cert))
+		}
+		if key != "" {
+			opts = append(opts, ClientTLSClientKey(key))
+		}
+	} else {
+		slog.DebugContext(ctx, "Connecting", "remote", remote)
+
+		// Use Incus CLI configuration to resolve remotes
+		conf, err := cliconfig.LoadConfig("")
+		if err != nil {
+			return nil, ErrConnectionFailed.Wrap(err)
+		}
+
+		instanceServer, err := conf.GetInstanceServer(remote)
+		if err != nil {
+			return nil, ErrConnectionFailed.Wrap(err)
+		}
+
+		imageCache, err := conf.GetInstanceServer(remote)
+		if err != nil {
+			return nil, ErrConnectionFailed.Wrap(err)
+		}
+
+		opts = []ClientOption{
+			ClientLogger(logger),
+			ClientProvideConnection(instanceServer, imageCache),
+		}
 	}
 
 	c := New(ctx, opts...)
@@ -155,7 +185,7 @@ func createProjectClient(gc *GlobalClient, name string) (*Client, error) {
 
 	c.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
 		if err != nil {
-			c.logger.ErrorContext(gc.Ctx, "Result with error", "name", r.Name(), "kind", r.Kind(), "action", action, "error", err)
+			c.logger.Log(gc.Ctx, slog.LevelDebug-4, "Result with error", "name", r.Name(), "kind", r.Kind(), "action", action, "error", err)
 			return err
 		}
 
@@ -204,13 +234,29 @@ func (s *ClientSuite) TestConnection_IsConnected() {
 	s.True(s.globalClient.IsConnected())
 }
 
-func (s *ClientSuite) TestConnection_IsRemote() {
-	s.True(s.globalClient.IsRemote())
-}
-
 // ----------------------------------------------------------------------------
 // Project Tests
 // ----------------------------------------------------------------------------
+
+func (s *ClientSuite) TestProject_GlobalClientKeepsDefaultProfile() {
+	gInfo, err := s.globalClient.incus.GetConnectionInfo()
+	s.Require().NoError(err)
+	s.Require().Equal("default", gInfo.Project)
+
+	project, err := s.globalClient.EnsureProject(s.projectName, true)
+	s.Require().NoError(err)
+	s.NotNil(project)
+
+	gInfo, err = project.GlobalConnection().GetConnectionInfo()
+	s.Require().NoError(err)
+	s.Require().Equal("default", gInfo.Project)
+}
+
+func (s *ClientSuite) TestProject_ImageCacheIsInDefaultProfile() {
+	gInfo, err := s.globalClient.imageCache.GetConnectionInfo()
+	s.Require().NoError(err)
+	s.Require().Equal("default", gInfo.Project)
+}
 
 func (s *ClientSuite) TestProject_EnsureWithCreate() {
 	project, err := s.globalClient.EnsureProject(s.projectName, true)
