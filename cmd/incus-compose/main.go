@@ -15,6 +15,7 @@ import (
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
 	"github.com/urfave/cli/v3"
+
 	"gitlab.com/r3j0/incus-compose/client"
 	"gitlab.com/r3j0/incus-compose/project"
 )
@@ -51,15 +52,6 @@ func buildLoadOptions(cmd *cli.Command) []project.LoadOption {
 	}
 
 	return loadOpts
-}
-
-// loadIncusConfig loads the Incus CLI configuration.
-func loadIncusConfig() (*cliconfig.Config, error) {
-	conf, err := cliconfig.LoadConfig("")
-	if err != nil {
-		return nil, fmt.Errorf("loading Incus config: %w", err)
-	}
-	return conf, nil
 }
 
 // initLogger configures the default slog logger with color and debug settings.
@@ -114,9 +106,10 @@ func main() {
 		Usage: "Compose for incus",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:  "remote",
-				Usage: "remote to connect to",
-				Value: "",
+				Name:    "remote",
+				Usage:   "remote to connect to",
+				Value:   "",
+				Sources: cli.EnvVars("INCUS_REMOTE"),
 			},
 			&cli.StringFlag{
 				Name:  "ansi",
@@ -178,6 +171,11 @@ func main() {
 				return ctx, nil
 			}
 
+			remote := cmd.String("remote")
+			if remote == "" {
+				remote = "local"
+			}
+
 			// Connect to Incus server.
 			// Two connection modes:
 			// 1. Direct URL (via env vars, used for testing with nested Incus)
@@ -188,11 +186,12 @@ func main() {
 			//   - INCUS_COMPOSE_CERT: Path to TLS client certificate
 			//   - INCUS_COMPOSE_KEY: Path to TLS client key
 			// Check for URL override (used for testing with nested Incus)
-			if url, ok := os.LookupEnv("INCUS_COMPOSE_URL"); ok {
+			if url, ok := os.LookupEnv("INCUS_COMPOSE_URL"); ok && remote == "local" {
 				slog.Debug("Using connection", "url", url)
 
 				opts := []client.ClientOption{
 					client.ClientURL(url),
+					client.ClientLogger(slog.Default()),
 					client.ClientInsecureSkipVerify(),
 				}
 
@@ -213,15 +212,9 @@ func main() {
 			}
 
 			// Use Incus CLI configuration to resolve remotes
-			// TODO(r3j0): Replace with custom config to avoid Incus CLI dependency
-			conf, err := loadIncusConfig()
+			conf, err := cliconfig.LoadConfig("")
 			if err != nil {
 				return ctx, err
-			}
-
-			remote := cmd.String("remote")
-			if remote == "" {
-				remote = conf.DefaultRemote
 			}
 
 			instanceServer, err := conf.GetInstanceServer(remote)
@@ -235,6 +228,7 @@ func main() {
 			}
 
 			opts := []client.ClientOption{
+				client.ClientLogger(slog.Default()),
 				client.ClientProvideConnection(instanceServer, imageCache),
 			}
 

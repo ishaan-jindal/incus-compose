@@ -8,6 +8,7 @@ import (
 	incusClient "github.com/lxc/incus/v6/client"
 	"github.com/lxc/incus/v6/shared/cliconfig"
 	"github.com/urfave/cli/v3"
+
 	"gitlab.com/r3j0/incus-compose/client"
 	"gitlab.com/r3j0/incus-compose/project"
 )
@@ -73,6 +74,8 @@ var upCommand = &cli.Command{
 		var rErr error
 		stack := client.NewStack(c)
 
+		images := []client.Resource{}
+
 		imageServers := make(map[string]incusClient.ImageServer)
 		for _, sName := range services {
 			cSv, ok := p.Services[sName]
@@ -106,19 +109,19 @@ var upCommand = &cli.Command{
 				continue
 			}
 
-			is, ok := imageServers[image.Config.Remote]
+			is, ok := imageServers[image.Remote()]
 			if !ok {
 				var err error
-				is, err = conf.GetImageServer(image.Config.Remote)
+				is, err = conf.GetImageServer(image.Remote())
 				if err != nil {
-					c.LogError("Getting an image server", "service", cSv.Name, "image", cSv.Image, "remote", image.Config.Remote, "error", err)
+					c.LogError("Getting an image server", "service", cSv.Name, "image", cSv.Image, "remote", image.Remote(), "error", err)
 					rErr = errors.Join(rErr, errLogged.Wrap(err))
 					continue
 				}
 			}
 
-			image.Config.Source = is
-			stack.Add(image)
+			image.SetSource(is)
+			images = append(images, image)
 		}
 		if rErr != nil {
 			return rErr
@@ -145,21 +148,37 @@ var upCommand = &cli.Command{
 		// }()
 
 		if reCreate {
+			// Ensure without create for "recreate"
+			if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure); err != nil {
+				c.LogDebug("Stopping resources", "error", err)
+			}
+
+			// Stop
 			if err := stack.ForAction(client.ActionStop).Run(client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
 				c.LogDebug("Stopping resources", "error", err)
 			}
 
-			if err := stack.ForAction(client.ActionDelete).Run(client.ActionDelete, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
+			// Delete
+			deleteStack := stack.ForAction(client.ActionDelete)
+			c.LogDebug("Recreate delete", "resources", deleteStack.All())
+			if err := deleteStack.Run(client.ActionDelete, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
 				c.LogDebug("Deleting resources", "error", err)
 			}
 		}
 
+		// Add images after reCreate
+		stack.Add(images...)
+
+		c.LogDebug("Ensure", "resources", stack.All())
+
+		// Ensure with create.
 		if err := stack.Run(client.ActionEnsure, client.OptionCreate()); err != nil {
 			c.LogError("Creating resources", "error", err)
 			return errLogged.Wrap(err)
 		}
 
 		if start {
+			// Start
 			if err := stack.ForAction(client.ActionStart).Run(client.ActionStart, client.OptionTimeout(timeout)); err != nil {
 				c.LogError("Starting resources", "error", err)
 				return errLogged.Wrap(err)

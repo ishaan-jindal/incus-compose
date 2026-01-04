@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/urfave/cli/v3"
+
 	"gitlab.com/r3j0/incus-compose/client"
 	"gitlab.com/r3j0/incus-compose/project"
 )
@@ -62,7 +63,7 @@ var downCommand = &cli.Command{
 			return errLogged
 		}
 
-		stack := client.NewStack(c, client.StackSortDescending())
+		stack := client.NewStack(c)
 		err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackReverse())
 		if err != nil {
 			c.LogError("Adding the project to a stack", "error", err)
