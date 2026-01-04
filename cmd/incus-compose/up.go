@@ -8,9 +8,8 @@ import (
 	incusClient "github.com/lxc/incus/v6/client"
 	"github.com/lxc/incus/v6/shared/cliconfig"
 	"github.com/urfave/cli/v3"
-
-	"gitlab.com/r3j0/incuscompose/client"
-	"gitlab.com/r3j0/incuscompose/project"
+	"gitlab.com/r3j0/incus-compose/client"
+	"gitlab.com/r3j0/incus-compose/project"
 )
 
 var upCommand = &cli.Command{

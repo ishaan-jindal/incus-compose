@@ -11,10 +11,9 @@ import (
 	"text/tabwriter"
 
 	"github.com/urfave/cli/v3"
+	"gitlab.com/r3j0/incus-compose/client"
+	"gitlab.com/r3j0/incus-compose/project"
 	"go.yaml.in/yaml/v4"
-
-	"gitlab.com/r3j0/incuscompose/client"
-	"gitlab.com/r3j0/incuscompose/project"
 )
 
 // ProjectStatus holds the status of the project for ps output.

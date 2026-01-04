@@ -11,9 +11,8 @@ import (
 	"github.com/compose-spec/compose-go/v2/template"
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/urfave/cli/v3"
+	"gitlab.com/r3j0/incus-compose/project"
 	"go.yaml.in/yaml/v4"
-
-	"gitlab.com/r3j0/incuscompose/project"
 )
 
 var configCommand = &cli.Command{
