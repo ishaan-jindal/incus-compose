@@ -72,6 +72,11 @@ func newNetwork(c *Client, name string, configGetter Config) (*Network, error) {
 	return network, nil
 }
 
+// String is for debugging.
+func (r *Network) String() string {
+	return fmt.Sprintf("%v(%v)", r.kind, r.incusName)
+}
+
 // IncusName returns the sanitized network name used in Incus.
 func (r *Network) IncusName() string {
 	return r.incusName

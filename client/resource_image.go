@@ -96,6 +96,11 @@ func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 	return img, nil
 }
 
+// String is for debugging.
+func (r *Image) String() string {
+	return fmt.Sprintf("%v(%v)", r.kind, r.incusName)
+}
+
 // IncusName returns the image alias name used in Incus.
 func (r *Image) IncusName() string {
 	return r.incusName

@@ -63,6 +63,11 @@ func newProfile(c *Client, name string, configGetter Config) (*Profile, error) {
 	return profile, nil
 }
 
+// String is for debugging.
+func (r *Profile) String() string {
+	return fmt.Sprintf("%v(%v)", r.kind, r.incusName)
+}
+
 // IncusName returns the sanitized profile name used in Incus.
 func (r *Profile) IncusName() string {
 	return r.incusName

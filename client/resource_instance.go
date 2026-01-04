@@ -119,6 +119,11 @@ func (c *Client) Instance(name string, config InstanceConfig) (*Instance, error)
 	return inst, nil
 }
 
+// String is for debugging.
+func (r *Instance) String() string {
+	return fmt.Sprintf("%v(%v)", r.kind, r.incusName)
+}
+
 // IncusName returns the sanitized instance name used in Incus.
 func (r *Instance) IncusName() string {
 	return r.incusName

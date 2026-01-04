@@ -77,6 +77,11 @@ func newStorageVolume(c *Client, name string, configGetter Config) (*StorageVolu
 	return vol, nil
 }
 
+// String is for debugging.
+func (r *StorageVolume) String() string {
+	return fmt.Sprintf("%v(%v)", r.kind, r.incusName)
+}
+
 // IncusName returns the prefixed volume name used in Incus.
 func (r *StorageVolume) IncusName() string {
 	return r.incusName
