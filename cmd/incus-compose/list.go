@@ -11,9 +11,10 @@ import (
 	"text/tabwriter"
 
 	"github.com/urfave/cli/v3"
+	"go.yaml.in/yaml/v4"
+
 	"gitlab.com/r3j0/incus-compose/client"
 	"gitlab.com/r3j0/incus-compose/project"
-	"go.yaml.in/yaml/v4"
 )
 
 // ProjectStatus holds the status of the project for ps output.
@@ -162,9 +163,9 @@ var listCommand = &cli.Command{
 				continue
 			}
 
-			s := "not existing"
+			s := "Not existing"
 			if r.IsEnsured() {
-				s = "exists"
+				s = "Exists"
 			}
 
 			status := ProjectStatus{
