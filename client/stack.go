@@ -170,10 +170,21 @@ func (s *Stack) Run(action Action, opts ...Option) error {
 
 // ForAction returns a new stack with resources filtered for the given action.
 func (s *Stack) ForAction(action Action) *Stack {
+	sortDescending := s.sortDescending
+
+	// Magic: automatically determine sort order based on action
+	switch action {
+	case ActionStop, ActionDelete:
+		sortDescending = true
+	case ActionEnsure, ActionStart:
+		sortDescending = false
+	}
+	// default: unknown action, no modification
+
 	result := &Stack{
 		client:         s.client,
 		workers:        s.workers,
-		sortDescending: s.sortDescending,
+		sortDescending: sortDescending,
 	}
 
 	for _, r := range s.All() {

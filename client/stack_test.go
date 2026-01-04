@@ -188,7 +188,7 @@ var stackTests = []*stackTest{
 		},
 		runs: []stackRun{
 			{[]StackOption{}, ActionEnsure, []Option{OptionCreate()}, false, true},
-			{[]StackOption{StackSortDescending()}, ActionDelete, []Option{}, false, false},
+			{[]StackOption{}, ActionDelete, []Option{}, false, false},
 		},
 	},
 	{
@@ -204,7 +204,7 @@ var stackTests = []*stackTest{
 		},
 		runs: []stackRun{
 			{[]StackOption{}, ActionEnsure, []Option{OptionCreate()}, false, true},
-			{[]StackOption{StackSortDescending()}, ActionDelete, []Option{}, false, false},
+			{[]StackOption{}, ActionDelete, []Option{}, false, false},
 		},
 	},
 	{
@@ -241,8 +241,8 @@ var stackTests = []*stackTest{
 		runs: []stackRun{
 			{[]StackOption{}, ActionEnsure, []Option{OptionCreate()}, false, true},
 			{[]StackOption{}, ActionStart, []Option{}, false, false},
-			{[]StackOption{StackSortDescending()}, ActionStop, []Option{OptionForce()}, false, false},
-			{[]StackOption{StackSortDescending()}, ActionDelete, []Option{OptionForce()}, false, false},
+			{[]StackOption{}, ActionStop, []Option{OptionForce()}, false, false},
+			{[]StackOption{}, ActionDelete, []Option{OptionForce()}, false, false},
 		},
 	},
 	// Flaky test cause of bind port

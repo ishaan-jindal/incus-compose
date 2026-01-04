@@ -42,7 +42,7 @@ func (c *GlobalClient) newClientProject(name, incusName string, created bool) (*
 		return nil, errors.New("cannot cast project-scoped client to ProtocolIncus")
 	}
 
-	p := &Client{
+	cp := &Client{
 		globalClient: c,
 		project:      name,
 		incusProject: incusName,
@@ -59,11 +59,11 @@ func (c *GlobalClient) newClientProject(name, incusName string, created bool) (*
 	}
 
 	if c.IsDebugging() {
-		p.logger = p.logger.With("incus_project", incusName)
+		cp.logger = cp.logger.With("incus_project", incusName)
 	}
 
-	c.projects = append(c.projects, p)
-	return p, nil
+	c.projects = append(c.projects, cp)
+	return cp, nil
 }
 
 // Project returns the user-facing project name.
