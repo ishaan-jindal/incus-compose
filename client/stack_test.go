@@ -152,11 +152,10 @@ func TestParallelImageDownload(t *testing.T) {
 }
 
 type stackRun struct {
-	stackOptions []StackOption
-	action       Action
-	options      []Option
-	wantError    bool
-	wantEnsured  bool
+	action      Action
+	options     []Option
+	wantError   bool
+	wantEnsured bool
 }
 
 type stackTest struct {
@@ -175,7 +174,7 @@ var stackTests = []*stackTest{
 			return []Resource{profile}, nil
 		},
 		runs: []stackRun{
-			{[]StackOption{}, ActionEnsure, []Option{}, true, false},
+			{ActionEnsure, []Option{}, true, false},
 		},
 	},
 	{
@@ -187,8 +186,8 @@ var stackTests = []*stackTest{
 			return []Resource{profile}, nil
 		},
 		runs: []stackRun{
-			{[]StackOption{}, ActionEnsure, []Option{OptionCreate()}, false, true},
-			{[]StackOption{}, ActionDelete, []Option{}, false, false},
+			{ActionEnsure, []Option{OptionCreate()}, false, true},
+			{ActionDelete, []Option{}, false, false},
 		},
 	},
 	{
@@ -203,23 +202,26 @@ var stackTests = []*stackTest{
 			return []Resource{profile, network}, nil
 		},
 		runs: []stackRun{
-			{[]StackOption{}, ActionEnsure, []Option{OptionCreate()}, false, true},
-			{[]StackOption{}, ActionDelete, []Option{}, false, false},
+			{ActionEnsure, []Option{OptionCreate()}, false, true},
+			{ActionDelete, []Option{}, false, false},
 		},
 	},
 	{
 		name: "simple-nginx",
 		resources: func(s *StackTestSuite, client *Client) ([]Resource, error) {
-			network, err := client.Resource(KindNetwork, "simple-nginx", &NetworkConfig{})
+			network, err := client.Resource(KindNetwork, "default", &NetworkConfig{})
 			s.Require().NoError(err)
 
-			is, err := s.incusConfig.GetImageServer("docker.io")
+			imageResource, err := client.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
 			s.Require().NoError(err)
 
-			image, err := client.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{
-				Source: is,
-			})
+			image, ok := imageResource.(*Image)
+			s.Require().True(ok)
+
+			is, err := s.incusConfig.GetImageServer(image.Remote())
 			s.Require().NoError(err)
+
+			image.SetSource(is)
 
 			devices := []InstanceDevice{}
 			devices = append(devices, InstanceDevice{
@@ -239,10 +241,10 @@ var stackTests = []*stackTest{
 			return []Resource{network, image, instance}, nil
 		},
 		runs: []stackRun{
-			{[]StackOption{}, ActionEnsure, []Option{OptionCreate()}, false, true},
-			{[]StackOption{}, ActionStart, []Option{}, false, false},
-			{[]StackOption{}, ActionStop, []Option{OptionForce()}, false, false},
-			{[]StackOption{}, ActionDelete, []Option{OptionForce()}, false, false},
+			{ActionEnsure, []Option{OptionCreate()}, false, true},
+			{ActionStart, []Option{}, false, false},
+			{ActionStop, []Option{OptionForce()}, false, false},
+			{ActionDelete, []Option{OptionForce()}, false, false},
 		},
 	},
 	// Flaky test cause of bind port
@@ -686,13 +688,12 @@ func (s *StackTestSuite) TestScenarios() {
 			resources, err := scenario.resources(s, client)
 			s.Require().NoError(err)
 
+			allStack := NewStack(client)
+			allStack.Add(resources...)
+
 			for _, stackRun := range scenario.runs {
-				stack := NewStack(client, stackRun.stackOptions...)
-				for _, r := range resources {
-					if SupportsAction(r, stackRun.action) {
-						stack.Add(r)
-					}
-				}
+				// Get a per action stack
+				stack := allStack.ForAction(stackRun.action)
 
 				err = stack.Run(stackRun.action, stackRun.options...)
 				if stackRun.wantError {
