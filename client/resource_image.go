@@ -40,6 +40,7 @@ type Image struct {
 	client    *Client
 	Config    ImageConfig
 	incusName string
+	created   bool
 
 	// State - nil means not ensured.
 	IncusAlias *incusApi.ImageAliasesEntry
@@ -109,6 +110,11 @@ func (r *Image) IncusName() string {
 // IsEnsured returns true if the image has been fetched/copied to cache.
 func (r *Image) IsEnsured() bool {
 	return r.IncusAlias != nil
+}
+
+// Created returns true if the image was created during the last Ensure call.
+func (r *Image) Created() bool {
+	return r.created
 }
 
 // Remote returns the image remote.
@@ -213,6 +219,7 @@ func (r *Image) create(args Options) error {
 
 	r.IncusAlias = alias
 	r.ETag = eTag
+	r.created = true
 	return nil
 }
 

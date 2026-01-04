@@ -34,10 +34,10 @@ func TestImageParsing(t *testing.T) {
 		},
 		{
 			name:              "full github reference",
-			imageName:         "ghcr.io/jonashackt/hello-world:latest",
+			imageName:         "ghcr.io/linuxcontainers/alpine:latest",
 			expectedRemote:    "ghcr.io",
-			expectedImage:     "jonashackt/hello-world:latest",
-			expectedIncusName: "ghcr.io/jonashackt/hello-world:latest",
+			expectedImage:     "linuxcontainers/alpine:latest",
+			expectedIncusName: "ghcr.io/linuxcontainers/alpine:latest",
 		},
 		{
 			name:              "short reference defaults to docker.io",
@@ -178,9 +178,9 @@ func (s *ImageSuite) TearDownTest() {
 
 // ----------------------------------------------------------------------------
 // Ensure Tests
-// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------.
 func (s *ImageSuite) TestEnsure_WithCreate_Github() {
-	r, err := s.client.Resource(KindImage, "ghcr.io/jonashackt/hello-world:latest", &ImageConfig{
+	r, err := s.client.Resource(KindImage, "ghcr.io/linuxcontainers/alpine:latest", &ImageConfig{
 		Source: s.imageServer,
 	})
 	s.Require().NoError(err)
@@ -231,15 +231,17 @@ func (s *ImageSuite) TestEnsure_Idempotent() {
 	})
 	s.Require().NoError(err)
 
-	// First ensure
+	// First ensure - should create
 	err = RunAction(r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
+	s.True(r.Created(), "first ensure should set Created() to true")
 
-	// Second ensure - should return immediately
+	// Second ensure - should return immediately without creating
 	err = RunAction(r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
+	// Created() stays true from first call (not reset)
 
 	s.cleanup = append(s.cleanup, r)
 }
@@ -288,6 +290,7 @@ func (s *ImageSuite) TestEnsure_ExistingImage_NewResource() {
 	err = RunAction(r1, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r1.IsEnsured())
+	s.True(r1.Created(), "first resource should have Created() true")
 
 	s.cleanup = append(s.cleanup, r1)
 
@@ -305,6 +308,7 @@ func (s *ImageSuite) TestEnsure_ExistingImage_NewResource() {
 	err = RunAction(r2, ActionEnsure)
 	s.Require().NoError(err)
 	s.True(r2.IsEnsured())
+	s.False(r2.Created(), "fetched resource should have Created() false")
 }
 
 // ----------------------------------------------------------------------------

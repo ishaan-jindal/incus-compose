@@ -41,6 +41,10 @@ type Resource interface {
 
 	// IsEnsured returns wherever the resource has been ensured.
 	IsEnsured() bool
+
+	// Created returns true if the resource was created during the last Ensure call.
+	// Returns false if the resource already existed or hasn't been ensured yet.
+	Created() bool
 }
 
 // Config is implemented by resource configuration types.

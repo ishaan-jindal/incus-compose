@@ -31,6 +31,7 @@ type Network struct {
 
 	client    *Client
 	incusName string
+	created   bool
 	Config    NetworkConfig
 
 	// State - nil means not ensured.
@@ -85,6 +86,11 @@ func (r *Network) IncusName() string {
 // IsEnsured returns true if the network state has been fetched from Incus.
 func (r *Network) IsEnsured() bool {
 	return r.IncusNetwork != nil
+}
+
+// Created returns true if the network was created during the last Ensure call.
+func (r *Network) Created() bool {
+	return r.created
 }
 
 // Ensure retrieves an existing network or creates a new one if args.Create is true.
@@ -157,6 +163,7 @@ func (r *Network) create() error {
 
 	r.IncusNetwork = network
 	r.ETag = eTag
+	r.created = true
 	return nil
 }
 

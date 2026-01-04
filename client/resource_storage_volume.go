@@ -39,6 +39,7 @@ type StorageVolume struct {
 
 	client    *Client
 	incusName string
+	created   bool
 	Config    StorageVolumeConfig
 
 	// State - nil means not ensured.
@@ -90,6 +91,11 @@ func (r *StorageVolume) IncusName() string {
 // IsEnsured returns true if the volume has been fetched/created.
 func (r *StorageVolume) IsEnsured() bool {
 	return r.IncusVolume != nil
+}
+
+// Created returns true if the volume was created during the last Ensure call.
+func (r *StorageVolume) Created() bool {
+	return r.created
 }
 
 // Ensure retrieves an existing storage volume or creates a new one if Create option is set.
@@ -212,6 +218,7 @@ func (r *StorageVolume) create() error {
 
 	r.IncusVolume = volume
 	r.ETag = eTag
+	r.created = true
 	return nil
 }
 

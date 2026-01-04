@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
+
 	"gitlab.com/r3j0/incus-compose/project"
 )
 

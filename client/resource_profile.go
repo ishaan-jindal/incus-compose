@@ -25,6 +25,7 @@ type Profile struct {
 	*BaseResource
 
 	incusName string
+	created   bool
 
 	client *Client
 	Config ProfileConfig
@@ -76,6 +77,11 @@ func (r *Profile) IncusName() string {
 // IsEnsured returns true if the profile state has been fetched from Incus.
 func (r *Profile) IsEnsured() bool {
 	return r.IncusProfile != nil
+}
+
+// Created returns true if the profile was created during the last Ensure call.
+func (r *Profile) Created() bool {
+	return r.created
 }
 
 // Ensure retrieves an existing resource or creates a new one if args.Create is true.
@@ -172,6 +178,7 @@ func (r *Profile) create() error {
 
 	r.IncusProfile = profile
 	r.ETag = eTag
+	r.created = true
 	return nil
 }
 

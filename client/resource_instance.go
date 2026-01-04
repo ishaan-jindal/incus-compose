@@ -54,6 +54,7 @@ type Instance struct {
 
 	client    *Client
 	incusName string
+	created   bool
 	Config    InstanceConfig
 
 	// State - nil means not ensured.
@@ -132,6 +133,11 @@ func (r *Instance) IncusName() string {
 // IsEnsured returns true if the instance has been fetched/created.
 func (r *Instance) IsEnsured() bool {
 	return r.IncusInstance != nil
+}
+
+// Created returns true if the instance was created during the last Ensure call.
+func (r *Instance) Created() bool {
+	return r.created
 }
 
 // HasFull returns true if the instance has a full instance.
@@ -288,6 +294,7 @@ func (r *Instance) create(opts ...Option) error {
 		}
 	}
 
+	r.created = true
 	return nil
 }
 
