@@ -9,19 +9,6 @@ config/up/down/list works without all the specials other compose solutions provi
 
 ## Planned Improvements
 
-### Remote Handling with Custom Config
-
-- **Status:** Planned
-- **Goal:** Add own remote/server configuration management
-- **Config Format:**
-  - TOML (preferred)
-  - YAML (fallback)
-- **Features:**
-  - Multiple remote servers
-  - Connection profiles
-  - Cert management
-  - Default remote selection
-
 ### Progress Reporting to CLI
 
 - **Status:** Planned (depends on "Worker Pool")

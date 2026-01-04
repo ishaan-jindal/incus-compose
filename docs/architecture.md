@@ -197,7 +197,7 @@ client.New(ctx, client.ClientProvideConnection(instanceServer, cacheServer))
 ## Related Documentation
 
 - [Hooks](architecture/hooks.md) - Before/after hooks for operations
-- [Client Package](architecture/client.md) - Resources, Stack, WorkerPool
+- [Client Package](architecture/client/README.md) - Resources, Stack, WorkerPool
 - [Instance Details](architecture/instance.md) - Pre/post devices, UID/GID shifting
 - [Images](architecture/images.md) - OCI image handling and caching
 - [Getting Started](getting-started.md) - Quick start guide

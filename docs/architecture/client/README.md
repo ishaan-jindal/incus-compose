@@ -134,14 +134,25 @@ Batch operations with priority ordering:
 stack := client.NewStack(project, client.StackWorkers(4))
 stack.Add(profile, image, network, instance)
 
-// Ensure all in priority order
+// Ensure all in priority order (ascending: low to high)
 err := stack.Run(client.ActionEnsure, client.OptionCreate())
 
-// Delete in reverse order
+// ForAction automatically determines sort order based on action
+// ActionStop and ActionDelete use descending order (high to low)
+err = stack.ForAction(client.ActionStop).Run(client.ActionStop)
+err = stack.ForAction(client.ActionDelete).Run(client.ActionDelete, client.OptionForce())
+
+// Manual sort order override (if needed)
 stack = client.NewStack(project, client.StackSortDescending())
 stack.Add(instance, network, image, profile)
 err = stack.Run(client.ActionDelete, client.OptionForce())
 ```
+
+**Sort Order**:
+
+- `ForAction()` automatically determines order: `ActionEnsure`/`ActionStart` use ascending, `ActionStop`/`ActionDelete` use descending
+- `StackSortDescending()` option explicitly sets descending order for `NewStack()`
+- Unknown actions in `ForAction()` preserve the stack's existing sort order
 
 ## Hooks
 

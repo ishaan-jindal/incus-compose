@@ -80,26 +80,46 @@ incus-compose --os-env up
 
 ## Incus Connection
 
-These environment variables configure how incus-compose connects to an Incus server. They are primarily for testing with nested Incus instances. For normal use, incus-compose uses your existing Incus CLI configuration.
+These environment variables configure how incus-compose connects to an Incus server. For normal use, incus-compose uses your existing Incus CLI configuration via the `--remote` flag or defaults to `local`.
 
-These variables are rarely needed and are mainly intended for development,
-testing, or nested Incus scenarios.
+### Connection Priority
 
-| Variable             | Description                                                     |
-| -------------------- | --------------------------------------------------------------- |
-| `INCUS_PROJECT`      | The project in which a nested container has been created at     |
-| `INCUS_CONTAINER`    | The name of the nested container                                |
-| `INCUS_COMPOSE_URL`  | Direct URL to Incus server (e.g., `https://192.168.1.100:8443`) |
-| `INCUS_COMPOSE_CERT` | Path to TLS client certificate                                  |
-| `INCUS_COMPOSE_KEY`  | Path to TLS client key                                          |
+incus-compose determines the connection in this order:
 
-### Example
+1. **`--remote` flag or `INCUS_REMOTE`** - Uses Incus CLI config to resolve the remote
+2. **`INCUS_COMPOSE_URL`** - Direct URL connection (only when remote is `local`)
+
+When `INCUS_REMOTE` is set to anything other than `local`, the `INCUS_COMPOSE_URL` variables are ignored and the Incus CLI configuration is used instead.
+
+### Variables
+
+| Variable             | Description                                                    |
+| -------------------- | -------------------------------------------------------------- |
+| `INCUS_REMOTE`       | Incus remote name from CLI config (e.g., `local`, `myserver`)  |
+| `INCUS_COMPOSE_URL`  | Direct URL to Incus server (only used when remote is `local`)  |
+| `INCUS_COMPOSE_CERT` | Path to TLS client certificate (used with `INCUS_COMPOSE_URL`) |
+| `INCUS_COMPOSE_KEY`  | Path to TLS client key (used with `INCUS_COMPOSE_URL`)         |
+
+### Examples
+
+**Using Incus CLI remotes (recommended):**
 
 ```bash
-export INCUS_PROJECT="dev"
-export INCUS_CONTAINER="ict"
+# Use a configured remote
+incus-compose --remote myserver up
+
+# Or via environment variable
+export INCUS_REMOTE=myserver
+incus-compose up
+```
+
+**Using direct URL (for testing/nested Incus):**
+
+```bash
 export INCUS_COMPOSE_URL="https://192.168.1.100:8443"
 export INCUS_COMPOSE_CERT="./certs/client.crt"
 export INCUS_COMPOSE_KEY="./certs/client.key"
 incus-compose up
 ```
+
+**Note:** The `INCUS_COMPOSE_URL` method is mainly intended for development, testing, or nested Incus scenarios where you need to bypass the CLI configuration.
