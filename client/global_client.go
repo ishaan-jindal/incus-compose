@@ -146,6 +146,10 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 	}
 
 	c.hookAfter = func(action Action, r Resource, args Options, err error) error {
+		if cError, ok := err.(*Error); ok {
+			return cError.WithResource(r)
+		}
+
 		return err
 	}
 
@@ -167,7 +171,12 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 			}
 		}
 
-		return op.WaitContext(c.Ctx)
+		err = errors.Join(err, op.WaitContext(c.Ctx))
+		if err != nil {
+			return ErrOperation.Wrap(err)
+		}
+
+		return nil
 	}
 
 	c.hookRemoteOperation = func(action Action, r Resource, args Options, op incusClient.RemoteOperation, err error) error {
@@ -188,7 +197,12 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 			}
 		}
 
-		return op.Wait()
+		err = errors.Join(err, op.Wait())
+		if err != nil {
+			return ErrOperation.Wrap(err)
+		}
+
+		return nil
 	}
 
 	return c

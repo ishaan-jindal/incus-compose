@@ -48,7 +48,7 @@ func (e *Error) WithAction(action Action) *Error {
 func (e *Error) WithResource(resource Resource) *Error {
 	return &Error{
 		sentinel: e.sentinel,
-		text:     fmt.Sprintf("%v: %v(%v)", e.text, resource.Kind(), resource.Name()),
+		text:     fmt.Sprintf("%v: %v(%v)", e.text, resource.Kind(), resource.IncusName()),
 		wrapped:  e.wrapped,
 	}
 }
@@ -91,6 +91,9 @@ var (
 
 	// ErrNilPointer indicates something is a nil pointer.
 	ErrNilPointer = NewError("found a nil pointer")
+
+	// ErrOperation is returned within an operation.
+	ErrOperation = NewError("in an operation")
 
 	// ErrBadDeviceConfig indicates a bad device config.
 	ErrBadDeviceConfig = NewError("bad config for device")
