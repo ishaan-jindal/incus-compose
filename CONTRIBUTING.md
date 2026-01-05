@@ -93,6 +93,19 @@ just update-snapshots   # Update test snapshots
 
 ## Code Style
 
+### Naming
+
+Prefer Go-style concise names over Java-style verbose names:
+
+| Prefer     | Avoid                 |
+| ---------- | --------------------- |
+| `Copied()` | `IsCopiedToProject()` |
+| `Status()` | `GetCurrentStatus()`  |
+| `Valid()`  | `IsValidInstance()`   |
+| `err`      | `errorResult`         |
+
+Go code reads better when names are short and context provides meaning.
+
 ### Comments
 
 - All exported functions and types need doc comments
