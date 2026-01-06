@@ -2,7 +2,7 @@
 *.local.md
 
 # Its generated with random host only data, still no need to commit.
-.env
+/.env
 
 # Development files exclusively for this host.
 run/
