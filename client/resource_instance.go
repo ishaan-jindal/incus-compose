@@ -615,11 +615,10 @@ func (r *Instance) logStream(options Options, outputHandler func(Action, Resourc
 		Force: true, // Take over existing console connections
 	}
 
-	// Control handler - required by Incus API, but we don't need window resize
-	controlHandler := func(conn *websocket.Conn) {
+	// Control handler - required by Incus API, but we don't need window resize.
+	// We just wait for context cancellation; the library handles websocket cleanup.
+	controlHandler := func(_ *websocket.Conn) {
 		<-ctx.Done()
-		closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
-		_ = conn.WriteMessage(websocket.CloseMessage, closeMsg)
 	}
 
 	args := &incusClient.InstanceConsoleArgs{
