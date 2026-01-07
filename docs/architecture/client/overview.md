@@ -28,6 +28,37 @@ volume, _ := project.Resource(client.KindStorageVolume, "data", &client.StorageV
 instance, _ := project.Resource(client.KindInstance, "web", &client.InstanceConfig{})
 ```
 
+## Idempotency
+
+All operations from `client.Resource()` are idempotent:
+
+- `Resource()` returns the same instance for identical kind+name pairs
+- `Ensure()` fetches existing resources or creates new ones (with `OptionCreate()`)
+- `Delete()` is safe to call on non-existent or already-deleted resources
+- `Start()`/`Stop()` check current state before acting
+
+This means you can safely call any operation multiple times without side effects:
+
+```go
+// These all return the same resource instance
+r1, _ := client.Resource(KindNetwork, "web", &NetworkConfig{})
+r2, _ := client.Resource(KindNetwork, "web", &NetworkConfig{})
+// r1 == r2
+
+// Safe to call multiple times
+r1.Ensure(OptionCreate())  // creates network
+r1.Ensure(OptionCreate())  // no-op, already ensured
+
+// Safe to delete multiple times
+r1.Delete()  // deletes network
+r1.Delete()  // no-op, already deleted
+```
+
+When adding new resource types or modifying behavior, preserve idempotency.
+For external resources (e.g., `NetworkConfig{External: true}`), ensure operations
+respect that the resource is not managed: `Ensure()` only verifies existence,
+`Delete()` is always a no-op.
+
 ## Resource Interface
 
 All resources implement the `Resource` interface:

@@ -164,11 +164,13 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 	}
 
 	c.hookAfter = func(action Action, r Resource, args Options, err error) error {
+		if err == nil {
+			return nil
+		}
 		if cError, ok := err.(*Error); ok {
 			return cError.WithResource(r)
 		}
-
-		return err
+		return ErrUnknown.WithResource(r).Wrap(err)
 	}
 
 	c.hookOperation = func(ctx context.Context, action Action, r Resource, args Options, op incusClient.Operation, err error) error {

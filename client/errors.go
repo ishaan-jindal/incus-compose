@@ -79,6 +79,15 @@ func (e *Error) Is(target error) bool {
 	return false
 }
 
+// As implements errors.As() support by copying to target if it's *Error.
+func (e *Error) As(target any) bool {
+	if t, ok := target.(**Error); ok {
+		*t = e
+		return true
+	}
+	return false
+}
+
 var (
 	// ErrUnsupportedAction indicates the resource does not support the action.
 	ErrUnsupportedAction = NewError("resource does not support action")
