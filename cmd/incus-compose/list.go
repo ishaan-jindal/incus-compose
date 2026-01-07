@@ -146,7 +146,7 @@ var listCommand = &cli.Command{
 
 		var rErr error
 
-		var w io.Writer = cmd.Root().Writer
+		w := cmd.Root().Writer
 		if w == nil {
 			w = os.Stdout
 		}
