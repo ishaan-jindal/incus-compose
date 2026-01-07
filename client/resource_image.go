@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/distribution/reference"
 	incusClient "github.com/lxc/incus/v6/client"
@@ -61,7 +62,8 @@ type Image struct {
 
 	// target is the project-scoped instance server where image was copied.
 	// Delete only removes from target, not from cache.
-	target incusClient.InstanceServer
+	target   incusClient.InstanceServer
+	targetMu sync.Mutex
 }
 
 // newImage returns an existing Image resource or creates a new one.
@@ -286,6 +288,9 @@ func (r *Image) CopyTo(target incusClient.InstanceServer) error {
 	if !r.IsEnsured() {
 		return ErrNotEnsured.WithResource(r)
 	}
+
+	r.targetMu.Lock()
+	defer r.targetMu.Unlock()
 
 	if r.target != nil {
 		return nil // Already copied
