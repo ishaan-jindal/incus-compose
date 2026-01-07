@@ -235,8 +235,11 @@ just test
 # Unit tests only (no Incus)
 just test-local
 
-# Update snapshots
+# Update all snapshots
 just update-snapshots
+
+# Update snapshots for specific package
+just update-snapshots ./cmd/incus-compose/...
 
 # Run incus commands in nested container
 just incus <args>
