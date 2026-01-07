@@ -50,9 +50,11 @@ func (c *ContainerStatuses) Yaml() error {
 	return yaml.NewEncoder(c.Writer).Encode(c.Statuses)
 }
 
-// JSON outputs statuses as JSON.
+// JSON outputs statuses as indented JSON.
 func (c *ContainerStatuses) JSON() error {
-	return json.NewEncoder(c.Writer).Encode(c.Statuses)
+	enc := json.NewEncoder(c.Writer)
+	enc.SetIndent("", "  ")
+	return enc.Encode(c.Statuses)
 }
 
 // Table outputs statuses as a formatted table.
@@ -144,15 +146,18 @@ var listCommand = &cli.Command{
 
 		var rErr error
 
-		fd := os.Stdout
+		var w io.Writer = cmd.Root().Writer
+		if w == nil {
+			w = os.Stdout
+		}
 		if cmd.String("output") != "" {
-			fd, err = os.OpenFile(cmd.String("output"), os.O_APPEND|os.O_CREATE, 0o644)
+			fd, err := os.OpenFile(cmd.String("output"), os.O_APPEND|os.O_CREATE, 0o644)
 			if err != nil {
 				c.LogError(err.Error())
 				return errLogged.Wrap(err)
 			}
-
 			defer fd.Close()
+			w = fd
 		}
 
 		err = stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure)
@@ -161,7 +166,7 @@ var listCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		statuses := NewContainerStatuses(fd)
+		statuses := NewContainerStatuses(w)
 
 		for _, r := range stack.All() {
 			if r == nil {
