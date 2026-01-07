@@ -22,11 +22,11 @@ incus-compose implements a subset of the Compose Specification. This doc lists w
 - Bridge networks (Incus default)
 - Network isolation between services
 - DNS resolution by service name
+- External networks (pre-existing Incus networks)
 
 Not supported:
 
 - Custom network drivers
-- External networks (yet)
 
 ### Volumes
 

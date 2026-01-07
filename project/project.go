@@ -131,7 +131,7 @@ func LoadModel(ctx context.Context, opts ...LoadOption) (map[string]any, error) 
 // Environment vars become instance config, labels become user metadata.
 // Volumes default to bind mounts for paths starting with / or ., otherwise named volumes.
 // The index parameter is used for instance naming ({service}-{index}).
-func ServiceToInstance(c *client.Client, service types.ServiceConfig, full bool, index int) ([]client.Resource, error) {
+func ServiceToInstance(c *client.Client, service types.ServiceConfig, networks types.Networks, full bool, index int) ([]client.Resource, error) {
 	var errs error
 
 	config := make(map[string]string, len(service.Environment)+len(service.Labels))
@@ -166,7 +166,12 @@ func ServiceToInstance(c *client.Client, service types.ServiceConfig, full bool,
 	// Networks
 	ethIdx := 0
 	for name := range maps.Keys(service.Networks) {
-		network, err := c.Resource(client.KindNetwork, name, &client.NetworkConfig{})
+		netConfig := &client.NetworkConfig{}
+		if networkDef, ok := networks[name]; ok {
+			netConfig.External = bool(networkDef.External)
+		}
+
+		network, err := c.Resource(client.KindNetwork, name, netConfig)
 		if err != nil {
 			errs = errors.Join(errs, err)
 			continue
@@ -464,7 +469,7 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 		}
 
 		for i := 1; i <= scale; i++ {
-			instanceResources, err := ServiceToInstance(c, service, options.Full, i)
+			instanceResources, err := ServiceToInstance(c, service, p.Networks, options.Full, i)
 			if err != nil {
 				errs = errors.Join(errs, err)
 				continue
