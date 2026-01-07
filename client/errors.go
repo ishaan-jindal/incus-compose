@@ -130,4 +130,22 @@ var (
 
 	// ErrBindMountRemote indicates bind mounts are not supported over network connections.
 	ErrBindMountRemote = NewError("bind mounts not supported over network connection")
+
+	// ErrUnknownResource indicates an unknown resource kind.
+	ErrUnknownResource = NewError("unknown resource kind")
+
+	// ErrInvalidFormat indicates invalid format or syntax.
+	ErrInvalidFormat = NewError("invalid format")
+
+	// ErrImageSource indicates an image source error.
+	ErrImageSource = NewError("image source error")
+
+	// ErrDeviceConflict indicates a device name conflict.
+	ErrDeviceConflict = NewError("device conflict")
+
+	// ErrVolumeMismatch indicates volume configuration mismatch.
+	ErrVolumeMismatch = NewError("volume configuration mismatch")
+
+	// ErrCreate indicates a resource creation error.
+	ErrCreate = NewError("create failed")
 )

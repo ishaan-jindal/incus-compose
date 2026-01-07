@@ -195,7 +195,7 @@ func (r *Instance) ensured(instance *incusApi.Instance, eTag string) error {
 	r.ETag = eTag
 	r.UID, r.GID, err = extractUIDGID(instance)
 	if err != nil {
-		return fmt.Errorf("failed to extract uid/gid: %w", err)
+		return ErrInvalidFormat.WithText("extracting uid/gid").Wrap(err)
 	}
 
 	if r.Config.Full {
@@ -254,13 +254,13 @@ func (r *Instance) create(opts ...Option) error {
 
 	// Copy image from cache to project (if not already there)
 	if err := image.CopyTo(r.client.incus); err != nil {
-		return fmt.Errorf("copying image to project: %w", err)
+		return ErrCreate.WithText("copying image to project").Wrap(err)
 	}
 
 	// Get image info from project (not cache)
 	incusImage, _, err := r.client.incus.GetImage(image.IncusAlias.Target)
 	if err != nil {
-		return fmt.Errorf("getting image: %w", err)
+		return ErrNotFound.WithText("getting image").Wrap(err)
 	}
 
 	// Create instance request
@@ -289,7 +289,7 @@ func (r *Instance) create(opts ...Option) error {
 	// Get instance to extract UID/GID
 	instance, eTag, err := r.client.incus.GetInstance(r.incusName)
 	if err != nil {
-		return fmt.Errorf("fetching created instance: %w", err)
+		return ErrCreate.WithText("fetching created instance").Wrap(err)
 	}
 
 	if err = r.ensured(instance, eTag); err != nil {
@@ -349,7 +349,7 @@ func (r *Instance) buildDevices() (map[string]map[string]string, error) {
 		}
 
 		if foundInProfile {
-			return nil, fmt.Errorf("device exists in profile %v", name)
+			return nil, ErrDeviceConflict.WithText("device exists in profile " + name)
 		}
 
 		devices[name] = config
@@ -389,7 +389,7 @@ func (r *Instance) attachPostDevices() error {
 
 			volI, err := r.client.Resource(KindStorageVolume, dev.Config.Disk.Source, &volConfig)
 			if err != nil {
-				return fmt.Errorf("creating volume: %w", err)
+				return ErrCreate.WithText("creating volume resource").Wrap(err)
 			}
 
 			vol, ok := volI.(*StorageVolume)
@@ -398,7 +398,7 @@ func (r *Instance) attachPostDevices() error {
 			}
 
 			if err := RunAction(volI, ActionEnsure); err != nil {
-				return fmt.Errorf("ensuring volume: %w", err)
+				return ErrCreate.WithText("ensuring volume").Wrap(err)
 			}
 
 			// Update disk config with volume details
@@ -417,17 +417,17 @@ func (r *Instance) attachPostDevices() error {
 	// Update instance with post-devices
 	op, err := r.client.incus.UpdateInstance(instance.Name, instance.Writable(), r.ETag)
 	if err != nil {
-		return fmt.Errorf("updating with devices: %w", err)
+		return ErrCreate.WithText("updating with devices").Wrap(err)
 	}
 
 	if err := op.Wait(); err != nil {
-		return fmt.Errorf("waiting for update: %w", err)
+		return ErrOperation.WithText("waiting for update").Wrap(err)
 	}
 
 	// Refresh instance state
 	instance, eTag, err := r.client.incus.GetInstance(r.incusName)
 	if err != nil {
-		return fmt.Errorf("refreshing: %w", err)
+		return ErrNotFound.WithText("refreshing instance").Wrap(err)
 	}
 
 	r.IncusInstance = instance
@@ -468,7 +468,7 @@ func (r *Instance) start() error {
 		Action: "start",
 	}, r.ETag)
 	if err != nil {
-		return fmt.Errorf("starting instance: %w", err)
+		return ErrOperation.WithText("starting instance").Wrap(err)
 	}
 
 	if err := op.Wait(); err != nil {
@@ -478,7 +478,7 @@ func (r *Instance) start() error {
 	// Refresh instance state
 	instance, eTag, err := r.client.incus.GetInstance(r.incusName)
 	if err != nil {
-		return fmt.Errorf("refreshing instance after start: %w", err)
+		return ErrNotFound.WithText("refreshing instance after start").Wrap(err)
 	}
 
 	r.IncusInstance = instance
@@ -629,7 +629,7 @@ func (r *Instance) logStream(options Options, outputHandler func(Action, Resourc
 
 	op, err := r.client.incus.ConsoleInstance(r.incusName, req, args)
 	if err != nil {
-		return fmt.Errorf("connecting to console: %w", err)
+		return ErrOperation.WithText("connecting to console").Wrap(err)
 	}
 
 	// Handle context cancellation
@@ -647,7 +647,7 @@ func (r *Instance) logStream(options Options, outputHandler func(Action, Resourc
 	}
 
 	if err != nil {
-		return fmt.Errorf("console streaming: %w", err)
+		return ErrOperation.WithText("console streaming").Wrap(err)
 	}
 
 	return nil

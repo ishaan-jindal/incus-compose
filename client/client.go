@@ -2,8 +2,6 @@ package client
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 
@@ -40,7 +38,7 @@ func (c *GlobalClient) newClientProject(name, incusName string, created bool) (*
 	incus := c.incus.UseProject(incusName)
 	pIncus, ok := incus.(*incusClient.ProtocolIncus)
 	if !ok {
-		return nil, errors.New("cannot cast project-scoped client to ProtocolIncus")
+		return nil, ErrConnectionFailed.WithText("cannot cast project-scoped client to ProtocolIncus")
 	}
 
 	cp := &Client{
@@ -140,7 +138,7 @@ func (c *Client) Resource(kind Kind, name string, config Config) (Resource, erro
 		res, err = newInstance(c, name, config)
 
 	default:
-		return nil, fmt.Errorf("unknown resource %s", kind)
+		return nil, ErrUnknownResource.WithText(string(kind))
 	}
 
 	if err != nil {

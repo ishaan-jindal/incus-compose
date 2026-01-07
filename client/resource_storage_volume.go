@@ -163,7 +163,7 @@ func (r *StorageVolume) validate(volume *incusApi.StorageVolume) error {
 
 	// Check shifted is enabled
 	if volume.Config["security.shifted"] != "true" {
-		return fmt.Errorf("storage volume %q: expected security.shifted=true", r.Name())
+		return ErrVolumeMismatch.WithText("expected security.shifted=true")
 	}
 
 	// Check UID/GID match
@@ -171,13 +171,11 @@ func (r *StorageVolume) validate(volume *incusApi.StorageVolume) error {
 	expectedGID := strconv.FormatUint(uint64(r.Config.GID), 10)
 
 	if volume.Config["initial.uid"] != expectedUID {
-		return fmt.Errorf("storage volume %q: UID mismatch (expected %s, got %s)",
-			r.Name(), expectedUID, volume.Config["initial.uid"])
+		return ErrVolumeMismatch.WithText("UID mismatch, expected " + expectedUID + " got " + volume.Config["initial.uid"])
 	}
 
 	if volume.Config["initial.gid"] != expectedGID {
-		return fmt.Errorf("storage volume %q: GID mismatch (expected %s, got %s)",
-			r.Name(), expectedGID, volume.Config["initial.gid"])
+		return ErrVolumeMismatch.WithText("GID mismatch, expected " + expectedGID + " got " + volume.Config["initial.gid"])
 	}
 
 	return nil
@@ -208,12 +206,12 @@ func (r *StorageVolume) create() error {
 	}
 
 	if err := r.client.incus.CreateStoragePoolVolume(r.Config.Pool, volReq); err != nil {
-		return fmt.Errorf("creating storage volume %q: %w", r.Name(), err)
+		return ErrCreate.Wrap(err)
 	}
 
 	volume, eTag, err := r.client.incus.GetStoragePoolVolume(r.Config.Pool, "custom", r.incusName)
 	if err != nil {
-		return fmt.Errorf("fetching created storage volume %q: %w", r.incusName, err)
+		return ErrCreate.WithText("fetching created volume").Wrap(err)
 	}
 
 	r.IncusVolume = volume

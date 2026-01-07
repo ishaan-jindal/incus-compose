@@ -1,7 +1,6 @@
 package client
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -101,7 +100,7 @@ func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 		if config.Remote == "" || config.Image == "" {
 			parts := strings.SplitN(name, ":", 2)
 			if len(parts) != 2 {
-				return nil, fmt.Errorf("invalid native Incus image format %q, expected remote:image", name)
+				return nil, ErrInvalidFormat.WithText("native Incus image, expected remote:image").WithKindName(KindImage, name)
 			}
 			config.Remote = parts[0]
 			config.Image = parts[1]
@@ -112,7 +111,7 @@ func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 		if config.Remote == "" || config.Image == "" {
 			ref, err := reference.ParseDockerRef(name)
 			if err != nil {
-				return nil, fmt.Errorf("parsing image reference %s: %w", name, err)
+				return nil, ErrInvalidFormat.WithKindName(KindImage, name).Wrap(err)
 			}
 
 			originalDomain := reference.Domain(ref)
@@ -246,7 +245,7 @@ func (r *Image) get() error {
 
 func (r *Image) create(args Options) error {
 	if r.Config.Source == nil {
-		return errors.New("image source not configured")
+		return ErrImageSource.WithText("not configured")
 	}
 
 	// Build image info for copy
@@ -273,7 +272,7 @@ func (r *Image) create(args Options) error {
 	// Fetch the created alias
 	alias, eTag, err := r.Config.cache.GetImageAlias(r.incusName)
 	if err != nil {
-		return fmt.Errorf("fetching image alias after copy: %w", err)
+		return ErrCreate.WithText("fetching image alias after copy").Wrap(err)
 	}
 
 	r.IncusAlias = alias
@@ -299,7 +298,7 @@ func (r *Image) CopyTo(target incusClient.InstanceServer) error {
 	// Get image info from cache
 	imgInfo, _, err := r.Config.cache.GetImage(r.IncusAlias.Target)
 	if err != nil {
-		return fmt.Errorf("getting image from cache: %w", err)
+		return ErrNotFound.WithText("getting image from cache").Wrap(err)
 	}
 
 	// Copy from cache to target project
@@ -309,12 +308,12 @@ func (r *Image) CopyTo(target incusClient.InstanceServer) error {
 
 	op, err := target.CopyImage(r.Config.cache, *imgInfo, copyArgs)
 	if err != nil {
-		return fmt.Errorf("copying image to project: %w", err)
+		return ErrCreate.WithText("copying image to project").Wrap(err)
 	}
 
 	err = op.Wait()
 	if err != nil {
-		return fmt.Errorf("waiting for image copy: %w", err)
+		return ErrOperation.WithText("waiting for image copy").Wrap(err)
 	}
 
 	r.target = target

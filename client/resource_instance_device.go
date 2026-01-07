@@ -128,7 +128,7 @@ func (d *InstanceDevice) ToIncusDevice() (string, map[string]string, *Error) {
 
 func (d *InstanceDevice) toNicDevice() (map[string]string, error) {
 	if d.Config.Network == nil {
-		return map[string]string{}, errors.New("Network not given")
+		return map[string]string{}, ErrBadDeviceConfig.WithText("network not given")
 	}
 
 	device := map[string]string{
