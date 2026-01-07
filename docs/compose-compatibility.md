@@ -15,6 +15,7 @@ incus-compose implements a subset of the Compose Specification. This doc lists w
 - `networks` - Multiple networks per service
 - `ports` - Port publishing
 - `volumes` - Named volumes and bind mounts
+- `deploy.replicas` - Service scaling (instances named `{service}-{index}`)
 
 ### Networks
 
@@ -144,8 +145,7 @@ secrets:
 Not supported:
 
 - `extends` - Service extension
-- `scale` - Service scaling
-- `deploy` - Deployment configuration
+- `deploy` - Most deployment options (except `replicas`)
 - `links` - Legacy linking (use networks)
 - `external_links` - Cross-project links
 
@@ -237,6 +237,26 @@ Network names are limited to 13 chars for dhclient compatibility.
 - Volumes automatically shifted to match container's UID/GID
 - Reads `oci.uid` and `oci.gid` from image
 - Files appear with correct ownership inside container
+
+### Instance Naming
+
+Instances are named `{service}-{index}` where index starts at 1:
+
+```yaml
+services:
+  web:
+    image: docker.io/nginx:alpine
+    deploy:
+      replicas: 3
+```
+
+Creates instances: `web-1`, `web-2`, `web-3`
+
+You can also override replicas via CLI:
+
+```bash
+incus-compose up --scale web=5
+```
 
 ### Environment Variables
 

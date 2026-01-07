@@ -5,11 +5,12 @@ Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` 
 ## Quick Links
 
 - **[Getting Started](docs/getting-started.md)** - Install and run your first compose project
+- **[CLI Reference](docs/cli.md)** - Commands and options
 - **[Compose Compatibility](docs/compose-compatibility.md)** - What works and what doesn't
 - **[Architecture](docs/architecture.md)** - How it works under the hood
 - **[Why Incus?](docs/why-incus.md)** - Benefits over Docker
 
-[Full Documentation](docs/) | [Roadmap](docs/roadmap.md) | [Contributing](CONTRIBUTING.md)
+[Full Documentation](docs/) | [Contributing](CONTRIBUTING.md)
 
 ## Status
 
@@ -17,7 +18,7 @@ Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` 
 
 **What works:**
 
-- `up`, `down`, `list`, `config` commands
+- `up`, `down`, `list`, `config`, `logs` commands
 - Compose project parsing via compose-go
 - OCI image pulling from docker.io, ghcr.io, and other registries
 - Bridge networks with automatic name sanitization
@@ -28,12 +29,10 @@ Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` 
 
 **What's coming:**
 
-- Additional commands: `start`, `stop`, `restart`, `logs`, `exec`, `ps`
+- Additional commands: `start`, `stop`, `restart`, `exec`, `ps`
 - VM instance support alongside containers
 - Container image building via Podman/Docker
-- Advanced compose features (depends_on, healthchecks, etc.)
-
-See [Roadmap](docs/roadmap.md) for details.
+- Advanced compose features (healthchecks, resource limits, etc.)
 
 ## Why incus-compose?
 
@@ -99,8 +98,8 @@ EOF
 # Start services
 incus-compose up
 
-# Check configuration
-incus-compose config
+# View logs
+incus-compose logs -f
 
 # List running services
 incus-compose list
@@ -173,7 +172,7 @@ proj, _ := project.Load("compose.yaml")
 // ... see docs/architecture/client/ for full API
 ```
 
-**Note:** The library API is stabilizing but may still change. Breaking changes will be noted in release notes.
+**Note:** The library API is not yet stable and may change.
 
 See [Client Package](docs/architecture/client/) for details.
 

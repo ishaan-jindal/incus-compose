@@ -1,5 +1,6 @@
 *.local.json
 *.local.md
+.claude/commands/*
 
 # Its generated with random host only data, still no need to commit.
 /.env

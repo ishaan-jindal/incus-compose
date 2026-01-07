@@ -58,7 +58,20 @@ This will:
 incus-compose list
 ```
 
-### 4. Stop and remove
+### 4. View logs
+
+```bash
+# View logs from all services
+incus-compose logs
+
+# Follow logs in real-time
+incus-compose logs -f
+
+# View logs from specific services
+incus-compose logs web app
+```
+
+### 5. Stop and remove
 
 ```bash
 # Stop and remove containers
@@ -147,10 +160,10 @@ $ incus-compose list
 KIND      NAME                    INCUSNAME                       IMAGE                           STATUS   ADDRESSES
 image     docker.io/nginx:alpine  docker.io/library/nginx:alpine                                  Exists
 network   default                 ic-ynmt73wxwq                                                   Exists
-instance  web                     web                             docker.io/library/nginx:alpine  Running  10.149.206.30
+instance  web-1                   web-1                           docker.io/library/nginx:alpine  Running  10.149.206.30
 ```
 
-You can access containers directly: `curl http://10.0.1.42`
+You can access containers directly: `curl http://10.149.206.30`
 
 ### Port Publishing
 

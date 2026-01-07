@@ -123,3 +123,5 @@ incus-compose up
 ```
 
 **Note:** The `INCUS_COMPOSE_URL` method is mainly intended for development, testing, or nested Incus scenarios where you need to bypass the CLI configuration.
+
+See [CLI Reference](cli.md) for command options and flags.
