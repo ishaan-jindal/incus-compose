@@ -6,6 +6,7 @@ High-level Incus API wrapper with resource management and parallel execution.
 
 - [Overview](overview.md) - Core types, ResourceStore, Options, Stack
 - [API](api.md) - Detailed API reference
+- [Errors](errors.md) - Sentinel errors and automatic context enrichment
 - [Hooks](hooks.md) - Hook system details
 - [Image](image.md) - Image resource
 - [Instance](instance.md) - Instance resource
