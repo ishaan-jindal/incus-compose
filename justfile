@@ -29,9 +29,10 @@ lint folder="./...":
     golangci-lint run {{ folder }}
 
 # Update snapshot test files
-update-snapshots:
-    UPDATE_SNAPSHOTS=true go test ./...
-    CI=1 UPDATE_SNAPSHOTS=true go test ./...
+update-snapshots folder="./...":
+    go clean -testcache
+    UPDATE_SNAPSHOTS=true go test {{ folder }} || true
+    CI=1 UPDATE_SNAPSHOTS=true go test {{ folder }} || true
 
 # Dev install creates your dev environment: `just dev-install [container] [listen] [project] [image]`
 dev-install container_name="local:incus-compose-test" listen='127.0.0.1:1443' project='default' image='images:debian/trixie':
