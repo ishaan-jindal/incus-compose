@@ -23,6 +23,10 @@ const (
 type NetworkConfig struct {
 	// Type is the network type (default: "bridge").
 	Type string
+
+	// External marks the network as externally managed.
+	// External networks must already exist and won't be created or deleted.
+	External bool
 }
 
 // Network represents an Incus bridge network.
@@ -67,8 +71,12 @@ func newNetwork(c *Client, name string, configGetter Config) (*Network, error) {
 		Config:       *config,
 	}
 
-	// Generate sanitized Incus name
-	network.incusName = sanitizeNetworkName(c.project, c.Config().NetworkPrefix, name)
+	// Generate Incus name: external networks use raw name, others get sanitized
+	if config.External {
+		network.incusName = name
+	} else {
+		network.incusName = sanitizeNetworkName(c.project, c.Config().NetworkPrefix, name)
+	}
 
 	return network, nil
 }
@@ -110,6 +118,15 @@ func (r *Network) Ensure(opts ...Option) error {
 	// Try to get existing
 	err := r.get()
 	if err == nil {
+		if r.client.hookAfter != nil {
+			err = r.client.hookAfter(ActionEnsure, r, options, err)
+		}
+
+		return err
+	}
+
+	// External networks must exist - don't create them
+	if r.Config.External {
 		if r.client.hookAfter != nil {
 			err = r.client.hookAfter(ActionEnsure, r, options, err)
 		}
@@ -168,8 +185,14 @@ func (r *Network) create() error {
 }
 
 // Delete removes the network from Incus.
+// External networks are never deleted.
 func (r *Network) Delete(opts ...Option) error {
 	if !r.IsEnsured() {
+		return nil
+	}
+
+	// External networks are not managed - don't delete them
+	if r.Config.External {
 		return nil
 	}
 

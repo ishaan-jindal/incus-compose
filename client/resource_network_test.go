@@ -418,6 +418,67 @@ func (s *NetworkSuite) TestIncusName_Deterministic() {
 }
 
 // ----------------------------------------------------------------------------
+// External Network Tests
+// ----------------------------------------------------------------------------
+
+func (s *NetworkSuite) TestExternal_IncusNameIsRaw() {
+	r, err := s.client.Resource(KindNetwork, "incusbr0", &NetworkConfig{External: true})
+	s.Require().NoError(err)
+
+	network, ok := r.(*Network)
+	s.Require().True(ok)
+	s.Equal("incusbr0", network.IncusName())
+}
+
+func (s *NetworkSuite) TestExternal_EnsureFailsIfNotExists() {
+	r, err := s.client.Resource(KindNetwork, "non-existent-external", &NetworkConfig{External: true})
+	s.Require().NoError(err)
+
+	// External network ensure should fail if network doesn't exist
+	err = RunAction(r, ActionEnsure, OptionCreate())
+	s.Require().Error(err)
+	s.ErrorIs(err, ErrNotFound)
+	s.False(r.IsEnsured())
+}
+
+func (s *NetworkSuite) TestExternal_DeleteIsNoOp() {
+	// First create a real network to test with
+	r, err := s.client.Resource(KindNetwork, "test-ext-del", &NetworkConfig{})
+	s.Require().NoError(err)
+
+	err = RunAction(r, ActionEnsure, OptionCreate())
+	s.Require().NoError(err)
+	s.True(r.IsEnsured())
+
+	network, ok := r.(*Network)
+	s.Require().True(ok)
+	incusName := network.IncusName()
+
+	// Now create an external reference to it
+	extR, err := s.client.Resource(KindNetwork, incusName, &NetworkConfig{External: true})
+	s.Require().NoError(err)
+
+	err = RunAction(extR, ActionEnsure)
+	s.Require().NoError(err)
+	s.True(extR.IsEnsured())
+
+	// Delete the external reference - should be no-op
+	err = RunAction(extR, ActionDelete)
+	s.Require().NoError(err)
+
+	// Network should still exist (verify with original resource)
+	newClient, err := s.globalClient.getProject(s.projectName)
+	s.Require().NoError(err)
+
+	checkR, err := newClient.Resource(KindNetwork, "test-ext-del", &NetworkConfig{})
+	s.Require().NoError(err)
+
+	err = RunAction(checkR, ActionEnsure)
+	s.Require().NoError(err)
+	s.True(checkR.IsEnsured())
+}
+
+// ----------------------------------------------------------------------------
 // Run the suite
 // ----------------------------------------------------------------------------
 
