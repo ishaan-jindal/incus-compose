@@ -145,7 +145,6 @@ var logsCommand = &cli.Command{
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
 		follow := cmd.Bool("follow")
-		noColor := noColorFromAnsi(cmd.String("ansi"), os.Stdout.Fd())
 
 		globalClient, err := clientFromContext(ctx)
 		if err != nil {

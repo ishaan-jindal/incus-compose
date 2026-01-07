@@ -54,26 +54,10 @@ func buildLoadOptions(cmd *cli.Command) []project.LoadOption {
 	return loadOpts
 }
 
-// initLogger configures the default slog logger with color and debug settings.
-func noColorFromAnsi(ansi string, fd uintptr) bool {
-	switch ansi {
-	case "never":
-		return true
-	case "always":
-		return false
-	case "auto":
-		// Support for https://no-color.org/
-		if _, ok := os.LookupEnv("NO_COLOR"); ok {
-			return true
-		} else if runtime.GOOS != "windows" && !isatty.IsTerminal(fd) {
-			// Non-windows and no terminal.
-			return true
-		}
-	}
-	return false
-}
+// noColor is set by the --ansi flag Action based on flag value and terminal detection.
+var noColor bool
 
-func initLogger(debug bool, ansi string) {
+func initLogger(debug bool) {
 	level := slog.LevelInfo
 	if debug {
 		level = slog.LevelDebug
@@ -82,7 +66,7 @@ func initLogger(debug bool, ansi string) {
 	logger := slog.New(tint.NewHandler(
 		colorable.NewColorable(os.Stderr),
 		&tint.Options{
-			NoColor:    noColorFromAnsi(ansi, os.Stderr.Fd()),
+			NoColor:    noColor,
 			Level:      level,
 			TimeFormat: "15:04",
 		},
@@ -113,12 +97,26 @@ func main() {
 				Sources: cli.EnvVars("INCUS_REMOTE"),
 			},
 			&cli.StringFlag{
-				Name:  "ansi",
-				Usage: `Control when to print ANSI control character ("never", "always", "auto")`,
-				Value: "auto",
+				Name:    "ansi",
+				Usage:   `Control when to print ANSI control character ("never", "always", "auto")`,
+				Value:   "auto",
+				Sources: cli.EnvVars("INCUS_COMPOSE_ANSI"),
 				Action: func(ctx context.Context, cmd *cli.Command, v string) error {
-					if !slices.Contains([]string{"never", "always", "auto"}, v) {
-						return fmt.Errorf("Flag 'ansi' value %v invalid", v)
+					// NO_COLOR takes precedence (https://no-color.org/)
+					if _, ok := os.LookupEnv("NO_COLOR"); ok {
+						noColor = true
+						return nil
+					}
+					switch v {
+					case "always":
+						noColor = false
+					case "auto":
+						// Non-windows and no terminal.
+						noColor = runtime.GOOS != "windows" && !isatty.IsTerminal(os.Stderr.Fd())
+					case "never":
+						noColor = true
+					default:
+						return fmt.Errorf("flag 'ansi' value %q invalid", v)
 					}
 					return nil
 				},
@@ -164,7 +162,7 @@ func main() {
 			logsCommand,
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
-			initLogger(cmd.Bool("debug"), cmd.String("ansi"))
+			initLogger(cmd.Bool("debug"))
 
 			// Commands that don't need an Incus client connection
 			noClientCommands := []string{"config"}
