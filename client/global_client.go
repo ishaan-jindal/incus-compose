@@ -341,6 +341,12 @@ func (c *GlobalClient) LogError(msg string, args ...any) {
 	c.logger.ErrorContext(c.Ctx, msg, args...)
 }
 
+// LogDebug logs a debug message.
+// The `any` here is ok.
+func (c *GlobalClient) LogDebug(msg string, args ...any) {
+	c.logger.Log(c.Ctx, slog.LevelDebug, msg, args...)
+}
+
 // IsDebugging returns true if debug logging is enabled.
 func (c *GlobalClient) IsDebugging() bool {
 	return c.logger.Enabled(c.Ctx, slog.LevelDebug)
