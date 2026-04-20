@@ -11,7 +11,7 @@ services:
         required: true
     environment:
       NODE_ENV: development
-    image: docker.io/library/node:20-alpine
+    image: docker.io/library/node:24-alpine
     networks:
       default: null
     ports:
@@ -20,10 +20,6 @@ services:
         published: "3000"
         protocol: tcp
     volumes:
-      - type: bind
-        source: $FIXTURE_PATH/src
-        target: /app
-        bind: {}
       - type: volume
         source: node_modules
         target: /app/node_modules
@@ -34,7 +30,7 @@ services:
       POSTGRES_DB: devdb
       POSTGRES_PASSWORD: devpass
       POSTGRES_USER: devuser
-    image: docker.io/library/postgres:16-alpine
+    image: docker.io/library/postgres:18-alpine
     networks:
       default: null
     ports:

@@ -431,7 +431,7 @@ func (r *Instance) attachPostDevices() error {
 				return ErrUnsupportedAction.WithResource(volI)
 			}
 
-			if err := RunAction(volI, ActionEnsure); err != nil {
+			if err := RunAction(volI, ActionEnsure, OptionCreate()); err != nil {
 				return ErrCreate.WithText("ensuring volume").Wrap(err)
 			}
 

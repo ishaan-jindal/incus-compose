@@ -30,7 +30,7 @@ services:
     restart: unless-stopped
 
   auth-db:
-    image: docker.io/postgres:16-alpine
+    image: docker.io/postgres:18-alpine
     environment:
       POSTGRES_DB: auth
       POSTGRES_USER: auth_user

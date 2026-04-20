@@ -80,7 +80,8 @@ func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 	if !ok {
 		return nil, ErrUnknownConfig.WithKindName(KindImage, name)
 	}
-	config := cConfig
+	configCopy := *cConfig
+	config := &configCopy
 
 	// Resolve cache: CacheServer > CacheProject > default imageCache
 	if config.CacheServer != nil {

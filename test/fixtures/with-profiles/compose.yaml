@@ -33,7 +33,7 @@ services:
     shm_size: 2gb
 
   test-db:
-    image: docker.io/library/postgres:16-alpine
+    image: docker.io/library/postgres:18-alpine
     profiles:
       - test
     environment:
