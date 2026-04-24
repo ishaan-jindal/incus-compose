@@ -194,6 +194,10 @@ func (r *Instance) Ensure(opts ...Option) error {
 	if err == nil {
 		err = r.ensured(instance, eTag)
 
+		if err == nil && len(r.Config.PostDevices) > 0 {
+			err = r.attachPostDevices()
+		}
+
 		if r.client.hookAfter != nil {
 			err = r.client.hookAfter(ActionEnsure, r, options, err)
 		}
