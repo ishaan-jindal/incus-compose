@@ -60,6 +60,12 @@ incus remote add --protocol oci registry.gitlab.com https://registry.gitlab.com
 
 ### Installation
 
+Binary:
+
+https://gitlab.com/r3j0/incus-compose/-/releases
+
+Source:
+
 ```bash
 # Build from source
 git clone https://gitlab.com/r3j0/incus-compose
