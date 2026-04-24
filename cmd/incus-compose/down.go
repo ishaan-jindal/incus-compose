@@ -31,10 +31,15 @@ var downCommand = &cli.Command{
 			Usage: "Incus remote to use",
 			Value: "local",
 		},
+		&cli.BoolFlag{
+			Name:  "no-healthd",
+			Usage: "Don't stop/remove healthd sidecar",
+		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
 		deleteProject := cmd.Bool("project")
 		timeout := cmd.Int("timeout")
+		noHealthd := cmd.Bool("no-healthd")
 
 		globalClient, err := clientFromContext(ctx)
 		if err != nil {
@@ -69,6 +74,30 @@ var downCommand = &cli.Command{
 		if err != nil {
 			c.LogError("Adding the project to a stack", "error", err)
 			return errLogged
+		}
+
+		if !noHealthd {
+			services := cmd.Args().Slice()
+			if len(services) == 0 {
+				services = make([]string, 0, len(p.Services))
+				for _, n := range p.Services {
+					services = append(services, n.Name)
+				}
+			}
+
+			for _, sName := range services {
+				cSv, ok := p.Services[sName]
+				if ok && cSv.HealthCheck != nil {
+					healthd, err := c.Healthd("ic-healthd", client.HealthdConfig{})
+					if err != nil {
+						c.LogError("Getting healthd resource", "error", err)
+						return errLogged.Wrap(err)
+					}
+					stack.Add(healthd)
+					c.LogDebug("Added healthd sidecar to stack")
+					break
+				}
+			}
 		}
 
 		// defer func() {
