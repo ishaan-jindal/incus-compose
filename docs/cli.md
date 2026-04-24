@@ -12,6 +12,7 @@
 | `-E`, `--os-env`       | Include OS env vars                                    |
 | `--remote`             | Incus remote (`INCUS_REMOTE`)                          |
 | `--ansi`               | Color output: never/always/auto (`INCUS_COMPOSE_ANSI`) |
+| `INCUS_COMPOSE_IMAGE_CACHE` | Incus project for image cache (default: `default`) |
 | `--debug`              | Debug logging                                          |
 
 Supports [no-color.org](https://no-color.org/) via `NO_COLOR` env var.

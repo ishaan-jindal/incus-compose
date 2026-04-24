@@ -74,25 +74,24 @@ GlobalClient
               └── PostDevices (post-creation)
 ```
 
-## Image Caching (3-Stage Flow)
+## Image Caching (2-Stage Flow)
 
-Images go through three stages:
+Images go through two stages:
 
 1. **Remote** - OCI registry (docker.io, ghcr.io)
-2. **Cache** - Local `incus-compose-images` project
-3. **Project** - Project-scoped copy for instance use
+2. **Cache** - Incus `default` project (configurable via `INCUS_COMPOSE_IMAGE_CACHE`)
 
 ```
-Registry ──pull──> Cache ──copy──> Project ──use──> Instance
-           (slow)        (fast)
+Registry ──pull──> Cache ──use──> Instance
+           (slow)
 ```
 
 Benefits:
 
-- First pull is slow (network), subsequent runs are fast (local copy)
+- First pull is slow (network), subsequent runs are fast (local cache)
 - No registry rate limits after initial download
-- Project deletion doesn't affect cache
-- Each project gets isolated image copy
+- Cache persists across `down`/`up` cycles
+- Project deletion does not affect the cache
 
 ## Two-Phase Resource Pattern
 

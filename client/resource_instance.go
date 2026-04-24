@@ -277,13 +277,8 @@ func (r *Instance) create(opts ...Option) error {
 		return ErrUnknown.WithResource(imageResource)
 	}
 
-	// Copy image from cache to project (if not already there)
-	if err := image.CopyTo(r.client.incus); err != nil {
-		return ErrCreate.WithText("copying image to project").Wrap(err)
-	}
-
-	// Get image info from project (not cache)
-	incusImage, _, err := r.client.incus.GetImage(image.IncusAlias.Target)
+	// Get image info from cache
+	incusImage, _, err := image.Config.cache.GetImage(image.IncusAlias.Target)
 	if err != nil {
 		return ErrNotFound.WithText("getting image").Wrap(err)
 	}
@@ -305,8 +300,8 @@ func (r *Instance) create(opts ...Option) error {
 
 	options := NewOptions(opts...)
 
-	// Create instance from project-local image
-	op, err := r.client.incus.CreateInstanceFromImage(r.client.incus, *incusImage, req)
+	// Create instance from cache image
+	op, err := r.client.incus.CreateInstanceFromImage(image.Config.cache, *incusImage, req)
 	if err = r.client.hookRemoteOperation(r.client.globalClient.Ctx, ActionEnsure, r, options, op, err); err != nil {
 		return err
 	}

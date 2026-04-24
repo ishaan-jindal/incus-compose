@@ -3,7 +3,7 @@
   description: ""
   incus_name: docker.io/library/nginx:alpine
   image: ""
-  status: Exists
+  status: Cached
   addresses: []
 - kind: network
   name: default

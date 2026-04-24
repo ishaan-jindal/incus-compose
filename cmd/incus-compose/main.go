@@ -192,6 +192,11 @@ func newRootCommand() *cli.Command {
 			// Priority: INCUS_REMOTE/--remote -> INCUS_COMPOSE_URL -> "local" remote
 			remote := cmd.String("remote")
 
+			cacheProject := "default"
+			if v, ok := os.LookupEnv("INCUS_COMPOSE_IMAGE_CACHE"); ok {
+				cacheProject = v
+			}
+
 			// 1. If remote is explicitly set, use Incus CLI config
 			if remote != "" {
 				slog.Debug("Using connection", "remote", remote)
@@ -209,7 +214,7 @@ func newRootCommand() *cli.Command {
 				opts := []client.ClientOption{
 					client.ClientLogger(slog.Default()),
 					client.ClientProvideInstanceServer(server),
-					client.ClientCacheProject("incus-compose-images"),
+					client.ClientCacheProject(cacheProject),
 				}
 
 				c := client.New(ctx, opts...)
@@ -242,7 +247,7 @@ func newRootCommand() *cli.Command {
 					opts = append(opts, client.ClientTLSClientKey(key))
 				}
 
-				opts = append(opts, client.ClientCacheProject("incus-compose-images"))
+				opts = append(opts, client.ClientCacheProject(cacheProject))
 
 				c := client.New(ctx, opts...)
 				if err := c.Connect(); err != nil {
@@ -272,7 +277,7 @@ func newRootCommand() *cli.Command {
 			opts := []client.ClientOption{
 				client.ClientLogger(slog.Default()),
 				client.ClientProvideInstanceServer(server),
-				client.ClientCacheProject("incus-compose-images"),
+				client.ClientCacheProject(cacheProject),
 			}
 
 			c := client.New(ctx, opts...)

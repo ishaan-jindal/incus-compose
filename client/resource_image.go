@@ -3,7 +3,6 @@ package client
 import (
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/distribution/reference"
 	incusClient "github.com/lxc/incus/v6/client"
@@ -62,11 +61,6 @@ type Image struct {
 	// State - nil means not ensured.
 	IncusAlias *incusApi.ImageAliasesEntry
 	ETag       string
-
-	// target is the project-scoped instance server where image was copied.
-	// Delete only removes from target, not from cache.
-	target   incusClient.InstanceServer
-	targetMu sync.Mutex
 }
 
 // newImage returns an existing Image resource or creates a new one.
@@ -192,16 +186,8 @@ func (r *Image) Created() bool {
 	return r.created
 }
 
-// Status returns the image status: "Unknown", "Cached", or "Exists".
+// Status returns the image status: "Unknown" or "Cached".
 func (r *Image) Status() string {
-	// Check if image exists in project (either via CopyTo or already there)
-	if r.target != nil {
-		return "Exists"
-	}
-	// Check if image exists in project by querying Incus
-	if _, _, err := r.client.incus.GetImageAlias(r.incusName); err == nil {
-		return "Exists"
-	}
 	if r.IsEnsured() {
 		return "Cached"
 	}
@@ -314,82 +300,9 @@ func (r *Image) create(args Options) error {
 	return nil
 }
 
-// CopyTo copies image from cache to target instance server (project).
-// The target is remembered for Delete operations.
-func (r *Image) CopyTo(target incusClient.InstanceServer) error {
-	if !r.IsEnsured() {
-		return ErrNotEnsured.WithResource(r)
-	}
-
-	r.targetMu.Lock()
-	defer r.targetMu.Unlock()
-
-	if r.target != nil {
-		return nil // Already copied
-	}
-
-	// Check if image alias already exists in target project
-	_, _, err := target.GetImageAlias(r.incusName)
-	if err == nil {
-		// Already exists in target, just remember it
-		r.target = target
-		return nil
-	}
-
-	// Get image info from cache
-	imgInfo, _, err := r.Config.cache.GetImage(r.IncusAlias.Target)
-	if err != nil {
-		return ErrNotFound.WithText("getting image from cache").Wrap(err)
-	}
-
-	// Copy from cache to target project
-	copyArgs := &incusClient.ImageCopyArgs{
-		Aliases: []incusApi.ImageAlias{{Name: r.incusName}},
-	}
-
-	op, err := target.CopyImage(r.Config.cache, *imgInfo, copyArgs)
-	if err != nil {
-		return ErrCreate.WithText("copying image to project").Wrap(err)
-	}
-
-	err = op.Wait()
-	if err != nil {
-		return ErrOperation.WithText("waiting for image copy").Wrap(err)
-	}
-
-	r.target = target
-	return nil
-}
-
-// Delete removes the image from the project (target), not from cache.
+// Delete is a no-op for images. Cache images persist across down/up cycles;
+// cache cleanup is handled separately (e.g. a future prune command).
 func (r *Image) Delete(opts ...Option) error {
-	if r.target == nil {
-		return nil // Nothing copied, nothing to delete
-	}
-
-	options := NewOptions(opts...)
-
-	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ActionDelete, r, options, nil); err != nil {
-			return err
-		}
-	}
-
-	// Delete the image from target (project), not from cache
-	op, err := r.target.DeleteImage(r.IncusAlias.Target)
-
-	// Do the delete
-	err = r.client.hookOperation(r.client.globalClient.Ctx, ActionDelete, r, options, op, err)
-	if r.client.hookAfter != nil {
-		if err := r.client.hookAfter(ActionDelete, r, options, err); err != nil {
-			return err
-		}
-	} else if err != nil {
-		return err
-	}
-
-	// Clear target state, but keep IncusAlias (image still in cache)
-	r.target = nil
 	return nil
 }
 

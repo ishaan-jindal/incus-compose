@@ -343,28 +343,19 @@ func (s *ImageSuite) TestResource_DifferentNamesAreDifferent() {
 // Delete Tests
 // ----------------------------------------------------------------------------
 
-func (s *ImageSuite) TestDelete_AfterCopyTo() {
+func (s *ImageSuite) TestDelete_AfterEnsure_IsNoOp() {
 	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{
 		CliConfig: s.cliConfig,
 	})
 	s.Require().NoError(err)
 
-	// Ensure in cache
 	err = RunAction(r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 
-	// Copy to project
-	image, ok := r.(*Image)
-	s.Require().True(ok)
-	err = image.CopyTo(s.client.Connection())
-	s.Require().NoError(err)
-
-	// Delete removes from project, not cache
+	// Delete is a no-op; image stays in cache
 	err = RunAction(r, ActionDelete, OptionForce())
 	s.Require().NoError(err)
-
-	// Image is still ensured (in cache), just not in project
 	s.True(r.IsEnsured())
 }
 
@@ -490,15 +481,10 @@ func (s *ImageSuite) TestHook_DeleteAction() {
 	s.Require().NoError(err)
 	s.Equal(ActionEnsure, action)
 
-	// Must CopyTo before Delete will trigger hooks
-	image, ok := r.(*Image)
-	s.Require().True(ok)
-	err = image.CopyTo(s.client.Connection())
-	s.Require().NoError(err)
-
+	// Delete is a no-op; hook is not called
 	err = RunAction(r, ActionDelete)
 	s.Require().NoError(err)
-	s.Equal(ActionDelete, action)
+	s.Equal(ActionEnsure, action) // unchanged: Delete did not fire hook
 }
 
 // ----------------------------------------------------------------------------

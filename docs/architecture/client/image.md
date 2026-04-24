@@ -2,30 +2,29 @@
 
 The Image resource handles OCI image pulling and caching in Incus.
 
-## 3-Stage Image Flow
+## 2-Stage Image Flow
 
-Images go through three stages:
+Images go through two stages:
 
 1. **Remote** - OCI registry (docker.io, ghcr.io)
 2. **Cache** - Local image store (`incus-compose-images` project)
-3. **Project** - Project-scoped copy for instance use
+
+Instances are created directly from the cache image; no project-level copy is made.
 
 This design provides:
 
 - **Faster subsequent runs** - no re-pulling from registry
 - **No registry rate limits** - cached locally after first pull
-- **Project isolation** - each project gets its own copy
-- **Safe cleanup** - deleting project images doesn't affect cache
+- **Persistent cache** - survives `down`/`up` cycles and project deletion
 
 ## Image Status
 
 Images report their status via `Status()`:
 
-| Status  | Description                            |
-| ------- | -------------------------------------- |
-| Unknown | Not downloaded yet                     |
-| Cached  | In cache project, ready to copy        |
-| Exists  | Copied to project, ready for instances |
+| Status  | Description        |
+| ------- | ------------------ |
+| Unknown | Not downloaded yet |
+| Cached  | In cache project   |
 
 ## ImageConfig
 
@@ -150,16 +149,6 @@ copyArgs := &incusClient.ImageCopyArgs{
 op, err := config.cache.CopyImage(config.Source, *imgInfo, copyArgs)
 ```
 
-### 4. Copy to Project
-
-Before creating an instance, images are copied from cache to project:
-
-```go
-err := image.CopyTo(projectClient)
-```
-
-This is called automatically by `Instance.Ensure()`. The copy is local and fast.
-
 ## Source Configuration
 
 The Source field requires an ImageServer from Incus CLI config:
@@ -192,15 +181,11 @@ err := client.RunAction(img, client.ActionEnsure, client.OptionCreate())
 
 ## Delete
 
-Delete only removes the image from the project, not from the cache:
+Delete is a no-op. Cache images persist across `down`/`up` cycles; cache cleanup is a separate concern (e.g. a future `prune` command).
 
 ```go
-err := client.RunAction(img, client.ActionDelete, client.OptionForce())
+err := client.RunAction(img, client.ActionDelete) // no-op
 ```
-
-This preserves the cached image for future use. The cache persists across test runs.
-
-Note: `incus-compose down` does not delete images by default.
 
 ## Podman Compatibility
 
