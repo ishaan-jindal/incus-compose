@@ -173,7 +173,9 @@ func newRootCommand() *cli.Command {
 			stopCommand,
 			restartCommand,
 			listCommand,
+			psCommand,
 			configCommand,
+			execCommand,
 			logsCommand,
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
