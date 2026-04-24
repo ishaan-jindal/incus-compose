@@ -2,7 +2,6 @@ package client
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"maps"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/gosimple/slug"
@@ -739,21 +737,34 @@ func (r *Instance) log(options Options) error {
 		return nil
 	}
 
-	return r.logStream(options, outputHandler)
+	if options.Follow {
+		return r.logStream(options, outputHandler)
+	}
+
+	return r.logBuffer(outputHandler)
 }
 
-// logStream streams the console using WebSocket.
-// If options.Follow is true, it streams until context is cancelled.
-// Otherwise, it streams the current log buffer and exits after a brief timeout.
+// logBuffer reads the saved console log buffer via GET /console (equivalent to
+// `incus console --show-log`). Used for non-follow log retrieval.
+func (r *Instance) logBuffer(outputHandler func(Action, Resource, []byte)) error {
+	reader, err := r.client.incus.GetInstanceConsoleLog(r.incusName, nil)
+	if err != nil {
+		return ErrOperation.WithText("getting console log").Wrap(err)
+	}
+	defer reader.Close()
+
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return ErrOperation.WithText("reading console log").Wrap(err)
+	}
+
+	outputHandler(ActionLog, r, data)
+	return nil
+}
+
+// logStream streams the console using WebSocket until context is cancelled.
 func (r *Instance) logStream(options Options, outputHandler func(Action, Resource, []byte)) error {
 	ctx := r.client.globalClient.Ctx
-
-	// For non-follow mode, use a short timeout to exit after initial data
-	if !options.Follow {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 500*time.Millisecond)
-		defer cancel()
-	}
 
 	// Channel to signal disconnect
 	consoleDisconnect := make(chan bool)

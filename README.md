@@ -18,7 +18,7 @@ Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` 
 
 **What works:**
 
-- `up`, `down`, `list`, `config`, `logs` commands
+- `up`, `down`, `list`, `start`, `stop`, `restart`, `config`, `logs` commands
 - Compose project parsing via compose-go
 - OCI image pulling from docker.io, ghcr.io, and other registries
 - Bridge networks with automatic name sanitization
@@ -29,7 +29,7 @@ Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` 
 
 **What's coming:**
 
-- Additional commands: `start`, `stop`, `restart`, `exec`, `ps`
+- Additional commands: `exec`, `ps`
 - VM instance support alongside containers
 - Container image building via Podman/Docker
 - Advanced compose features (healthchecks, resource limits, etc.)
