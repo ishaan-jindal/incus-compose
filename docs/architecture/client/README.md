@@ -66,6 +66,8 @@ func main() {
 - [Image](image.md) - Image resource
 - [Instance](instance.md) - Instance resource
 
+See also [Architecture Overview](../../architecture.md).
+
 ## Core Types
 
 ### GlobalClient
@@ -153,27 +155,6 @@ err = stack.Run(client.ActionDelete, client.OptionForce())
 - `ForAction()` automatically determines order: `ActionEnsure`/`ActionStart` use ascending, `ActionStop`/`ActionDelete` use descending
 - `StackSortDescending()` option explicitly sets descending order for `NewStack()`
 - Unknown actions in `ForAction()` preserve the stack's existing sort order
-
-## Hooks
-
-Intercept operations for logging, validation, or abort control:
-
-```go
-project.AddHookBefore(func(action client.Action, r client.Resource, args client.Options, err error) error {
-    log.Printf("Starting %s on %s", action, r.Name())
-    if r.Name() == "blocked" {
-        return client.ErrAborted
-    }
-    return err
-})
-
-project.AddHookAfter(func(action client.Action, r client.Resource, args client.Options, err error) error {
-    if err != nil {
-        log.Printf("Failed: %v", err)
-    }
-    return err
-})
-```
 
 ## Resource Kinds
 

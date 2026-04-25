@@ -334,43 +334,7 @@ func (*StorageVolume) Delete(opts ...Option) error
 
 ## Error Handling
 
-### Sentinel Errors
-
-```go
-var (
-    ErrUnsupportedAction    = NewError("resource does not support action")
-    ErrUnknown              = NewError("unknown")
-    ErrUnknownConfig        = NewError("unknown config for resource")
-    ErrNilPointer           = NewError("found a nil pointer")
-    ErrBadDeviceConfig      = NewError("bad config for device")
-    ErrDependencyNotEnsured = NewError("dependency not ensured")
-    ErrDisconnected         = NewError("client is not connected")
-    ErrConnectionFailed     = NewError("connection failed")
-    ErrAborted              = NewError("operation aborted")
-    ErrNotFound             = NewError("resource not found")
-    ErrNotEnsured           = NewError("resource not ensured")
-    ErrImageRequired        = NewError("instances without an image are not yet supported")
-    ErrBindMountRemote      = NewError("bind mounts not supported over network connection")
-)
-```
-
-### Error Methods
-
-```go
-func NewError(text string) *Error
-
-func (*Error) WithKindName(kind Kind, name string) *Error
-func (*Error) WithText(text string) *Error
-func (*Error) WithAction(action Action) *Error
-func (*Error) WithResource(resource Resource) *Error
-func (*Error) Error() string
-func (*Error) Unwrap() error
-func (*Error) Wrap(wrapped error) *Error
-func (*Error) Is(target error) bool
-
-// Usage
-if errors.Is(err, client.ErrNotFound) { }
-```
+See [Errors](errors.md) for sentinel errors, error methods, and context enrichment.
 
 ## Usage Pattern
 

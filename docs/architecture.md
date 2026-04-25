@@ -63,7 +63,7 @@ for execution.
 
 ```
 GlobalClient
-  ├── imageCache (incus-compose-images project)
+  ├── imageCache (default project, configurable via INCUS_COMPOSE_IMAGE_CACHE)
   └── Client (project-scoped)
         ├── Profile
         ├── Image
@@ -107,65 +107,9 @@ Benefits:
    image.Ensure(OptionCreate())  // blocks, creates on server
    ```
 
-## Stack and WorkerPool
+## Stack, WorkerPool, and Hooks
 
-### Stack
-
-Collects resources for ordered execution:
-
-```go
-stack := client.NewStack(project)
-stack.Add(profile, image, network, instance)
-stack.Run(ActionEnsure, OptionCreate())
-```
-
-### WorkerPool
-
-Executes tasks in parallel:
-
-```go
-pool := client.NewWorkerPool(4)
-pool.Submit(func() error { return image1.Ensure(OptionCreate()) })
-pool.Submit(func() error { return image2.Ensure(OptionCreate()) })
-pool.Run(PoolRunArgs{FailFast: false})
-```
-
-### Resource Ordering
-
-Ordering works at two independent levels:
-
-**1. Cross-kind priority** — governs which resource types run before others.
-`Stack.ForAction` sets sort direction automatically based on the action:
-ensure/start sort ascending (low priority first), stop/delete sort descending.
-
-| Resource | Priority | Create Order | Delete Order |
-| -------- | -------- | ------------ | ------------ |
-| Project  | 256      | 1st          | Last         |
-| Profile  | 512      | 2nd          | 5th          |
-| Image    | 1024     | 3rd          | 4th          |
-| Network  | 2048     | 4th          | 3rd          |
-| Volume   | 4096     | 5th          | 2nd          |
-| Instance | 8192     | Last         | 1st          |
-
-**2. Within-kind dependency order** — governs which services of the same kind
-run before others. `ToStackReverse()` reverses the topological sort of the
-service dependency graph. Use it for teardown so dependants stop before their
-dependencies. Without it, insertion order (dependency-first) is preserved.
-
-Images in the same batch run in parallel via WorkerPool.
-
-## Hooks
-
-Before and after hooks intercept resource actions for logging, validation, and error modification:
-
-```go
-client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
-    log.Printf("Starting %s on %s", action, r.Name())
-    return err
-})
-```
-
-See [Hooks](architecture/hooks.md) for details.
+See [Client Package](architecture/client/README.md) for Stack, WorkerPool, resource ordering, and hook details.
 
 ## Name Sanitization
 
@@ -184,28 +128,7 @@ Linux interface limit (13 chars), uses hash for long names:
 
 ## Error Handling
 
-Sentinel errors with context enrichment:
-
-```go
-var (
-    ErrDisconnected       = NewError("client is not connected")
-    ErrNotEnsured         = NewError("resource not ensured")
-    ErrNotFound           = NewError("resource not found")
-    ErrBindMountRemote    = NewError("bind mounts not supported over network connection")
-    ErrDependencyNotEnsured = NewError("dependency not ensured")
-)
-
-// Usage with context
-return ErrNotFound.WithResource(r).Wrap(err)
-```
-
-Check errors with `errors.Is()`:
-
-```go
-if errors.Is(err, client.ErrNotFound) {
-    // handle not found
-}
-```
+See [Errors](architecture/client/errors.md) for sentinel errors and context enrichment.
 
 ## Connection Modes
 
@@ -229,11 +152,76 @@ client.New(ctx, client.ClientProvideConnection(instanceServer, cacheServer))
 - `.env` files can use OS variables for interpolation
 - Use `--os-env` flag for Docker Compose compatibility
 
-## Related Documentation
+## Quick Reference
 
+### Common Commands
+
+```bash
+incus-compose up                   # Start services
+incus-compose up --no-start        # Create without starting
+incus-compose up --recreate        # Recreate existing containers
+incus-compose down                 # Stop and remove
+incus-compose down --volumes       # Also remove volumes
+incus-compose list                 # List running containers
+incus-compose config --quiet       # Validate compose file
+incus-compose config               # Show resolved configuration
+incus-compose config --services    # List service names
+incus-compose config --networks    # List network names
+incus-compose config --volumes     # List volume names
+incus-compose config --environment # Show interpolation environment
+```
+
+### Common Patterns
+
+```yaml
+# Basic service
+services:
+  web:
+    image: docker.io/nginx:alpine
+    ports:
+      - "8080:80"
+
+# With dependencies
+services:
+  db:
+    image: docker.io/postgres:16-alpine
+  app:
+    image: docker.io/myapp:latest
+    depends_on:
+      - db
+
+# With named volume
+services:
+  app:
+    image: docker.io/myapp:latest
+    volumes:
+      - data:/var/lib/app
+      - ./config:/etc/app:ro
+volumes:
+  data:
+
+# With environment file
+services:
+  app:
+    image: docker.io/myapp:latest
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    env_file:
+      - .env
+```
+
+## Documentation
+
+- [Getting Started](getting-started.md) - Install and run your first project
+- [CLI Reference](cli.md) - All commands and options
+- [Compose Compatibility](compose-compatibility.md) - Supported features and differences
+- [Environment Variables](environment-variables.md) - How env vars work
+- [Why Incus?](why-incus.md) - Benefits over Docker
+- [Testing](testing.md) - Testing patterns and fixtures
 - [Client Package](architecture/client/README.md) - Resources, Stack, WorkerPool
-- [Instance Details](architecture/instance.md) - Pre/post devices, UID/GID shifting
-- [Images](architecture/images.md) - OCI image handling and caching
-- [Health Checking](architecture/healthchecking.md) - ic-healthd sidecar, config storage, restart handling
-- [Getting Started](getting-started.md) - Quick start guide
-- [Compose Compatibility](compose-compatibility.md) - Docker Compose support
+- [Health Checking](architecture/healthchecking.md) - ic-healthd sidecar
+
+## Need Help?
+
+- **Bugs/Features**: Open an issue on GitLab
+- **Questions**: Check the docs above or open a discussion

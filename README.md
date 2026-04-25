@@ -20,7 +20,7 @@ Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` 
 - **[Architecture](docs/architecture.md)** - How it works under the hood
 - **[Why Incus?](docs/why-incus.md)** - Benefits over Docker
 
-[Full Documentation](docs/) | [Contributing](CONTRIBUTING.md)
+[Full Documentation](docs/architecture.md) | [Contributing](CONTRIBUTING.md)
 
 ## Status
 
