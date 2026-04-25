@@ -9,11 +9,20 @@ incus-compose lets you run your existing `compose.yaml` files directly on Incus 
 
 ## Installation
 
+Binary:
+
+https://gitlab.com/r3j0/incus-compose/-/releases
+
+Source:
+
 ```bash
 # Build from source
+git clone https://gitlab.com/r3j0/incus-compose
+cd incus-compose
 just build
 
-# The binary will be in ./incus-compose
+# Or install directly
+go install gitlab.com/r3j0/incus-compose/cmd/incus-compose@latest
 ```
 
 ## Quick Start
@@ -148,6 +157,92 @@ services:
 ```
 
 Only variables defined in `.env` are available (not your shell environment).
+
+## Key Differences from Docker Compose
+
+### Real IP Addresses
+
+Incus gives each container a real IP on your network:
+
+```bash
+$ incus-compose list
+KIND      NAME                    INCUSNAME                       IMAGE                           STATUS   ADDRESSES
+image     docker.io/nginx:alpine  docker.io/library/nginx:alpine                                  Exists
+network   default                 ic-ynmt73wxwq                                                   Exists
+instance  web-1                   web-1                           docker.io/library/nginx:alpine  Running  10.149.206.30
+```
+
+You can access containers directly: `curl http://10.149.206.30`
+
+### Port Publishing
+
+Published ports use Incus proxy devices (not iptables NAT):
+
+```yaml
+ports:
+  - "8080:80" # Host 8080 → Container 80
+```
+
+### Volumes
+
+Named volumes are Incus custom storage volumes with automatic UID/GID shifting:
+
+```yaml
+volumes:
+  data:/app/data  # Named volume with proper permissions
+  ./local:/app    # Bind mount (local connections only)
+```
+
+Bind mounts only work with local Incus (Unix socket). For remote Incus, use named volumes.
+
+### Networks
+
+Each network becomes an Incus bridge network with deterministic naming:
+
+```yaml
+networks:
+  frontend:
+  backend:
+```
+
+Long network names are hashed to fit Linux interface limits (13 chars for dhclient compatibility).
+
+## Project Isolation
+
+Each compose project gets its own Incus project:
+
+```bash
+$ incus-compose -p myapp up
+# Creates Incus project "myapp"
+
+$ incus-compose -p testing up
+# Separate Incus project "testing"
+```
+
+Projects are isolated: separate networks, volumes, and instances.
+
+## Image Caching
+
+Images are cached in either the `default` project or project you set via the `INCUS_COMPOSE_IMAGE_CACHE` env:
+
+```bash
+$ incus project list
++----------------------+--------+----------+-----------------+-----------------+
+|         NAME         | IMAGES | PROFILES | STORAGE VOLUMES | STORAGE BUCKETS |
++----------------------+--------+----------+-----------------+-----------------+
+| default              | YES    | YES      | YES             | YES             |
+| myapp                | YES    | YES      | YES             | YES             |
++----------------------+--------+----------+-----------------+-----------------+
+```
+
+This means:
+
+- First run pulls from registry (slow)
+- Subsequent runs copy from local cache (fast)
+- No Docker Hub rate limits after initial pull
+- `incus-compose down` only removes project images, cache persists
+
+The cache project is created automatically on first use.
 
 ## Next Steps
 
