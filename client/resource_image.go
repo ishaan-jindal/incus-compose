@@ -205,13 +205,12 @@ func (r *Image) NativeIncus() bool {
 }
 
 // Ensure retrieves an existing image from cache or copies it if Create option is set.
+// With the Pull option, a cached image is refreshed from its source registry.
 func (r *Image) Ensure(opts ...Option) error {
 	args := NewOptions(opts...)
 	if r.IsEnsured() {
 		return nil
 	}
-
-	options := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
 		if err := r.client.hookBefore(ActionEnsure, r, args, nil); err != nil {
@@ -222,6 +221,10 @@ func (r *Image) Ensure(opts ...Option) error {
 	// Try to get existing image
 	err := r.get()
 	if err == nil {
+		if args.Pull {
+			err = r.refresh(args)
+		}
+
 		if r.client.hookAfter != nil {
 			err = r.client.hookAfter(ActionEnsure, r, args, err)
 		}
@@ -229,9 +232,9 @@ func (r *Image) Ensure(opts ...Option) error {
 		return err
 	}
 
-	if !options.Create {
+	if !args.Create {
 		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ActionEnsure, r, options, err)
+			err = r.client.hookAfter(ActionEnsure, r, args, err)
 		}
 
 		return err
@@ -260,6 +263,24 @@ func (r *Image) get() error {
 	r.IncusAlias = alias
 	r.ETag = eTag
 	return nil
+}
+
+// refresh forces a fresh pull of the image from its source registry.
+//
+// RefreshImage (incus image refresh) is unreliable for OCI floating tags:
+// Incus fingerprints are computed from layer digests, not manifest SHAs, so a
+// registry update that only changes manifest metadata is invisible to refresh.
+// The only reliable approach is to delete the stale cache entry and re-copy,
+// which always runs skopeo copy against the current registry state.
+func (r *Image) refresh(args Options) error {
+	op, err := r.Config.cache.DeleteImage(r.IncusAlias.Target)
+	if err = r.client.hookOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
+		return ErrCreate.WithText("deleting stale cached image for refresh").Wrap(err)
+	}
+
+	r.IncusAlias = nil
+	r.ETag = ""
+	return r.create(args)
 }
 
 func (r *Image) create(args Options) error {
@@ -300,10 +321,42 @@ func (r *Image) create(args Options) error {
 	return nil
 }
 
-// Delete is a no-op for images. Cache images persist across down/up cycles;
-// cache cleanup is handled separately (e.g. a future prune command).
+// Delete removes the per-project copy of the image from the active project.
+//
+// Projects are created with features.images=true, so creating an instance
+// copies the image into the active project. Those copies are removed here on
+// down; without it they accumulate and go stale relative to the auto-updated
+// cache (see issue #29). The cache lives in a separate project and is left
+// untouched, so cached images persist across down/up cycles.
+//
+// Delete is idempotent: a missing per-project copy is not an error.
 func (r *Image) Delete(opts ...Option) error {
-	return nil
+	options := NewOptions(opts...)
+
+	if r.client.hookBefore != nil {
+		if err := r.client.hookBefore(ActionDelete, r, options, nil); err != nil {
+			return err
+		}
+	}
+
+	// Resolve the per-project copy in the active project (not the cache). A
+	// missing alias means nothing was copied here, so there is nothing to do.
+	alias, _, err := r.client.incus.GetImageAlias(r.incusName)
+	if err != nil || alias == nil {
+		if r.client.hookAfter != nil {
+			return r.client.hookAfter(ActionDelete, r, options, nil)
+		}
+		return nil
+	}
+
+	op, err := r.client.incus.DeleteImage(alias.Target)
+	err = r.client.hookOperation(r.client.globalClient.Ctx, ActionDelete, r, options, op, err)
+
+	if r.client.hookAfter != nil {
+		return r.client.hookAfter(ActionDelete, r, options, err)
+	}
+
+	return err
 }
 
 var (

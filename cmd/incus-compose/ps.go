@@ -248,7 +248,7 @@ var psCommand = &cli.Command{
 			// Ensure stable order (sort by name)
 			slices.Sort(services)
 			for _, s := range services {
-				fmt.Fprintln(w, s)
+				_, _ = fmt.Fprintln(w, s)
 			}
 			return nil
 		}
@@ -256,7 +256,7 @@ var psCommand = &cli.Command{
 		// If quiet: print Incus instance names only
 		if cmd.Bool("quiet") {
 			for _, e := range entries {
-				fmt.Fprintln(w, e.IncusName)
+				_, _ = fmt.Fprintln(w, e.IncusName)
 			}
 			return nil
 		}

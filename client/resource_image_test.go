@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	incusClient "github.com/lxc/incus/v6/client"
+	incusApi "github.com/lxc/incus/v6/shared/api"
 	"github.com/lxc/incus/v6/shared/cliconfig"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
@@ -343,7 +345,7 @@ func (s *ImageSuite) TestResource_DifferentNamesAreDifferent() {
 // Delete Tests
 // ----------------------------------------------------------------------------
 
-func (s *ImageSuite) TestDelete_AfterEnsure_IsNoOp() {
+func (s *ImageSuite) TestDelete_NoProjectCopy_LeavesCacheIntact() {
 	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{
 		CliConfig: s.cliConfig,
 	})
@@ -353,10 +355,88 @@ func (s *ImageSuite) TestDelete_AfterEnsure_IsNoOp() {
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 
-	// Delete is a no-op; image stays in cache
+	image, ok := r.(*Image)
+	s.Require().True(ok)
+
+	// No per-project copy exists (no instance was created), so Delete is a no-op
+	// and must not touch the cache.
 	err = RunAction(r, ActionDelete, OptionForce())
 	s.Require().NoError(err)
-	s.True(r.IsEnsured())
+
+	cacheAlias, _, err := image.Config.cache.GetImageAlias(image.IncusName())
+	s.Require().NoError(err)
+	s.NotNil(cacheAlias, "cache image must survive Delete")
+}
+
+func (s *ImageSuite) TestDelete_RemovesProjectCopy() {
+	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{
+		CliConfig: s.cliConfig,
+	})
+	s.Require().NoError(err)
+
+	err = RunAction(r, ActionEnsure, OptionCreate())
+	s.Require().NoError(err)
+
+	image, ok := r.(*Image)
+	s.Require().True(ok)
+
+	// Simulate the per-project copy that CreateInstanceFromImage leaves behind:
+	// copy the cached image into the active project under the same alias.
+	cacheImage, _, err := image.Config.cache.GetImage(image.IncusAlias.Target)
+	s.Require().NoError(err)
+
+	op, err := s.client.Connection().CopyImage(image.Config.cache, *cacheImage, &incusClient.ImageCopyArgs{
+		Aliases: []incusApi.ImageAlias{{Name: image.IncusName()}},
+		Mode:    "pull",
+	})
+	s.Require().NoError(err)
+	s.Require().NoError(op.Wait())
+
+	alias, _, err := s.client.Connection().GetImageAlias(image.IncusName())
+	s.Require().NoError(err)
+	s.Require().NotNil(alias, "per-project copy should exist before Delete")
+
+	// Delete removes the per-project copy but keeps the cache.
+	err = RunAction(r, ActionDelete, OptionForce())
+	s.Require().NoError(err)
+
+	alias, _, _ = s.client.Connection().GetImageAlias(image.IncusName())
+	s.Nil(alias, "per-project copy should be gone after Delete")
+
+	cacheAlias, _, err := image.Config.cache.GetImageAlias(image.IncusName())
+	s.Require().NoError(err)
+	s.NotNil(cacheAlias, "cache image must survive Delete")
+}
+
+func (s *ImageSuite) TestEnsure_Pull_DeletesAndRecopies() {
+	// Seed the cache with a pinned image.
+	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:1.37", &ImageConfig{
+		CliConfig: s.cliConfig,
+	})
+	s.Require().NoError(err)
+
+	err = RunAction(r, ActionEnsure, OptionCreate())
+	s.Require().NoError(err)
+
+	// Use a fresh client so the resource store is empty and Ensure doesn't
+	// short-circuit on the already-ensured resource.
+	freshClient, err := s.globalClient.getProject(s.projectName)
+	s.Require().NoError(err)
+
+	r2, err := freshClient.Resource(KindImage, "docker.io/library/busybox:1.37", &ImageConfig{
+		CliConfig: s.cliConfig,
+	})
+	s.Require().NoError(err)
+
+	// Pull: old cache entry is deleted and re-copied from the registry.
+	err = RunAction(r2, ActionEnsure, OptionCreate(), OptionPull())
+	s.Require().NoError(err)
+	s.True(r2.IsEnsured())
+
+	image2, ok := r2.(*Image)
+	s.Require().True(ok)
+	s.True(image2.Created(), "image should be re-created (delete+recopy) on pull")
+	s.cleanup = append(s.cleanup, r2)
 }
 
 func (s *ImageSuite) TestDelete_NotEnsured_NoError() {
@@ -481,10 +561,10 @@ func (s *ImageSuite) TestHook_DeleteAction() {
 	s.Require().NoError(err)
 	s.Equal(ActionEnsure, action)
 
-	// Delete is a no-op; hook is not called
+	// Delete fires the before hook (it removes any per-project copy).
 	err = RunAction(r, ActionDelete)
 	s.Require().NoError(err)
-	s.Equal(ActionEnsure, action) // unchanged: Delete did not fire hook
+	s.Equal(ActionDelete, action)
 }
 
 // ----------------------------------------------------------------------------

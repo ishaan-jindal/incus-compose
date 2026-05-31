@@ -9,7 +9,10 @@ Images go through two stages:
 1. **Remote** - OCI registry (docker.io, ghcr.io)
 2. **Cache** - Local image store (`incus-compose-images` project)
 
-Instances are created directly from the cache image; no project-level copy is made.
+Projects are created with `features.images=true`, so each project keeps its own
+image store. Creating an instance copies the image from the cache into the
+active project. These per-project copies are removed on `down` (see
+[Delete](#delete)); the cache itself lives in a separate project and persists.
 
 This design provides:
 
@@ -181,11 +184,26 @@ err := client.RunAction(img, client.ActionEnsure, client.OptionCreate())
 
 ## Delete
 
-Delete is a no-op. Cache images persist across `down`/`up` cycles; cache cleanup is a separate concern (e.g. a future `prune` command).
+Delete removes the **per-project copy** of the image from the active project (the
+copy left behind by `CreateInstanceFromImage`). It is idempotent: if no copy
+exists, it is a no-op. The cache lives in a separate project and is never touched
+by Delete, so cached images persist across `down`/`up` cycles. Cache cleanup is a
+separate concern (e.g. a future `prune` command).
 
 ```go
-err := client.RunAction(img, client.ActionDelete) // no-op
+err := client.RunAction(img, client.ActionDelete) // removes active-project copy, keeps cache
 ```
+
+## Refresh (`--pull`)
+
+`up --pull` (and `redeploy`) force a fresh pull from the source registry before
+creating instances. When the cached alias already exists, `Ensure` with the `Pull`
+option deletes the stale cache entry and re-copies from the OCI source (via
+`skopeo copy`). This is more reliable than `RefreshImage`: Incus fingerprints OCI
+images by hashing layer digest strings, not manifest SHAs, so a registry update
+that only changes manifest metadata would be invisible to `RefreshImage`
+("already up to date") even though the tag points to a newer image. Without
+`--pull`, an already-cached image is reused as-is.
 
 ## Podman Compatibility
 

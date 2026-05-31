@@ -38,7 +38,6 @@ var downCommand = &cli.Command{
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
 		deleteProject := cmd.Bool("project")
-		timeout := cmd.Int("timeout")
 		noHealthd := cmd.Bool("no-healthd")
 
 		globalClient, err := clientFromContext(ctx)
@@ -69,73 +68,93 @@ var downCommand = &cli.Command{
 			return nil
 		}
 
-		stack := client.NewStack(c)
-		err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackReverse())
-		if err != nil {
-			c.LogError("Adding the project to a stack", "error", err)
-			return errLogged
-		}
-
-		if !noHealthd {
-			services := cmd.Args().Slice()
-			if len(services) == 0 {
-				services = make([]string, 0, len(p.Services))
-				for _, n := range p.Services {
-					services = append(services, n.Name)
-				}
-			}
-
-			for _, sName := range services {
-				cSv, ok := p.Services[sName]
-				if ok && cSv.HealthCheck != nil {
-					healthd, err := c.Healthd("ic-healthd", client.HealthdConfig{})
-					if err != nil {
-						c.LogError("Getting healthd resource", "error", err)
-						return errLogged.Wrap(err)
-					}
-					stack.Add(healthd)
-					c.LogDebug("Added healthd sidecar to stack")
-					break
-				}
-			}
-		}
-
-		// defer func() {
-		// 	if c.Errors() != nil {
-		// 		c.Logger().ErrorContext(c.Ctx, "Error(s) during up", "error", c.Errors())
-		// 		if c.IsDebugging() {
-		// 			c.Logger().WarnContext(c.Ctx, "Wont rollback in debug")
-		// 		} else {
-		// 			err := c.Rollback(0)
-		// 			if err != nil {
-		// 				c.Logger().ErrorContext(c.Ctx, "During rollback", "error", err)
-		// 			}
-		// 		}
-		// 	}
-		// }()
-		//
-
-		var errs error
-		if err := stack.Run(client.ActionEnsure); err != nil {
-			c.LogError("Getting resources", "error", err)
-			errs = errors.Join(errs, err)
-		}
-
-		if err := stack.ForAction(client.ActionStop).Run(client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
-			c.LogWarn("Stopping resources", "error", err)
-			errs = errors.Join(errs, err)
-		}
-
-		if err := stack.ForAction(client.ActionDelete).Run(client.ActionDelete, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
-			c.LogWarn("Deleting resources", "error", err)
-			errs = errors.Join(errs, err)
-		}
-
-		if errs != nil {
-			return errLogged.Wrap(errs)
-		}
-
-		c.LogDebug("All done")
-		return nil
+		return runDown(globalClient, c, p, downParams{
+			services:  cmd.Args().Slice(),
+			timeout:   int(cmd.Int("timeout")),
+			noHealthd: noHealthd,
+		})
 	},
+}
+
+// downParams holds the parsed arguments for a down run.
+// services is the raw service filter (empty means all services).
+type downParams struct {
+	services  []string
+	timeout   int
+	noHealthd bool
+}
+
+// runDown stops and removes the instances of a loaded project, along with their
+// per-project image copies. Volumes and the image cache are left untouched.
+func runDown(globalClient *client.GlobalClient, c *client.Client, p *project.Project, params downParams) error {
+	stack := client.NewStack(c)
+	if err := p.ToStack(c, stack, project.ToStackOnlyServices(params.services), project.ToStackReverse()); err != nil {
+		c.LogError("Adding the project to a stack", "error", err)
+		return errLogged
+	}
+
+	services := params.services
+	if len(services) == 0 {
+		services = make([]string, 0, len(p.Services))
+		for _, n := range p.Services {
+			services = append(services, n.Name)
+		}
+	}
+
+	// Remove the per-project image copies so the next up re-copies fresh from
+	// the (possibly auto-updated) cache. Cache images live in a separate project
+	// and are not affected. See issue #29.
+	imageConfig := &client.ImageConfig{CliConfig: globalClient.CliConfig()}
+	for _, sName := range services {
+		cSv, ok := p.Services[sName]
+		if !ok || cSv.Image == "" {
+			continue
+		}
+
+		image, err := c.Resource(client.KindImage, cSv.Image, imageConfig)
+		if err != nil {
+			c.LogWarn("Getting image", "service", cSv.Name, "image", cSv.Image, "error", err)
+			continue
+		}
+		stack.Add(image)
+	}
+
+	if !params.noHealthd {
+		for _, sName := range services {
+			cSv, ok := p.Services[sName]
+			if ok && cSv.HealthCheck != nil {
+				healthd, err := c.Healthd("ic-healthd", client.HealthdConfig{})
+				if err != nil {
+					c.LogError("Getting healthd resource", "error", err)
+					return errLogged.Wrap(err)
+				}
+				stack.Add(healthd)
+				c.LogDebug("Added healthd sidecar to stack")
+				break
+			}
+		}
+	}
+
+	var errs error
+	if err := stack.Run(client.ActionEnsure); err != nil {
+		c.LogError("Getting resources", "error", err)
+		errs = errors.Join(errs, err)
+	}
+
+	if err := stack.ForAction(client.ActionStop).Run(client.ActionStop, client.OptionForce(), client.OptionTimeout(params.timeout)); err != nil {
+		c.LogWarn("Stopping resources", "error", err)
+		errs = errors.Join(errs, err)
+	}
+
+	if err := stack.ForAction(client.ActionDelete).Run(client.ActionDelete, client.OptionForce(), client.OptionTimeout(params.timeout)); err != nil {
+		c.LogWarn("Deleting resources", "error", err)
+		errs = errors.Join(errs, err)
+	}
+
+	if errs != nil {
+		return errLogged.Wrap(errs)
+	}
+
+	c.LogDebug("All done")
+	return nil
 }

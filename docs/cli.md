@@ -29,6 +29,7 @@ incus-compose up [SERVICE...]
 | ------------------ | ----------------------------------------------------------------------- |
 | `--recreate`       | Recreate containers even if they exist                                  |
 | `--no-start`       | Don't start containers after creating                                   |
+| `--pull`           | Refresh cached images from their source registry before creating        |
 | `--timeout`        | Stop/start timeout seconds (default: 10)                                |
 | `--scale`          | Scale service: `web=3` (repeatable)                                     |
 | `--no-healthd`     | Don't create healthd sidecar for healthchecks                           |
@@ -36,7 +37,8 @@ incus-compose up [SERVICE...]
 
 ## down
 
-Stop and remove containers.
+Stop and remove containers. Per-project image copies are removed too; volumes and
+the image cache are kept (use `--project` to remove everything, including volumes).
 
 ```
 incus-compose down [SERVICE...]
@@ -44,9 +46,27 @@ incus-compose down [SERVICE...]
 
 | Option         | Description                        |
 | -------------- | ---------------------------------- |
-| `--project`    | Remove the project                 |
+| `--project`    | Remove the project (and volumes)   |
 | `--timeout`    | Stop timeout seconds (default: 10) |
 | `--no-healthd` | Don't stop/remove healthd sidecar  |
+
+## redeploy
+
+Recreate containers with refreshed images, in one shot: `down` (keeping volumes
+and the image cache) followed by `up --pull`. Use this to roll out an updated
+image.
+
+```
+incus-compose redeploy [SERVICE...]
+```
+
+| Option             | Description                                                             |
+| ------------------ | ----------------------------------------------------------------------- |
+| `--no-start`       | Don't start containers after creating                                   |
+| `--timeout`        | Stop/start timeout seconds (default: 10)                                |
+| `--scale`          | Scale service: `web=3` (repeatable)                                     |
+| `--no-healthd`     | Don't recreate healthd sidecar for healthchecks                         |
+| `--healthd-binary` | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image) |
 
 ## start
 

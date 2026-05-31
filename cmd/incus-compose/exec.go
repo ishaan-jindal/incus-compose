@@ -205,7 +205,7 @@ var execCommand = &cli.Command{
 			if out == nil {
 				out = os.Stdout
 			}
-			fmt.Fprintf(out, "DRY-RUN: would exec on %s (%s): %v\n", inst.Name(), inst.IncusName(), execCommand)
+			_, _ = fmt.Fprintf(out, "DRY-RUN: would exec on %s (%s): %v\n", inst.Name(), inst.IncusName(), execCommand)
 			return nil
 		}
 
@@ -292,7 +292,7 @@ var execCommand = &cli.Command{
 			if out == nil {
 				out = os.Stdout
 			}
-			fmt.Fprintf(out, "Detached exec started on %s\n", inst.Name())
+			_, _ = fmt.Fprintf(out, "Detached exec started on %s\n", inst.Name())
 			return nil
 		}
 

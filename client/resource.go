@@ -31,6 +31,9 @@ type Options struct {
 
 	// Follow enables continuous streaming (for ActionLog).
 	Follow bool
+
+	// Pull forces cached images to refresh from their source registry (for ActionEnsure).
+	Pull bool
 }
 
 // Option configures action arguments.
@@ -61,6 +64,13 @@ func OptionTimeout(t int) Option {
 func OptionFollow() Option {
 	return func(o *Options) {
 		o.Follow = true
+	}
+}
+
+// OptionPull forces cached images to refresh from their source registry (for ActionEnsure).
+func OptionPull() Option {
+	return func(o *Options) {
+		o.Pull = true
 	}
 }
 
