@@ -428,6 +428,12 @@ func (r *Instance) attachPostDevices() error {
 				return ErrUnsupportedAction.WithResource(volI)
 			}
 
+			// Override cached config — the resource may have been registered earlier with
+			// empty UID/GID before oci.uid/oci.gid were known.
+			vol.Config.Shifted = true
+			vol.Config.UID = r.UID
+			vol.Config.GID = r.GID
+
 			if err := RunAction(volI, ActionEnsure, OptionCreate()); err != nil {
 				return ErrCreate.WithText("ensuring volume").Wrap(err)
 			}
