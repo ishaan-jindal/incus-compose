@@ -281,6 +281,12 @@ func (r *Instance) create(opts ...Option) error {
 		return ErrUnknown.WithResource(imageResource)
 	}
 
+	// The image must have been ensured first. If its Ensure failed (e.g. the
+	// pull errored), IncusAlias is nil; fail cleanly instead of dereferencing it.
+	if !image.IsEnsured() {
+		return ErrDependencyNotEnsured.WithResource(image)
+	}
+
 	// Get image info from cache
 	incusImage, _, err := image.Config.cache.GetImage(image.IncusAlias.Target)
 	if err != nil {
