@@ -13,7 +13,7 @@ CLIENT_CERT=""
 # Default values
 CONTAINER_NAME="incus-compose-test"
 IMAGE="images:debian/trixie"
-INCUS_REPO="stable" # stable or lts
+INCUS_REPO="stable" # stable, lts-6.0, lts-7.0, daily
 FORCE="false"
 STORAGE_POOL="default"
 LISTEN=""
@@ -23,7 +23,7 @@ CONTAINER_CREATED="false"
 
 cleanup() {
     local rc=$?
-    if [[ "${CONTAINER_CREATED}" == "true" && "${FORCE}" == "true" ]]; then
+    if [[ $rc != 0 ]] && [[ "${CONTAINER_CREATED}" == "true" || "${FORCE}" == "true" ]]; then
         echo "Cleaning up created container ${CONTAINER_NAME} due to error (exit ${rc})..."
         incus delete --force "${CONTAINER_NAME}" >/dev/null 2>&1 || true
     fi
@@ -45,7 +45,7 @@ OPTIONS:
 -n NAME         Container name (default: ${CONTAINER_NAME})
                 Note: Dots will be replaced with hyphens (DNS-safe)
 -i IMAGE        Base image (default: ${IMAGE})
--r REPO         Incus repository: stable or lts (default: ${INCUS_REPO})
+-r REPO         Incus repository: stable, lts-6.0, lts-7.0, daily (default: ${INCUS_REPO})
 -l ADDRESS      Add port proxy (example: 127.0.0.1:2443) (default: "")
 -f              Force delete any existing container (default: false)
 -h              Show this help message
@@ -125,8 +125,14 @@ case "${INCUS_REPO}" in
 stable)
     REPO_URL="https://pkgs.zabbly.com/incus/stable"
     ;;
-lts)
+lts-6.0)
     REPO_URL="https://pkgs.zabbly.com/incus/lts-6.0"
+    ;;
+lts-7.0)
+    REPO_URL="https://pkgs.zabbly.com/incus/lts-7.0"
+    ;;
+daily)
+    REPO_URL="https://pkgs.zabbly.com/incus/daily"
     ;;
 *)
     echo "Error: Unknown repository '${INCUS_REPO}'" >&2

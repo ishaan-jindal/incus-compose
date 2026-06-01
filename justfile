@@ -77,8 +77,12 @@ build-healthd:
     CGO_ENABLED=0 go build -tags=netgo -ldflags="-w -s" -trimpath -o bin/ic-healthd ./cmd/ic-healthd
 
 # Build ic-healthd container image
-build-healthd-image tag="registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest":
-    docker build -t {{ tag }} -f cmd/ic-healthd/Dockerfile .
+build-healthd-image tag="registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest": build-healthd
+    podman build -t {{ tag }} -f cmd/ic-healthd/Dockerfile .
+
+release healthd_tag="registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest": build build-healthd-image
+    podman push  -t {{ healthd_tag }}
+    goreleaser release
 
 # Run with local healthd binary (for testing without an explicit OCI image) (ex. just run-healthd -f test/healthd/debug/compose.yaml up )
 run-healthd *args:
