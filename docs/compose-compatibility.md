@@ -22,7 +22,7 @@ incus-compose implements a subset of the Compose Specification. This doc lists w
 
 - Bridge networks (Incus default)
 - Network isolation between services
-- DNS resolution by service name
+- DNS resolution by service name and by instance name
 - External networks (pre-existing Incus networks)
 
 Not supported:
@@ -296,6 +296,22 @@ You can also override replicas via CLI:
 ```bash
 incus-compose up --scale web=5
 ```
+
+### DNS Resolution
+
+After `up`, both the **service name** and the **instance name** resolve inside containers:
+
+```
+database    → round-robins across all database instances (A/AAAA records)
+database-1  → specific instance (registered by Incus dnsmasq)
+```
+
+This matches Docker Compose behavior. No configuration is required — records are
+written automatically to the project bridge network's `raw.dnsmasq` and updated
+whenever the scale changes.
+
+**Note:** Setting `raw.dnsmasq` on the bridge disables AppArmor for the dnsmasq
+process (not for containers). dnsmasq still runs as an unprivileged user.
 
 ### Environment Variables
 
