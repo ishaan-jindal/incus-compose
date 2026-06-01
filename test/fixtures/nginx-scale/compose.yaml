@@ -2,4 +2,7 @@ services:
   web:
     image: docker.io/nginx:alpine
     deploy:
-      replicas: 3
+      replicas: 2
+
+  web2:
+    image: docker.io/nginx:alpine
