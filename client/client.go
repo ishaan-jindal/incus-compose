@@ -32,6 +32,12 @@ type Client struct {
 
 	hookOperation       func(ctx context.Context, action Action, r Resource, args Options, op incusClient.Operation, err error) error
 	hookRemoteOperation func(ctx context.Context, action Action, r Resource, args Options, op incusClient.RemoteOperation, err error) error
+
+	// hookConnected is called once when the client is ready, before any action.
+	hookConnected func(err error) error
+
+	// hookDisconnecting is called once before the client is discarded, for cleanup.
+	hookDisconnecting func(err error) error
 }
 
 func (c *GlobalClient) newClientProject(name, incusName string, created bool) (*Client, error) {
@@ -55,6 +61,9 @@ func (c *GlobalClient) newClientProject(name, incusName string, created bool) (*
 
 		hookOperation:       c.hookOperation,
 		hookRemoteOperation: c.hookRemoteOperation,
+
+		hookConnected:     func(err error) error { return err },
+		hookDisconnecting: func(err error) error { return err },
 	}
 
 	if c.IsDebugging() {
@@ -62,6 +71,7 @@ func (c *GlobalClient) newClientProject(name, incusName string, created bool) (*
 	}
 
 	c.projects = append(c.projects, cp)
+
 	return cp, nil
 }
 
@@ -175,6 +185,44 @@ func (c *Client) AddHookAfter(hook func(action Action, r Resource, args Options,
 	}
 
 	c.hookAfter = newHook
+}
+
+// AddHookConnected adds a hook that will be executed when the client connects (FIFO order).
+func (c *Client) AddHookConnected(hook func(err error) error) {
+	prevHook := c.hookConnected
+	newHook := func(err error) error {
+		// Run previous hooks FIRST (FIFO)
+		if err := prevHook(err); err != nil {
+			return err
+		}
+		// Then run the new hook
+		return hook(nil)
+	}
+
+	c.hookConnected = newHook
+}
+
+// AddHookDisconnecting adds a hook that will be executed before the client disconnects (LIFO order).
+func (c *Client) AddHookDisconnecting(hook func(err error) error) {
+	prevHook := c.hookDisconnecting
+	newHook := func(err error) error {
+		// Run new hook FIRST, then pass result to previous hooks (LIFO)
+		err = hook(err)
+		return prevHook(err)
+	}
+
+	c.hookDisconnecting = newHook
+}
+
+// Open fires the connected hooks. Call once after registering all hooks,
+// before running any stack actions.
+func (c *Client) Open() error {
+	return c.hookConnected(nil)
+}
+
+// Close fires the disconnecting hooks. Call before discarding the client.
+func (c *Client) Close() error {
+	return c.hookDisconnecting(nil)
 }
 
 // sanitizeProjectName converts a string to a valid Incus project name.
