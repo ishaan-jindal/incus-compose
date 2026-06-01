@@ -79,6 +79,46 @@ func TestNetworkNameForProject(t *testing.T) {
 	assert.NotEqual(t, p1n1, p2n1, "Same name different projects should give different names")
 }
 
+func TestDNSmasqRecords(t *testing.T) {
+	tests := []struct {
+		name       string
+		serviceIPs map[string][]string
+		expected   string
+	}{
+		{
+			name:       "empty",
+			serviceIPs: map[string][]string{},
+			expected:   "",
+		},
+		{
+			name:       "single service single ip",
+			serviceIPs: map[string][]string{"database": {"10.0.0.2"}},
+			expected:   "address=/database/10.0.0.2\n",
+		},
+		{
+			name:       "single service round-robin",
+			serviceIPs: map[string][]string{"web": {"10.0.0.3", "10.0.0.4"}},
+			expected:   "address=/web/10.0.0.3\naddress=/web/10.0.0.4\n",
+		},
+		{
+			name:       "multiple services sorted",
+			serviceIPs: map[string][]string{"web": {"10.0.0.3"}, "app": {"10.0.0.5"}},
+			expected:   "address=/app/10.0.0.5\naddress=/web/10.0.0.3\n",
+		},
+		{
+			name:       "dual stack",
+			serviceIPs: map[string][]string{"db": {"10.0.0.2", "fd42::2"}},
+			expected:   "address=/db/10.0.0.2\naddress=/db/fd42::2\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, dnsmasqRecords(tt.serviceIPs))
+		})
+	}
+}
+
 // ----------------------------------------------------------------------------
 // Integration Tests
 // ----------------------------------------------------------------------------
@@ -476,6 +516,61 @@ func (s *NetworkSuite) TestExternal_DeleteIsNoOp() {
 	err = RunAction(checkR, ActionEnsure)
 	s.Require().NoError(err)
 	s.True(checkR.IsEnsured())
+}
+
+// ----------------------------------------------------------------------------
+// DNS Alias Tests
+// ----------------------------------------------------------------------------
+
+func (s *NetworkSuite) TestUpdateDNSAliases_SetsRawDnsmasq() {
+	r, err := s.client.Resource(KindNetwork, "test-dns", &NetworkConfig{})
+	s.Require().NoError(err)
+
+	err = RunAction(r, ActionEnsure, OptionCreate())
+	s.Require().NoError(err)
+
+	network, ok := r.(*Network)
+	s.Require().True(ok)
+
+	err = network.UpdateDNSAliases(map[string][]string{"database": {"10.0.0.2"}})
+	s.Require().NoError(err)
+
+	// Re-fetch from a fresh client to confirm it persisted.
+	newClient, err := s.globalClient.getProject(s.projectName)
+	s.Require().NoError(err)
+
+	check, err := newClient.Resource(KindNetwork, "test-dns", &NetworkConfig{})
+	s.Require().NoError(err)
+	err = RunAction(check, ActionEnsure)
+	s.Require().NoError(err)
+
+	checkNet, ok := check.(*Network)
+	s.Require().True(ok)
+	s.Equal("address=/database/10.0.0.2\n", checkNet.IncusNetwork.Config["raw.dnsmasq"])
+}
+
+func (s *NetworkSuite) TestUpdateDNSAliases_ExternalIsNoOp() {
+	r, err := s.client.Resource(KindNetwork, "test-ext-dns", &NetworkConfig{})
+	s.Require().NoError(err)
+	err = RunAction(r, ActionEnsure, OptionCreate())
+	s.Require().NoError(err)
+
+	network, ok := r.(*Network)
+	s.Require().True(ok)
+	incusName := network.IncusName()
+
+	extR, err := s.client.Resource(KindNetwork, incusName, &NetworkConfig{External: true})
+	s.Require().NoError(err)
+	err = RunAction(extR, ActionEnsure)
+	s.Require().NoError(err)
+
+	extNet, ok := extR.(*Network)
+	s.Require().True(ok)
+
+	// External networks are not managed - update must be a no-op.
+	err = extNet.UpdateDNSAliases(map[string][]string{"database": {"10.0.0.2"}})
+	s.Require().NoError(err)
+	s.Empty(extNet.IncusNetwork.Config["raw.dnsmasq"])
 }
 
 // ----------------------------------------------------------------------------

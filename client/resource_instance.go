@@ -9,6 +9,7 @@ import (
 	"maps"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/gosimple/slug"
@@ -167,6 +168,45 @@ func (r *Instance) IsEnsured() bool {
 // Created returns true if the instance was created during the last Ensure call.
 func (r *Instance) Created() bool {
 	return r.created
+}
+
+// ServiceName returns the compose service name by stripping the trailing
+// "-{index}" from the instance name ("database-1" -> "database").
+func (r *Instance) ServiceName() string {
+	return serviceName(r.name)
+}
+
+// IPs returns the instance's global IPv4 and IPv6 addresses, read from its
+// current state. Loopback and non-global addresses are excluded.
+func (r *Instance) IPs() (ipv4 []string, ipv6 []string, err error) {
+	state, _, err := r.client.incus.GetInstanceState(r.incusName)
+	if err != nil {
+		return nil, nil, err
+	}
+	return extractIPs(state), extractIPv6(state), nil
+}
+
+// WaitIPs polls the instance state until it reports at least one global address
+// or the timeout elapses. A freshly started container may not have its DHCP
+// lease yet, so this gives it time. On timeout it returns whatever was found
+// (possibly empty).
+func (r *Instance) WaitIPs(timeout time.Duration) (ipv4 []string, ipv6 []string, err error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		ipv4, ipv6, err = r.IPs()
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(ipv4) > 0 || len(ipv6) > 0 || time.Now().After(deadline) {
+			return ipv4, ipv6, nil
+		}
+
+		select {
+		case <-r.client.globalClient.Ctx.Done():
+			return ipv4, ipv6, r.client.globalClient.Ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
 }
 
 // HasFull returns true if the instance has a full instance.

@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/base32"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	incusApi "github.com/lxc/incus/v6/shared/api"
@@ -217,6 +219,52 @@ func (r *Network) Delete(opts ...Option) error {
 	r.IncusNetwork = nil
 	r.ETag = ""
 	return nil
+}
+
+// UpdateDNSAliases rewrites the network's raw.dnsmasq with an "address" record
+// per service IP, so each service name resolves to its instance addresses
+// (round-robin when scaled). External and unensured networks are skipped.
+// Setting raw.dnsmasq disables AppArmor for the dnsmasq process (not containers).
+// The update is idempotent: if the resulting config is unchanged, dnsmasq is not
+// restarted.
+func (r *Network) UpdateDNSAliases(serviceIPs map[string][]string) error {
+	if r.Config.External || !r.IsEnsured() {
+		return nil
+	}
+
+	raw := dnsmasqRecords(serviceIPs)
+
+	if r.IncusNetwork.Config["raw.dnsmasq"] == raw {
+		return nil // No change - avoid restarting dnsmasq.
+	}
+
+	put := r.IncusNetwork.Writable()
+	if put.Config == nil {
+		put.Config = map[string]string{}
+	}
+	if raw == "" {
+		delete(put.Config, "raw.dnsmasq")
+	} else {
+		put.Config["raw.dnsmasq"] = raw
+	}
+
+	if err := r.client.incus.UpdateNetwork(r.incusName, put, r.ETag); err != nil {
+		return fmt.Errorf("updating dnsmasq records for network %q: %w", r.Name(), err)
+	}
+
+	return nil
+}
+
+// dnsmasqRecords builds the raw.dnsmasq content: one "address" record per
+// service IP, sorted by service name for deterministic output.
+func dnsmasqRecords(serviceIPs map[string][]string) string {
+	var b strings.Builder
+	for _, service := range slices.Sorted(maps.Keys(serviceIPs)) {
+		for _, ip := range serviceIPs[service] {
+			fmt.Fprintf(&b, "address=/%s/%s\n", service, ip)
+		}
+	}
+	return b.String()
 }
 
 var (

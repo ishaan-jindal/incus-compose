@@ -65,6 +65,27 @@ func (s *InstanceSecretSuite) TestInstanceConfig_WithSecrets() {
 	s.Equal("/custom/path", config.Secrets[1].Target)
 }
 
+func TestServiceName(t *testing.T) {
+	tests := []struct {
+		name     string
+		instance string
+		expected string
+	}{
+		{name: "simple", instance: "database-1", expected: "database"},
+		{name: "higher index", instance: "web-12", expected: "web"},
+		{name: "hyphenated service", instance: "my-app-2", expected: "my-app"},
+		{name: "no index", instance: "database", expected: "database"},
+		{name: "leading hyphen kept", instance: "-1", expected: "-1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inst := &Instance{BaseResource: NewBaseResource(KindInstance, tt.instance, PriorityInstance)}
+			assert.Equal(t, tt.expected, inst.ServiceName())
+		})
+	}
+}
+
 func TestSanitizeInstanceName(t *testing.T) {
 	tests := []struct {
 		name              string
