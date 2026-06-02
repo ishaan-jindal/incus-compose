@@ -145,10 +145,14 @@ To disable healthd creation:
 incus-compose up --no-healthd
 ```
 
+The healthcheck status (`starting`, `healthy`, `unhealthy`) is reported in the `Status` column of
+`incus-compose list` and `incus-compose ps` when healthchecks are configured.
+
 Not yet supported:
 
 - `start_period` - Grace period before checks start
 - `start_interval` - Interval during start period
+- `HEALTHCHECK` from Dockerfiles — see [Health Checking](architecture/healthchecking.md#dockerfile-healthcheck-not-supported)
 
 ### Resource Limits
 
@@ -278,7 +282,38 @@ ports:
   - "8080:80" # Incus proxy device
 ```
 
-Both work the same from outside, but Incus proxies are more efficient.
+Both work the same from outside. By default incus-compose uses userspace proxy devices (a Go
+process per forwarded connection). For high-throughput services you can opt in to kernel-mode NAT
+via a service extension, which installs nftables DNAT rules instead:
+
+```yaml
+services:
+  web:
+    image: docker.io/nginx:alpine
+    ports:
+      - "8080:80"
+    networks:
+      - frontend
+    x-incus:
+      nat-proxy:
+        - port: 8080     # listen port (matches the published port above)
+          connect: 80    # container port to forward to
+        - port: 8443
+          connect: 443
+          listen:        # optional: restrict listen IPs (default: all bridge IPs)
+            - 192.168.1.1
+```
+
+Each `nat-proxy` entry maps one published port to a container port. `listen` is optional; when
+omitted, incus-compose discovers the bridge IP(s) from the attached network and listens on all of
+them.
+
+Requirements for `nat-proxy`:
+
+- The service must be attached to at least one managed bridge network (a plain `networks:` entry).
+- If no managed NIC is present, incus-compose falls back to userspace and logs a warning.
+- After a manual `incus restart` the nftables rule may become stale; use `incus-compose up` to
+  reapply.
 
 ### Network Naming
 

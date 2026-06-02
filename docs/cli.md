@@ -29,7 +29,7 @@ incus-compose up [SERVICE...]
 | ------------------ | ----------------------------------------------------------------------- |
 | `--recreate`       | Recreate containers even if they exist                                  |
 | `--no-start`       | Don't start containers after creating                                   |
-| `--pull`           | Refresh cached images from their source registry before creating        |
+| `--no-pull`        | Skip refreshing cached images from their source registry (pull is on by default) |
 | `--timeout`        | Stop/start timeout seconds (default: 10)                                |
 | `--scale`          | Scale service: `web=3` (repeatable)                                     |
 | `--no-healthd`     | Don't create healthd sidecar for healthchecks                           |
