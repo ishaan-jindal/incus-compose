@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -579,4 +580,107 @@ func (s *NetworkSuite) TestUpdateDNSAliases_ExternalIsNoOp() {
 
 func TestNetworkSuite(t *testing.T) {
 	suite.Run(t, new(NetworkSuite))
+}
+
+func TestCalcIPv4DHCPRange(t *testing.T) {
+	tests := []struct {
+		name    string
+		cidr    string
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "/24 bridge address",
+			cidr: "10.100.0.1/24",
+			// hostBits=8, staticEnd=1<<6=64, lastUsable=254
+			want: "10.100.0.64-10.100.0.254",
+		},
+		{
+			name: "/24 normalized network address",
+			cidr: "10.100.0.0/24",
+			want: "10.100.0.64-10.100.0.254",
+		},
+		{
+			name: "/16",
+			cidr: "172.16.0.1/16",
+			// hostBits=16, staticEnd=1<<14=16384=0x4000 → .64.0, lastUsable=65534
+			want: "172.16.64.0-172.16.255.254",
+		},
+		{
+			name: "/28 (small subnet)",
+			cidr: "192.168.1.1/28",
+			// hostBits=4, staticEnd=1<<2=4, lastUsable=14
+			want: "192.168.1.4-192.168.1.14",
+		},
+		{
+			name:    "invalid CIDR",
+			cidr:    "not-a-cidr",
+			wantErr: true,
+		},
+		{
+			name:    "/31 too small",
+			cidr:    "10.0.0.0/31",
+			wantErr: true,
+		},
+		{
+			name:    "/32 too small",
+			cidr:    "10.0.0.1/32",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := calcIPv4DHCPRange(tt.cidr)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestCalcIPv6DHCPRange(t *testing.T) {
+	tests := []struct {
+		name    string
+		cidr    string
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "/64 bridge address",
+			cidr: "fd42:abc::1/64",
+			// static: ::0-::ff, DHCP: ::100-::ffff
+			want: "fd42:abc::100-fd42:abc::ffff",
+		},
+		{
+			name: "/64 normalized network address",
+			cidr: "fd42:abc::/64",
+			want: "fd42:abc::100-fd42:abc::ffff",
+		},
+		{
+			name: "different prefix",
+			cidr: "fd00:1234:5678::1/64",
+			want: "fd00:1234:5678::100-fd00:1234:5678::ffff",
+		},
+		{
+			name:    "invalid CIDR",
+			cidr:    "not-a-cidr",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := calcIPv6DHCPRange(tt.cidr)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

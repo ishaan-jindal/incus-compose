@@ -1,0 +1,16 @@
+services:
+  web:
+    image: docker.io/nginx:alpine
+    networks:
+      - frontend
+      - backend
+
+networks:
+  frontend:
+    x-incus:
+      ipv4.address: 10.100.0.1/24
+  backend:
+    x-incus:
+      ipv4.address: 10.200.0.1/24
+      ipv4.dhcp.ranges: 10.200.0.100-10.200.0.200
+      ipv6.address: fd42:1::1/64

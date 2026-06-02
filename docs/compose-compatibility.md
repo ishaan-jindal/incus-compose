@@ -24,10 +24,43 @@ incus-compose implements a subset of the Compose Specification. This doc lists w
 - Network isolation between services
 - DNS resolution by service name and by instance name
 - External networks (pre-existing Incus networks)
+- `x-incus` extension — pass any Incus network config key directly (see below)
+- Automatic DHCP range configuration on creation (see below)
 
 Not supported:
 
 - Custom network drivers
+
+#### x-incus Network Extensions
+
+Any Incus network config key can be set via the `x-incus` extension block on a network definition. Keys are passed verbatim to the Incus network config on creation.
+
+```yaml
+networks:
+  backend:
+    x-incus:
+      ipv4.address: 10.100.0.1/24
+      ipv6.address: fd42:abc::1/64
+      ipv4.dhcp.ranges: 10.100.0.100-10.100.0.200
+```
+
+Any [Incus bridge network option](https://linuxcontainers.org/incus/docs/main/reference/network_bridge/) is accepted.
+
+#### Automatic DHCP Ranges
+
+When a managed bridge network is created, incus-compose automatically configures DHCP ranges if they are not already set:
+
+**IPv4** — The first quarter of the address block is reserved for static assignment. The DHCP range starts at that boundary:
+
+| Subnet | Static range | DHCP range |
+| ------ | ------------ | ---------- |
+| /24    | `.1–.63`     | `.64–.254` |
+| /16    | `.0.0–.63.255` | `.64.0–.255.254` |
+| /28    | `.1–.3`      | `.4–.14`   |
+
+**IPv6** — The first 256 addresses (`::0–::ff`) are reserved for static; DHCP runs from `::100` to `::ffff`. Stateful DHCPv6 (`ipv6.dhcp.stateful`) is enabled automatically.
+
+Setting `ipv4.dhcp.ranges` or `ipv6.dhcp.ranges` in `x-incus` disables auto-calculation for that protocol. Existing networks (already present in Incus when `up` runs) are never modified.
 
 ### Volumes
 

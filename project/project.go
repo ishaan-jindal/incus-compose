@@ -183,6 +183,7 @@ func ServiceToInstance(c *client.Client, p *types.Project, serviceName string, f
 		netConfig := &client.NetworkConfig{}
 		if networkDef, ok := p.Networks[name]; ok {
 			netConfig.External = bool(networkDef.External)
+			netConfig.Extensions = networkExtensions(networkDef)
 		}
 
 		network, err := c.Resource(client.KindNetwork, name, netConfig)
@@ -487,6 +488,24 @@ func parseSecretMode(mode *types.FileMode) int {
 		return 0
 	}
 	return int(*mode)
+}
+
+// networkExtensions extracts the x-incus extension map from a compose network
+// definition and returns it as a flat map[string]string for use as Incus network
+// config. Keys and values are taken verbatim from the x-incus YAML block.
+func networkExtensions(networkDef types.NetworkConfig) map[string]string {
+	var raw map[string]any
+	ok, err := networkDef.Extensions.Get("x-incus", &raw)
+	if !ok || err != nil || len(raw) == 0 {
+		return nil
+	}
+
+	result := make(map[string]string, len(raw))
+	for k, v := range raw {
+		result[k] = fmt.Sprint(v)
+	}
+
+	return result
 }
 
 // formatCommand formats a command slice for oci.entrypoint.

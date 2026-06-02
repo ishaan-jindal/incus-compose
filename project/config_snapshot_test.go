@@ -165,6 +165,10 @@ func (s *ConfigSnapshotSuite) TestConfigSnapshots() {
 			Name:    "with-resources_yaml",
 			Fixture: "with-resources",
 		},
+		{
+			Name:    "with-network-ranges_yaml",
+			Fixture: "with-network-ranges",
+		},
 	}
 
 	for _, tc := range testCases {

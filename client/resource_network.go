@@ -5,6 +5,7 @@ import (
 	"encoding/base32"
 	"fmt"
 	"maps"
+	"net/netip"
 	"slices"
 	"strings"
 
@@ -29,6 +30,11 @@ type NetworkConfig struct {
 	// External marks the network as externally managed.
 	// External networks must already exist and won't be created or deleted.
 	External bool
+
+	// Extensions are Incus network config key-value pairs sourced from the
+	// x-incus compose extension. All entries pass through verbatim to the
+	// Incus network config on creation.
+	Extensions map[string]string
 }
 
 // Network represents an Incus bridge network.
@@ -171,6 +177,10 @@ func (r *Network) create() error {
 		Type: r.Config.Type,
 	}
 
+	if len(r.Config.Extensions) > 0 {
+		req.Config = r.Config.Extensions
+	}
+
 	if err := r.client.incus.CreateNetwork(req); err != nil {
 		return fmt.Errorf("creating network %q: %w", r.Name(), err)
 	}
@@ -183,6 +193,65 @@ func (r *Network) create() error {
 	r.IncusNetwork = network
 	r.ETag = eTag
 	r.created = true
+
+	return r.applyDHCPRanges()
+}
+
+// applyDHCPRanges calculates and sets DHCP ranges on the network after creation.
+// It is a no-op when the ranges are already configured (e.g., via x-incus extensions).
+// IPv4: first 20% of usable addresses are reserved for static; the rest is the DHCP range.
+// IPv6: first 256 addresses are reserved for static; DHCP runs from ::100 to ::ffff.
+func (r *Network) applyDHCPRanges() error {
+	cfg := r.IncusNetwork.Config
+	updates := map[string]string{}
+
+	if addr := cfg["ipv4.address"]; addr != "" && addr != "none" && addr != "auto" {
+		if cfg["ipv4.dhcp.ranges"] == "" {
+			dhcpRange, err := calcIPv4DHCPRange(addr)
+			if err != nil {
+				return fmt.Errorf("calculating IPv4 DHCP range for network %q: %w", r.Name(), err)
+			}
+			updates["ipv4.dhcp.ranges"] = dhcpRange
+		}
+	}
+
+	if addr := cfg["ipv6.address"]; addr != "" && addr != "none" && addr != "auto" {
+		if cfg["ipv6.dhcp.ranges"] == "" {
+			dhcpRange, err := calcIPv6DHCPRange(addr)
+			if err != nil {
+				return fmt.Errorf("calculating IPv6 DHCP range for network %q: %w", r.Name(), err)
+			}
+			updates["ipv6.dhcp.ranges"] = dhcpRange
+			if cfg["ipv6.dhcp.stateful"] == "" {
+				updates["ipv6.dhcp.stateful"] = "true"
+			}
+		}
+	}
+
+	if len(updates) == 0 {
+		return nil
+	}
+
+	put := r.IncusNetwork.Writable()
+	if put.Config == nil {
+		put.Config = map[string]string{}
+	}
+	for k, v := range updates {
+		put.Config[k] = v
+	}
+
+	if err := r.client.incus.UpdateNetwork(r.incusName, put, r.ETag); err != nil {
+		return fmt.Errorf("applying DHCP ranges to network %q: %w", r.Name(), err)
+	}
+
+	network, eTag, err := r.client.incus.GetNetwork(r.incusName)
+	if err != nil {
+		return fmt.Errorf("fetching network after DHCP range update %q: %w", r.Name(), err)
+	}
+
+	r.IncusNetwork = network
+	r.ETag = eTag
+
 	return nil
 }
 
@@ -272,6 +341,82 @@ var (
 	_ EnsureAble = (*Network)(nil)
 	_ DeleteAble = (*Network)(nil)
 )
+
+// calcIPv4DHCPRange calculates an Incus-format DHCP range for an IPv4 bridge network.
+// The first quarter of the address block (1 << (hostBits-2)) is reserved for static
+// assignment; DHCP starts at that boundary and runs to the last usable address.
+// Returns a range string in "FIRST-LAST" format.
+func calcIPv4DHCPRange(cidr string) (string, error) {
+	prefix, err := netip.ParsePrefix(cidr)
+	if err != nil {
+		return "", fmt.Errorf("parsing IPv4 CIDR %q: %w", cidr, err)
+	}
+
+	prefix = prefix.Masked()
+
+	bits := prefix.Bits()
+	if bits > 30 {
+		return "", fmt.Errorf("IPv4 prefix /%d too small for DHCP range (need at most /30)", bits)
+	}
+
+	hostBits := uint(32 - bits)
+	// staticEnd: first address of the DHCP zone = 1/4 of the block, derived by shifting.
+	// Example: /24 → hostBits=8 → staticEnd = 1<<6 = 64 → DHCP starts at .64
+	staticEnd := uint64(1) << (hostBits - 2)
+	// Last usable address = total - 2 (total - 1 is broadcast).
+	lastUsable := (uint64(1) << hostBits) - 2
+
+	networkAddr := prefix.Addr()
+	dhcpStart := addOffset(networkAddr, staticEnd)
+	dhcpEnd := addOffset(networkAddr, lastUsable)
+
+	return fmt.Sprintf("%s-%s", dhcpStart, dhcpEnd), nil
+}
+
+// calcIPv6DHCPRange calculates an Incus-format DHCP range for an IPv6 bridge network.
+// The first 256 addresses (::0–::ff) are reserved for static assignment.
+// Returns a range string in "FIRST-LAST" format.
+func calcIPv6DHCPRange(cidr string) (string, error) {
+	prefix, err := netip.ParsePrefix(cidr)
+	if err != nil {
+		return "", fmt.Errorf("parsing IPv6 CIDR %q: %w", cidr, err)
+	}
+
+	prefix = prefix.Masked()
+	networkAddr := prefix.Addr()
+
+	dhcpStart := addOffset(networkAddr, 0x100)
+	dhcpEnd := addOffset(networkAddr, 0xffff)
+
+	return fmt.Sprintf("%s-%s", dhcpStart, dhcpEnd), nil
+}
+
+// addOffset adds an integer offset to a netip.Addr (IPv4 or IPv6).
+// For IPv4 the offset must fit in 32 bits; for IPv6, in 64 bits.
+func addOffset(addr netip.Addr, offset uint64) netip.Addr {
+	b := addr.As16()
+
+	// Treat the last 8 bytes as a big-endian uint64 and add the offset.
+	v := uint64(b[8])<<56 | uint64(b[9])<<48 | uint64(b[10])<<40 | uint64(b[11])<<32 |
+		uint64(b[12])<<24 | uint64(b[13])<<16 | uint64(b[14])<<8 | uint64(b[15])
+	v += offset
+
+	b[8] = byte(v >> 56)
+	b[9] = byte(v >> 48)
+	b[10] = byte(v >> 40)
+	b[11] = byte(v >> 32)
+	b[12] = byte(v >> 24)
+	b[13] = byte(v >> 16)
+	b[14] = byte(v >> 8)
+	b[15] = byte(v)
+
+	result := netip.AddrFrom16(b)
+	if addr.Is4() {
+		result = result.Unmap()
+	}
+
+	return result
+}
 
 // sanitizeNetworkName generates a network interface name from project and network name.
 // Returns a deterministic, unique name that fits within Linux interface name limits.
