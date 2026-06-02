@@ -265,14 +265,26 @@ func (r *Image) get() error {
 	return nil
 }
 
-// refresh forces a fresh pull of the image from its source registry.
+// refresh updates the cached image from its source registry if the remote
+// fingerprint has changed.
 //
 // RefreshImage (incus image refresh) is unreliable for OCI floating tags:
 // Incus fingerprints are computed from layer digests, not manifest SHAs, so a
 // registry update that only changes manifest metadata is invisible to refresh.
 // The only reliable approach is to delete the stale cache entry and re-copy,
 // which always runs skopeo copy against the current registry state.
+//
+// Before deleting, the remote fingerprint is queried (skopeo inspect for OCI,
+// no layer pull). If it matches the cached fingerprint, the refresh is skipped.
+// On query failure the refresh proceeds to be safe.
 func (r *Image) refresh(args Options) error {
+	if r.source != nil {
+		remoteAlias, _, err := r.source.GetImageAlias(r.Config.Image)
+		if err == nil && remoteAlias != nil && remoteAlias.Target == r.IncusAlias.Target {
+			return nil
+		}
+	}
+
 	op, err := r.Config.cache.DeleteImage(r.IncusAlias.Target)
 	if err = r.client.hookOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
 		return ErrCreate.WithText("deleting stale cached image for refresh").Wrap(err)

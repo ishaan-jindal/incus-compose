@@ -408,8 +408,8 @@ func (s *ImageSuite) TestDelete_RemovesProjectCopy() {
 	s.NotNil(cacheAlias, "cache image must survive Delete")
 }
 
-func (s *ImageSuite) TestEnsure_Pull_DeletesAndRecopies() {
-	// Seed the cache with a pinned image.
+func (s *ImageSuite) TestEnsure_Pull_SkipsWhenFingerprintUnchanged() {
+	// Seed the cache with a pinned (immutable) image.
 	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:1.37", &ImageConfig{
 		CliConfig: s.cliConfig,
 	})
@@ -428,14 +428,14 @@ func (s *ImageSuite) TestEnsure_Pull_DeletesAndRecopies() {
 	})
 	s.Require().NoError(err)
 
-	// Pull: old cache entry is deleted and re-copied from the registry.
+	// Pull with unchanged remote fingerprint: refresh is skipped.
 	err = RunAction(r2, ActionEnsure, OptionCreate(), OptionPull())
 	s.Require().NoError(err)
 	s.True(r2.IsEnsured())
 
 	image2, ok := r2.(*Image)
 	s.Require().True(ok)
-	s.True(image2.Created(), "image should be re-created (delete+recopy) on pull")
+	s.False(image2.Created(), "image should not be re-created when remote fingerprint matches cache")
 	s.cleanup = append(s.cleanup, r2)
 }
 
