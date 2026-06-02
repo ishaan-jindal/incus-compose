@@ -789,6 +789,9 @@ func (r *Instance) log(options Options) error {
 	}
 
 	if options.Follow {
+		if err := r.logBuffer(outputHandler); err != nil {
+			return err
+		}
 		return r.logStream(options, outputHandler)
 	}
 
