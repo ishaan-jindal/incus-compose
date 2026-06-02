@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net"
 )
 
 // Device type constants.
@@ -72,6 +73,12 @@ type InstanceDeviceConfig struct {
 	// Network is the network resource for nic devices.
 	Network Resource
 
+	// Ipv4Address assigns a static IPv4 address to the NIC via the bridge DHCP server.
+	Ipv4Address string
+
+	// Ipv6Address assigns a static IPv6 address to the NIC via the bridge DHCP server.
+	Ipv6Address string
+
 	// Proxy contains proxy device configuration.
 	Proxy InstanceDeviceProxyConfig
 
@@ -137,7 +144,24 @@ func (d *InstanceDevice) toNicDevice() (map[string]string, error) {
 		"network": d.Config.Network.IncusName(),
 	}
 
+	if d.Config.Ipv4Address != "" {
+		device["ipv4.address"] = d.Config.Ipv4Address
+	}
+
+	if d.Config.Ipv6Address != "" {
+		device["ipv6.address"] = d.Config.Ipv6Address
+	}
+
 	return device, nil
+}
+
+// proxyEndpoint formats a host address and port for Incus proxy device notation.
+// IPv6 addresses are bracketed: [addr]:port; IPv4/hostname use addr:port.
+func proxyEndpoint(addr string, port uint32) string {
+	if net.ParseIP(addr).To4() == nil && net.ParseIP(addr) != nil {
+		return fmt.Sprintf("[%s]:%d", addr, port)
+	}
+	return fmt.Sprintf("%s:%d", addr, port)
 }
 
 func (d *InstanceDevice) toProxyDevice() (map[string]string, error) {
@@ -145,8 +169,8 @@ func (d *InstanceDevice) toProxyDevice() (map[string]string, error) {
 
 	device := map[string]string{
 		"type":    "proxy",
-		"listen":  fmt.Sprintf("%s:%s:%d", cfg.ListenType, cfg.ListenAddr, cfg.ListenPort),
-		"connect": fmt.Sprintf("%s:%s:%d", cfg.ConnectType, cfg.ConnectAddr, cfg.ConnectPort),
+		"listen":  fmt.Sprintf("%s:%s", cfg.ListenType, proxyEndpoint(cfg.ListenAddr, cfg.ListenPort)),
+		"connect": fmt.Sprintf("%s:%s", cfg.ConnectType, proxyEndpoint(cfg.ConnectAddr, cfg.ConnectPort)),
 	}
 
 	if cfg.Nat {

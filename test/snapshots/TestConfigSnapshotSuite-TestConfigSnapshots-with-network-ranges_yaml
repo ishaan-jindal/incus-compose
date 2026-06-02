@@ -3,8 +3,11 @@ services:
   web:
     image: docker.io/nginx:alpine
     networks:
-      backend: null
-      frontend: null
+      backend:
+        ipv4_address: 10.200.0.17
+        ipv6_address: fd42:1::1/64
+      frontend:
+        ipv4_address: 10.100.0.17
 networks:
   backend:
     name: with-network-ranges_backend

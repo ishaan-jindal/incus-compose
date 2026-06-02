@@ -145,6 +145,7 @@ func ServiceToInstance(c *client.Client, p *types.Project, serviceName string, f
 	resources := []client.Resource{}
 	devices := []client.InstanceDevice{}
 	postDevices := []client.InstanceDevice{}
+	postStartDevices := []client.InstanceDevice{}
 
 	// Environment variables
 	for key, val := range service.Environment {
@@ -192,22 +193,110 @@ func ServiceToInstance(c *client.Client, p *types.Project, serviceName string, f
 			continue
 		}
 
+		nicConfig := client.InstanceDeviceConfig{
+			DeviceType: client.InstanceDeviceTypeNic,
+			Network:    network,
+		}
+
+		if svcNet := service.Networks[name]; svcNet != nil {
+			nicConfig.Ipv4Address = svcNet.Ipv4Address
+			nicConfig.Ipv6Address = svcNet.Ipv6Address
+		}
+
 		devices = append(devices, client.InstanceDevice{
-			Name: fmt.Sprintf("eth%d", ethIdx),
-			Config: client.InstanceDeviceConfig{
-				DeviceType: client.InstanceDeviceTypeNic,
-				Network:    network,
-			},
+			Name:   fmt.Sprintf("eth%d", ethIdx),
+			Config: nicConfig,
 		})
 		ethIdx++
 
 		resources = append(resources, network)
 	}
 
+	// natProxyEntries maps listen-port → {listen IPs, connect port}.
+	type natProxyEntry struct {
+		listen  []string
+		connect uint32
+	}
+	natProxyEntries := map[uint32]natProxyEntry{}
+
+	if xIncus, ok := service.Extensions["x-incus"].(map[string]any); ok {
+		if rawList, ok := xIncus["nat-proxy"].([]any); ok {
+			for _, item := range rawList {
+				entry, ok := item.(map[string]any)
+				if !ok {
+					continue
+				}
+				var lPort uint64
+				switch v := entry["port"].(type) {
+				case int:
+					lPort = uint64(v)
+				case float64:
+					lPort = uint64(v)
+				case string:
+					var portErr error
+					lPort, portErr = strconv.ParseUint(v, 10, 32)
+					if portErr != nil {
+						errs = errors.Join(errs, fmt.Errorf("nat-proxy port %q is not a number: %w", v, portErr))
+						continue
+					}
+				}
+				var connectPort uint32
+				switch v := entry["connect"].(type) {
+				case int:
+					connectPort = uint32(v)
+				case float64:
+					connectPort = uint32(v)
+				}
+				var listenIPs []string
+				if rawListen, ok := entry["listen"].([]any); ok {
+					for _, ip := range rawListen {
+						if s, ok := ip.(string); ok {
+							listenIPs = append(listenIPs, s)
+						}
+					}
+				}
+				natProxyEntries[uint32(lPort)] = natProxyEntry{listen: listenIPs, connect: connectPort}
+			}
+		}
+	}
+
+	// Resolve empty listen lists from the project's bridge network addresses.
+	// Collect NIC-referenced network names once, reuse for all unspecified entries.
+	var bridgeAddrs []string
+	for lPort, entry := range natProxyEntries {
+		if len(entry.listen) > 0 {
+			continue
+		}
+		if bridgeAddrs == nil {
+			for _, dev := range devices {
+				if dev.Config.DeviceType != client.InstanceDeviceTypeNic || dev.Config.Network == nil {
+					continue
+				}
+				v4, v6, err := c.NetworkBridgeIPs(dev.Config.Network.IncusName())
+				if err != nil {
+					c.LogWarn("nat-proxy: could not get bridge IPs", "network", dev.Config.Network.IncusName(), "err", err)
+					continue
+				}
+				bridgeAddrs = append(bridgeAddrs, v4...)
+				bridgeAddrs = append(bridgeAddrs, v6...)
+			}
+			if len(bridgeAddrs) == 0 {
+				bridgeAddrs = []string{"0.0.0.0"}
+			}
+		}
+		entry.listen = bridgeAddrs
+		natProxyEntries[lPort] = entry
+	}
+
 	for _, port := range service.Ports {
 		lPort, err := strconv.ParseUint(port.Published, 10, 32)
 		if err != nil {
 			errs = errors.Join(errs, fmt.Errorf("bad publishing port %q must be a number: %w", port.Published, err))
+			continue
+		}
+
+		// A nat-proxy entry for this listen port takes over — skip the userspace proxy.
+		if _, covered := natProxyEntries[uint32(lPort)]; covered {
 			continue
 		}
 
@@ -221,20 +310,55 @@ func ServiceToInstance(c *client.Client, p *types.Project, serviceName string, f
 			listenIP = "0.0.0.0"
 		}
 
-		devName := fmt.Sprintf("proxy-%d", lPort)
-		devConfig := client.InstanceDeviceConfig{
-			DeviceType: client.InstanceDeviceTypeProxy,
-			Proxy: client.InstanceDeviceProxyConfig{
-				ListenType:  proto,
-				ListenAddr:  listenIP,
-				ListenPort:  uint32(lPort),
-				ConnectType: proto,
-				ConnectAddr: "127.0.0.1",
-				ConnectPort: port.Target,
+		devices = append(devices, client.InstanceDevice{
+			Name: fmt.Sprintf("proxy-%d", lPort),
+			Config: client.InstanceDeviceConfig{
+				DeviceType: client.InstanceDeviceTypeProxy,
+				Proxy: client.InstanceDeviceProxyConfig{
+					ListenType:  proto,
+					ListenAddr:  listenIP,
+					ListenPort:  uint32(lPort),
+					ConnectType: proto,
+					ConnectAddr: "127.0.0.1",
+					ConnectPort: port.Target,
+				},
 			},
-		}
+		})
+	}
 
-		devices = append(devices, client.InstanceDevice{Name: devName, Config: devConfig})
+	// Create NAT proxy devices — one per listen IP per nat-proxy entry.
+	// connect.addr is left empty and resolved in attachPostStartDevices once the instance is running.
+	hasNic := func() bool {
+		for _, dev := range devices {
+			if dev.Config.DeviceType == client.InstanceDeviceTypeNic {
+				return true
+			}
+		}
+		return false
+	}()
+
+	for lPort, entry := range natProxyEntries {
+		if !hasNic {
+			c.LogWarn("nat-proxy requested but no managed NIC found, skipping", "service", service.Name, "port", lPort)
+			continue
+		}
+		for idx, listenIP := range entry.listen {
+			postStartDevices = append(postStartDevices, client.InstanceDevice{
+				Name: fmt.Sprintf("proxy-%d-%d", lPort, idx),
+				Config: client.InstanceDeviceConfig{
+					DeviceType: client.InstanceDeviceTypeProxy,
+					Proxy: client.InstanceDeviceProxyConfig{
+						ListenType:  "tcp",
+						ListenAddr:  listenIP,
+						ListenPort:  lPort,
+						ConnectType: "tcp",
+						ConnectAddr: "", // resolved in attachPostStartDevices
+						ConnectPort: entry.connect,
+						Nat:         true,
+					},
+				},
+			})
+		}
 	}
 
 	for _, cVol := range service.Volumes {
@@ -382,7 +506,7 @@ func ServiceToInstance(c *client.Client, p *types.Project, serviceName string, f
 
 	// Instance name follows Docker Compose convention: {service}-{index}
 	instanceName := fmt.Sprintf("%s-%d", service.Name, index)
-	instanceConfig := &client.InstanceConfig{Full: full, Resources: slices.Clone(resources), Image: image.Name(), Config: config, Devices: devices, PostDevices: postDevices, Secrets: instanceSecrets}
+	instanceConfig := &client.InstanceConfig{Full: full, Resources: slices.Clone(resources), Image: image.Name(), Config: config, Devices: devices, PostDevices: postDevices, PostStartDevices: postStartDevices, Secrets: instanceSecrets}
 	instance, err := c.Resource(client.KindInstance, instanceName, instanceConfig)
 	if err != nil {
 		return nil, err

@@ -1,0 +1,27 @@
+name: with-nat-proxy
+services:
+  web:
+    image: docker.io/nginx:alpine
+    networks:
+      frontend: null
+    ports:
+      - mode: ingress
+        target: 80
+        published: "2856"
+        protocol: tcp
+      - mode: ingress
+        target: 443
+        published: "2456"
+        protocol: tcp
+    x-incus:
+      nat-proxy:
+        - connect: 80
+          listen:
+            - 127.0.0.1
+            - 192.168.1.1
+          port: 2856
+        - connect: 443
+          port: 2456
+networks:
+  frontend:
+    name: with-nat-proxy_frontend

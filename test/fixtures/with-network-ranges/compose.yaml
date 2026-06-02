@@ -2,8 +2,11 @@ services:
   web:
     image: docker.io/nginx:alpine
     networks:
-      - frontend
-      - backend
+      frontend:
+        ipv4_address: 10.100.0.17
+      backend:
+        ipv4_address: 10.200.0.17
+        ipv6_address: fd42:1::1/64
 
 networks:
   frontend:

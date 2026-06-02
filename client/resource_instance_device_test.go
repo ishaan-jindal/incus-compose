@@ -114,6 +114,24 @@ func (s *DeviceSnapshotSuite) TestProxyDevices() {
 			},
 		},
 		{
+			Name: "proxy_ipv6",
+			Device: InstanceDevice{
+				Name: "proxy-8080",
+				Config: InstanceDeviceConfig{
+					DeviceType: InstanceDeviceTypeProxy,
+					Proxy: InstanceDeviceProxyConfig{
+						ListenType:  "tcp",
+						ListenAddr:  "2a0a:51c4:7:7d5b::",
+						ListenPort:  8080,
+						ConnectType: "tcp",
+						ConnectAddr: "fd42:ab37:29f:47d7::2",
+						ConnectPort: 80,
+						Nat:         true,
+					},
+				},
+			},
+		},
+		{
 			Name: "proxy_high_port",
 			Device: InstanceDevice{
 				Name: "proxy-65535",
@@ -214,6 +232,29 @@ func (s *DeviceSnapshotSuite) TestNicDevices() {
 				Config: InstanceDeviceConfig{
 					DeviceType: InstanceDeviceTypeNic,
 					Network:    newMockResource("my-network", KindNetwork, PriorityNetwork, true),
+				},
+			},
+		},
+		{
+			Name: "nic_static_ipv4",
+			Device: InstanceDevice{
+				Name: "eth0",
+				Config: InstanceDeviceConfig{
+					DeviceType:  InstanceDeviceTypeNic,
+					Network:     newMockResource("my-network", KindNetwork, PriorityNetwork, true),
+					Ipv4Address: "10.100.0.17",
+				},
+			},
+		},
+		{
+			Name: "nic_static_dual_stack",
+			Device: InstanceDevice{
+				Name: "eth0",
+				Config: InstanceDeviceConfig{
+					DeviceType:  InstanceDeviceTypeNic,
+					Network:     newMockResource("my-network", KindNetwork, PriorityNetwork, true),
+					Ipv4Address: "10.200.0.17",
+					Ipv6Address: "fd42:1::17",
 				},
 			},
 		},
