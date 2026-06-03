@@ -3,7 +3,8 @@ services:
   web:
     image: docker.io/nginx:alpine
     networks:
-      frontend: null
+      frontend:
+        ipv4_address: 10.139.38.17
     ports:
       - mode: ingress
         target: 80
@@ -16,12 +17,11 @@ services:
     x-incus:
       nat-proxy:
         - connect: 80
-          listen:
-            - 127.0.0.1
-            - 192.168.1.1
           port: 2856
         - connect: 443
           port: 2456
 networks:
   frontend:
     name: with-nat-proxy_frontend
+    x-incus:
+      ipv4.address: 10.139.38.1/24
