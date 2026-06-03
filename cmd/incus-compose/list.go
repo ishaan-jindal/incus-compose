@@ -127,7 +127,7 @@ var listCommand = &cli.Command{
 		}
 
 		// Get the per Project client early, gives early errors if the project does not exists
-		c, err := globalClient.EnsureProject(p.Name, false)
+		c, err := globalClient.EnsureProject(p.Name)
 		if err != nil {
 			globalClient.LogError("Getting the incus project", "error", err)
 			return errLogged.Wrap(err)

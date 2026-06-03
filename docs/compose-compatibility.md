@@ -17,7 +17,7 @@ incus-compose implements a subset of the Compose Specification. This doc lists w
 - `volumes` - Named volumes and bind mounts
 - `deploy.replicas` - Service scaling (instances named `{service}-{index}`)
 - `restart` - Restart policies (`no`, `always`, `on-failure`, `unless-stopped`)
-- `x-incus` extension — pass any Incus instance option directly (see below)
+- `x-incus` extension — pass any Incus project, network and instance option directly (see below)
 
 #### x-incus Instance Extensions
 
@@ -32,13 +32,27 @@ services:
       limits.cpu: "2"
 ```
 
-Any [Incus instance option](https://linuxcontainers.org/incus/docs/main/reference/instance_options/) is accepted. Common options include:
+Any [Incus instance option](https://linuxcontainers.org/incus/docs/main/reference/instance_options/) is accepted.
 
-- `limits.memory` - Memory limit (e.g., "512MB", "1GB")
-- `limits.cpu` - CPU cores (e.g., "2", "4")
-- `security.nesting` - Allow nested containers/VMs
-- `boot.autostart` - Auto-start on Incus boot
-- `security.privileged` - Privileged container
+### Projects
+
+```yaml
+x-incus:
+  limits.cpu: "4"
+  limits.memory: 2049MB # +1 MiB
+  limits.virtual-machines: 0
+
+services:
+  web:
+    image: docker.io/nginx:alpine
+    deploy:
+      replicas: 4
+    x-incus:
+      limits.cpu: "1"
+      limits.memory: 512MB
+```
+
+Any [Project option](https://linuxcontainers.org/incus/docs/main/reference/projects/) is accepted.
 
 ### Networks
 

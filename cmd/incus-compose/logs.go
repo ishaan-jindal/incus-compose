@@ -158,7 +158,7 @@ var logsCommand = &cli.Command{
 		}
 
 		// Get the per Project client - don't create if it doesn't exist
-		c, err := globalClient.EnsureProject(p.Name, false)
+		c, err := globalClient.EnsureProject(p.Name)
 		if err != nil {
 			globalClient.LogError("Getting the incus project", "error", err)
 			return errLogged.Wrap(err)

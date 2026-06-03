@@ -60,8 +60,11 @@ var upCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		// Get the per Project client early, gives early errors if the project does not exists
-		c, err := globalClient.EnsureProject(p.Name, true)
+		c, err := globalClient.EnsureProject(
+			p.Name,
+			client.EnsureProjectWithCreate(),
+			client.EnsureProjectWithConfig(p.ProjectConfig()),
+		)
 		if err != nil {
 			globalClient.LogError("Getting the incus project", "error", err)
 			return errLogged.Wrap(err)

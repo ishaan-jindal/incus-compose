@@ -197,7 +197,7 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 func createProjectClient(gc *GlobalClient, name string) (*Client, error) {
 	_ = gc.DeleteProject(name, true)
 
-	c, err := gc.createProject(name)
+	c, err := gc.createProject(name, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +262,7 @@ func (s *ClientSuite) TestProject_GlobalClientKeepsDefaultProfile() {
 	s.Require().NoError(err)
 	s.Require().Equal("default", gInfo.Project)
 
-	project, err := s.globalClient.EnsureProject(s.projectName, true)
+	project, err := s.globalClient.EnsureProject(s.projectName, EnsureProjectWithCreate())
 	s.Require().NoError(err)
 	s.NotNil(project)
 
@@ -278,26 +278,26 @@ func (s *ClientSuite) TestProject_ImageCacheIsInCacheProfile() {
 }
 
 func (s *ClientSuite) TestProject_EnsureWithCreate() {
-	project, err := s.globalClient.EnsureProject(s.projectName, true)
+	project, err := s.globalClient.EnsureProject(s.projectName, EnsureProjectWithCreate())
 	s.Require().NoError(err)
 	s.NotNil(project)
 }
 
 func (s *ClientSuite) TestProject_EnsureWithoutCreate_Fails() {
-	_, err := s.globalClient.EnsureProject("surely-does-not-exist-12345", false)
+	_, err := s.globalClient.EnsureProject("surely-does-not-exist-12345")
 	s.Require().Error(err)
 	s.ErrorIs(err, ErrNotFound)
 }
 
 func (s *ClientSuite) TestProject_NameIsPreserved() {
-	project, err := s.globalClient.EnsureProject(s.projectName, true)
+	project, err := s.globalClient.EnsureProject(s.projectName, EnsureProjectWithCreate())
 	s.Require().NoError(err)
 	s.Equal(s.projectName, project.Project())
 }
 
 func (s *ClientSuite) TestProject_NameIsSanitized() {
 	name := "Test Project_123"
-	project, err := s.globalClient.EnsureProject(name, true)
+	project, err := s.globalClient.EnsureProject(name, EnsureProjectWithCreate())
 	s.Require().NoError(err)
 
 	s.Equal(name, project.Project())
@@ -307,17 +307,17 @@ func (s *ClientSuite) TestProject_NameIsSanitized() {
 }
 
 func (s *ClientSuite) TestProject_EnsureIdempotent() {
-	project1, err := s.globalClient.EnsureProject(s.projectName, true)
+	project1, err := s.globalClient.EnsureProject(s.projectName, EnsureProjectWithCreate())
 	s.Require().NoError(err)
 
-	project2, err := s.globalClient.EnsureProject(s.projectName, true)
+	project2, err := s.globalClient.EnsureProject(s.projectName, EnsureProjectWithCreate())
 	s.Require().NoError(err)
 
 	s.Same(project1, project2)
 }
 
 func (s *ClientSuite) TestProject_DeleteSucceeds() {
-	_, err := s.globalClient.EnsureProject(s.projectName, true)
+	_, err := s.globalClient.EnsureProject(s.projectName, EnsureProjectWithCreate())
 	s.Require().NoError(err)
 
 	err = s.globalClient.DeleteProject(s.projectName, true)

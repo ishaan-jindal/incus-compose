@@ -799,6 +799,26 @@ func ToStackScale(scale map[string]int) ToStackOption {
 	}
 }
 
+// ProjectConfig reads `x-incus` extensions from the project and returns that.
+func (p *Project) ProjectConfig() map[string]string {
+	if p == nil || p.Extensions == nil {
+		return nil
+	}
+
+	var raw map[string]any
+	ok, err := p.Extensions.Get("x-incus", &raw)
+	if !ok || err != nil || len(raw) == 0 {
+		return nil
+	}
+
+	result := make(map[string]string, len(raw))
+	for k, v := range raw {
+		result[k] = fmt.Sprint(v)
+	}
+
+	return result
+}
+
 // ToStack converts the compose project services to Incus stack operations.
 func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStackOption) error {
 	if stack == nil {

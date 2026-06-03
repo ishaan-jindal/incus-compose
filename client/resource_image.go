@@ -82,7 +82,7 @@ func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 		config.cache = config.CacheServer
 	} else if config.CacheProject != "" {
 		// Ensure cache project exists
-		cacheClient, err := c.globalClient.EnsureProject(config.CacheProject, true)
+		cacheClient, err := c.globalClient.EnsureProject(config.CacheProject, EnsureProjectWithCreate())
 		if err != nil {
 			return nil, fmt.Errorf("ensuring cache project %s: %w", config.CacheProject, err)
 		}

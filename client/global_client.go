@@ -349,7 +349,7 @@ func (c *GlobalClient) detectStoragePool() error {
 func (c *GlobalClient) setupImageCache() error {
 	if c.Config.CacheProject != "" {
 		// Use dedicated cache project (create if needed)
-		cacheClient, err := c.EnsureProject(c.Config.CacheProject, true)
+		cacheClient, err := c.EnsureProject(c.Config.CacheProject, EnsureProjectWithCreate())
 		if err != nil {
 			return fmt.Errorf("ensuring cache project %s: %w", c.Config.CacheProject, err)
 		}
@@ -408,15 +408,44 @@ func (c *GlobalClient) getProject(name string) (*Client, error) {
 	return c.newClientProject(name, incusName, false)
 }
 
-func (c *GlobalClient) createProject(name string) (*Client, error) {
+// EnsureProjectOption is a functional option for configuring project creation.
+type EnsureProjectOption func(*ensureProjectOptions)
+
+type ensureProjectOptions struct {
+	create bool
+	config map[string]string
+}
+
+// EnsureProjectWithCreate enables project creation if the project doesn't exist.
+func EnsureProjectWithCreate() EnsureProjectOption {
+	return func(opts *ensureProjectOptions) {
+		opts.create = true
+	}
+}
+
+// EnsureProjectWithConfig sets configuration options to apply when creating the project.
+// These options are merged with default features configuration.
+func EnsureProjectWithConfig(config map[string]string) EnsureProjectOption {
+	return func(opts *ensureProjectOptions) {
+		opts.config = config
+	}
+}
+
+func (c *GlobalClient) createProject(name string, config map[string]string) (*Client, error) {
 	incusName := sanitizeProjectName(name)
+
+	// Merge user-provided config with defaults
+	projectConfig := incusApi.ConfigMap{"features.profiles": "true"}
+	for k, v := range config {
+		projectConfig[k] = v
+	}
 
 	// Create project
 	err := c.incus.CreateProject(incusApi.ProjectsPost{
 		Name: incusName,
 		ProjectPut: incusApi.ProjectPut{
 			Description: fmt.Sprintf(c.Config.DescriptionFormat, name),
-			Config:      incusApi.ConfigMap{"features.profiles": "true"},
+			Config:      projectConfig,
 		},
 	})
 	if err != nil {
@@ -427,11 +456,17 @@ func (c *GlobalClient) createProject(name string) (*Client, error) {
 	return c.newClientProject(name, incusName, true)
 }
 
-// EnsureProject ensures a project exists and returns a ClientProject.
-// Creates the project if create is true and it does not exist.
-func (c *GlobalClient) EnsureProject(name string, create bool) (*Client, error) {
+// EnsureProject ensures a project exists and returns a Client for it.
+// Options control whether the project is created if it doesn't exist and what config to apply.
+func (c *GlobalClient) EnsureProject(name string, opts ...EnsureProjectOption) (*Client, error) {
 	if !c.connected {
 		return nil, ErrDisconnected
+	}
+
+	// Apply options
+	options := &ensureProjectOptions{}
+	for _, opt := range opts {
+		opt(options)
 	}
 
 	// Check if already known
@@ -446,11 +481,11 @@ func (c *GlobalClient) EnsureProject(name string, create bool) (*Client, error) 
 		return p, nil
 	}
 
-	if !create {
+	if !options.create {
 		return nil, ErrNotFound.WithKindName(KindProject, name).Wrap(err)
 	}
 
-	return c.createProject(name)
+	return c.createProject(name, options.config)
 }
 
 // DeleteProject deletes a project and removes it from the cache.

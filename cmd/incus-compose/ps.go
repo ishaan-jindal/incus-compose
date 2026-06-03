@@ -70,7 +70,7 @@ var psCommand = &cli.Command{
 		}
 
 		// Ensure project client exists (do not create)
-		c, err := globalClient.EnsureProject(p.Name, false)
+		c, err := globalClient.EnsureProject(p.Name)
 		if err != nil {
 			globalClient.LogError("Getting the incus project", "error", err)
 			return errLogged.Wrap(err)

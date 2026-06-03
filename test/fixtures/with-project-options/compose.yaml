@@ -1,0 +1,13 @@
+x-incus:
+  limits.cpu: "4"
+  limits.memory: 2049MB # +1 MiB
+  limits.virtual-machines: 0
+
+services:
+  web:
+    image: docker.io/nginx:alpine
+    deploy:
+      replicas: 4
+    x-incus:
+      limits.cpu: "1"
+      limits.memory: 512MB
