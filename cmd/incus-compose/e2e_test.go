@@ -138,6 +138,154 @@ func (s *E2ESuite) TestUpDown() {
 	}
 }
 
+func (s *E2ESuite) TestUpDownGrafana() {
+	s.skipIfLocal()
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{
+			name:    "up grafana",
+			args:    []string{"-f", "../../test/fixtures/grafana/compose.yaml", "up"},
+			wantErr: false,
+		},
+		{
+			name:    "list grafana",
+			args:    []string{"-f", "../../test/fixtures/grafana/compose.yaml", "list"},
+			wantErr: false,
+		},
+		{
+			name:    "down grafana",
+			args:    []string{"-f", "../../test/fixtures/grafana/compose.yaml", "down", "--project"},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			err := s.run(tt.args...)
+			if tt.wantErr {
+				s.Error(err)
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
+}
+
+func (s *E2ESuite) TestUpDownScale() {
+	s.skipIfLocal()
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{
+			name:    "up nginx-scale",
+			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "up"},
+			wantErr: false,
+		},
+		{
+			name:    "scale nginx-scale",
+			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "up", "--scale=web=3"},
+			wantErr: false,
+		},
+		{
+			name:    "down nginx-scale",
+			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "down", "--project"},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			err := s.run(tt.args...)
+			if tt.wantErr {
+				s.Error(err)
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
+}
+
+func (s *E2ESuite) TestUpDownDownscale() {
+	s.skipIfLocal()
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{
+			name:    "up nginx-scale",
+			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "up"},
+			wantErr: false,
+		},
+		{
+			name:    "downscale nginx-scale",
+			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "up", "--scale=web=6"},
+			wantErr: false,
+		},
+		{
+			name:    "down nginx-scale",
+			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "down", "--project"},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			err := s.run(tt.args...)
+			if tt.wantErr {
+				s.Error(err)
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
+}
+
+func (s *E2ESuite) TestUpDownImmich() {
+	s.skipIfLocal()
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{
+			name:    "up immich",
+			args:    []string{"-f", "../../test/fixtures/immich/compose.yaml", "up"},
+			wantErr: false,
+		},
+		{
+			name:    "list immich",
+			args:    []string{"-f", "../../test/fixtures/immich/compose.yaml", "list"},
+			wantErr: false,
+		},
+		{
+			name:    "down immich",
+			args:    []string{"-f", "../../test/fixtures/immich/compose.yaml", "down", "--project"},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			err := s.run(tt.args...)
+			if tt.wantErr {
+				s.Error(err)
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
+}
+
 func (s *E2ESuite) TestUpDownWithScale() {
 	s.skipIfLocal()
 
@@ -175,6 +323,43 @@ func (s *E2ESuite) TestUpDownWithScale() {
 	}
 }
 
+func (s *E2ESuite) TestUpDownWithNatProxy() {
+	s.skipIfLocal()
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{
+			name:    "up with-nat-proxy",
+			args:    []string{"-f", "../../test/fixtures/with-nat-proxy/compose.yaml", "up"},
+			wantErr: false,
+		},
+		{
+			name:    "list with-nat-proxy",
+			args:    []string{"-f", "../../test/fixtures/with-nat-proxy/compose.yaml", "list"},
+			wantErr: false,
+		},
+		{
+			name:    "down with-nat-proxy",
+			args:    []string{"-f", "../../test/fixtures/with-nat-proxy/compose.yaml", "down", "--project"},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			err := s.run(tt.args...)
+			if tt.wantErr {
+				s.Error(err)
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
+}
+
 func (s *E2ESuite) TestUpDownWithSecrets() {
 	s.skipIfLocal()
 
@@ -196,6 +381,80 @@ func (s *E2ESuite) TestUpDownWithSecrets() {
 		{
 			name:    "down with-secrets",
 			args:    []string{"-f", "../../test/fixtures/with-secrets/compose.yaml", "down", "--project"},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			err := s.run(tt.args...)
+			if tt.wantErr {
+				s.Error(err)
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
+}
+
+// func (s *E2ESuite) TestUpDownWithTmpfs() {
+// 	s.skipIfLocal()
+
+// 	tests := []struct {
+// 		name    string
+// 		args    []string
+// 		wantErr bool
+// 	}{
+// 		{
+// 			name:    "up with-tmpfs",
+// 			args:    []string{"-f", "../../test/fixtures/with-tmpfs/compose.yaml", "up"},
+// 			wantErr: false,
+// 		},
+// 		{
+// 			name:    "list with-tmpfs",
+// 			args:    []string{"-f", "../../test/fixtures/with-tmpfs/compose.yaml", "list"},
+// 			wantErr: false,
+// 		},
+// 		{
+// 			name:    "down with-tmpfs",
+// 			args:    []string{"-f", "../../test/fixtures/with-tmpfs/compose.yaml", "down", "--project"},
+// 			wantErr: false,
+// 		},
+// 	}
+
+// 	for _, tt := range tests {
+// 		s.Run(tt.name, func() {
+// 			err := s.run(tt.args...)
+// 			if tt.wantErr {
+// 				s.Error(err)
+// 			} else {
+// 				s.NoError(err)
+// 			}
+// 		})
+// 	}
+// }
+
+func (s *E2ESuite) TestUpDownWithVolume() {
+	s.skipIfLocal()
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{
+			name:    "up with-volume",
+			args:    []string{"-f", "../../test/fixtures/with-volume/compose.yaml", "up"},
+			wantErr: false,
+		},
+		{
+			name:    "list with-volume",
+			args:    []string{"-f", "../../test/fixtures/with-volume/compose.yaml", "list"},
+			wantErr: false,
+		},
+		{
+			name:    "down with-volume",
+			args:    []string{"-f", "../../test/fixtures/with-volume/compose.yaml", "down", "--project"},
 			wantErr: false,
 		},
 	}

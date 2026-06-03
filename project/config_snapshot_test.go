@@ -169,6 +169,10 @@ func (s *ConfigSnapshotSuite) TestConfigSnapshots() {
 			Name:    "with-network-ranges_yaml",
 			Fixture: "with-network-ranges",
 		},
+		{
+			Name:    "with-nat-proxy_yaml",
+			Fixture: "with-nat-proxy",
+		},
 	}
 
 	for _, tc := range testCases {
