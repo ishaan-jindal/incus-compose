@@ -2,7 +2,9 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"net"
 	"strings"
 
 	"github.com/gosimple/slug"
@@ -88,6 +90,32 @@ func (c *Client) IncusProject() string {
 // IsRemote returns true if connected via network (not unix socket).
 func (c *Client) IsRemote() bool {
 	return c.globalClient.IsRemote()
+}
+
+// NetworkBridgeIPs returns the IPv4 and IPv6 bridge addresses of an Incus network.
+// The addresses are returned without CIDR notation.
+// Addresses for which the network config key is absent or set to "none" are omitted.
+func (c *Client) NetworkBridgeIPs(networkName string) (ipv4 []string, ipv6 []string, err error) {
+	network, _, err := c.incus.GetNetwork(networkName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("getting network %s: %w", networkName, err)
+	}
+
+	if v := network.Config["ipv4.address"]; v != "" && v != "none" {
+		ip, _, err := net.ParseCIDR(v)
+		if err == nil {
+			ipv4 = append(ipv4, ip.String())
+		}
+	}
+
+	if v := network.Config["ipv6.address"]; v != "" && v != "none" {
+		ip, _, err := net.ParseCIDR(v)
+		if err == nil {
+			ipv6 = append(ipv6, ip.String())
+		}
+	}
+
+	return ipv4, ipv6, nil
 }
 
 // LogDebug logs an debug message.

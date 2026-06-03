@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -58,6 +59,10 @@ type InstanceConfig struct {
 
 	// PostDevices are devices attached after instance creation (volumes needing UID/GID).
 	PostDevices []InstanceDevice
+
+	// PostStartDevices are devices attached after the instance is started.
+	// Use for devices that require a running instance, e.g. NAT proxy (needs container IP).
+	PostStartDevices []InstanceDevice
 
 	// Secrets are files pushed into the instance after start.
 	Secrets []InstanceSecret
@@ -239,10 +244,6 @@ func (r *Instance) Ensure(opts ...Option) error {
 	instance, eTag, err := r.client.incus.GetInstance(r.incusName)
 	if err == nil {
 		err = r.ensured(instance, eTag)
-
-		if err == nil && len(r.Config.PostDevices) > 0 {
-			err = r.attachPostDevices()
-		}
 
 		if r.client.hookAfter != nil {
 			err = r.client.hookAfter(ActionEnsure, r, options, err)
@@ -525,6 +526,62 @@ func (r *Instance) attachPostDevices() error {
 	return nil
 }
 
+func (r *Instance) attachPostStartDevices() error {
+	instance := r.IncusInstance
+
+	// Resolve container IPs once — instance is running so this should be fast.
+	ipv4s, ipv6s, err := r.WaitIPs(30 * time.Second)
+	if err != nil {
+		r.client.LogWarn("could not resolve IPs for post-start devices", "instance", r.incusName, "err", err)
+	}
+
+	for _, dev := range r.Config.PostStartDevices {
+		if dev.Config.DeviceType == InstanceDeviceTypeProxy && dev.Config.Proxy.Nat {
+			if net.ParseIP(dev.Config.Proxy.ListenAddr).To4() == nil {
+				if len(ipv6s) > 0 {
+					dev.Config.Proxy.ConnectAddr = ipv6s[0]
+				} else {
+					r.client.LogWarn("no IPv6 address for NAT proxy, falling back to ::1", "instance", r.incusName)
+					dev.Config.Proxy.ConnectAddr = "::1"
+				}
+			} else {
+				if len(ipv4s) > 0 {
+					dev.Config.Proxy.ConnectAddr = ipv4s[0]
+				} else {
+					r.client.LogWarn("no IPv4 address for NAT proxy, falling back to 127.0.0.1", "instance", r.incusName)
+					dev.Config.Proxy.ConnectAddr = "127.0.0.1"
+				}
+			}
+		}
+
+		devName, devConfig, err := dev.ToIncusDevice()
+		if err != nil {
+			return err
+		}
+
+		instance.Devices[devName] = devConfig
+	}
+
+	op, err := r.client.incus.UpdateInstance(instance.Name, instance.Writable(), r.ETag)
+	if err != nil {
+		return ErrCreate.WithText("updating with post-start devices").Wrap(err)
+	}
+
+	if err := op.Wait(); err != nil {
+		return ErrOperation.WithText("waiting for post-start device update").Wrap(err)
+	}
+
+	instance, eTag, err := r.client.incus.GetInstance(r.incusName)
+	if err != nil {
+		return ErrNotFound.WithText("refreshing instance after post-start devices").Wrap(err)
+	}
+
+	r.IncusInstance = instance
+	r.ETag = eTag
+
+	return nil
+}
+
 // Start starts the instance.
 func (r *Instance) Start(opts ...Option) error {
 	if !r.IsEnsured() {
@@ -549,33 +606,37 @@ func (r *Instance) Start(opts ...Option) error {
 }
 
 func (r *Instance) start() error {
-	if r.IncusInstance.Status == "Running" {
-		return nil // already running
+	if r.IncusInstance.Status != "Running" {
+		op, err := r.client.incus.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
+			Action: "start",
+		}, r.ETag)
+		if err != nil {
+			return ErrOperation.WithText("starting instance").Wrap(err)
+		}
+
+		if err := op.Wait(); err != nil {
+			return err
+		}
+
+		// Refresh instance state
+		instance, eTag, err := r.client.incus.GetInstance(r.incusName)
+		if err != nil {
+			return ErrNotFound.WithText("refreshing instance after start").Wrap(err)
+		}
+
+		r.IncusInstance = instance
+		r.ETag = eTag
+
+		// Push secrets after instance is running
+		if len(r.Config.Secrets) > 0 {
+			if err := r.PushSecrets(); err != nil {
+				return err
+			}
+		}
 	}
 
-	op, err := r.client.incus.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
-		Action: "start",
-	}, r.ETag)
-	if err != nil {
-		return ErrOperation.WithText("starting instance").Wrap(err)
-	}
-
-	if err := op.Wait(); err != nil {
-		return err
-	}
-
-	// Refresh instance state
-	instance, eTag, err := r.client.incus.GetInstance(r.incusName)
-	if err != nil {
-		return ErrNotFound.WithText("refreshing instance after start").Wrap(err)
-	}
-
-	r.IncusInstance = instance
-	r.ETag = eTag
-
-	// Push secrets after instance is running
-	if len(r.Config.Secrets) > 0 {
-		if err := r.PushSecrets(); err != nil {
+	if r.created && len(r.Config.PostStartDevices) > 0 {
+		if err := r.attachPostStartDevices(); err != nil {
 			return err
 		}
 	}
