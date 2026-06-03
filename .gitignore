@@ -1,6 +1,5 @@
 *.local.json
 *.local.md
-.claude/commands/*
 
 .feedback/*
 
@@ -30,7 +29,6 @@ go.work
 go.work.sum
 
 # IDE files
-.zed/
 .vscode/
 .idea/
 *.swp

@@ -6,7 +6,7 @@ This document contains **AI-specific and meta rules only**.
 
 ## Claude Agents
 
-Make sure to configure yourself with the .claude/ folder in the project, most important .claude/settings.json and .claude/settings.local.json
+Use `.claude/settings*.json` and `.claude/commands/*`.
 
 ## Canonical Project Rules
 
