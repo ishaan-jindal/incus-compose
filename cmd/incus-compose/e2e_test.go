@@ -147,6 +147,76 @@ func (s *E2ESuite) TestUpDown() {
 	}
 }
 
+func (s *E2ESuite) TestLifecycleSimpleNginx() {
+	s.skipIfLocal()
+
+	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+
+	defer func() {
+		_ = s.run("-f", compose, "down", "--project")
+	}()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "up",
+			args: []string{"-f", compose, "up", "--no-pull"},
+		},
+		{
+			name: "ps table",
+			args: []string{"-f", compose, "ps", "--all"},
+		},
+		{
+			name: "ps json",
+			args: []string{"-f", compose, "ps", "--all", "--format", "json"},
+		},
+		{
+			name: "ps quiet",
+			args: []string{"-f", compose, "ps", "--all", "--quiet"},
+		},
+		{
+			name: "ps services",
+			args: []string{"-f", compose, "ps", "--all", "--services"},
+		},
+		{
+			name: "stop service",
+			args: []string{"-f", compose, "stop", "web"},
+		},
+		{
+			name: "ps stopped",
+			args: []string{"-f", compose, "ps", "--all"},
+		},
+		{
+			name: "start service",
+			args: []string{"-f", compose, "start", "web"},
+		},
+		{
+			name: "exec dry run",
+			args: []string{"-f", compose, "exec", "--dry-run", "web", "echo", "hello"},
+		},
+		{
+			name: "restart service",
+			args: []string{"-f", compose, "restart", "web"},
+		},
+		{
+			name: "logs service",
+			args: []string{"-f", compose, "logs", "web"},
+		},
+		{
+			name: "down resources",
+			args: []string{"-f", compose, "down"},
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			s.Require().NoError(s.run(tt.args...))
+		})
+	}
+}
+
 func (s *E2ESuite) TestUpDownGrafana() {
 	s.skipIfLocal()
 
