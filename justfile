@@ -84,10 +84,13 @@ build-healthd-image tag="registry.gitlab.com/r3j0/incus-compose/ic-healthd:lates
 release-healthd-image tag="registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest": build-healthd-image
     podman push {{ tag }}
 
-release tag="v0.0.1-dev0" healthd_image="registry.gitlab.com/r3j0/incus-compose/ic-healthd": build release-healthd-image
+# Release incus-compose
+release tag="v0.0.1-dev0" healthd_image="registry.gitlab.com/r3j0/incus-compose/ic-healthd": build-healthd-image
     git tag {{ tag }}
     git push --tags
-    release-healthd-image {{ healthd_image }}:{{ tag }}
+    podman push {{ healthd_image }}:latest
+    podman tag {{ healthd_image }}:latest {{ healthd_image }}:{{ tag }}
+    podman push {{ healthd_image }}:{{ tag }}
     goreleaser release
 
 # Run with local healthd binary (for testing without an explicit OCI image) (ex. just run-healthd -f test/healthd/debug/compose.yaml up )
