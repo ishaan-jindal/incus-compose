@@ -119,12 +119,11 @@ func (s *E2ESuite) TestUpDown() {
 			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list"},
 			wantErr: false,
 		},
-		{
-			name:    "down simple-nginx",
-			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project"},
-			wantErr: false,
-		},
 	}
+
+	defer func() {
+		_ = s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
+	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
@@ -156,12 +155,11 @@ func (s *E2ESuite) TestUpDownGrafana() {
 			args:    []string{"-f", "../../test/fixtures/grafana/compose.yaml", "list"},
 			wantErr: false,
 		},
-		{
-			name:    "down grafana",
-			args:    []string{"-f", "../../test/fixtures/grafana/compose.yaml", "down", "--project"},
-			wantErr: false,
-		},
 	}
+
+	defer func() {
+		_ = s.run("-f", "../../test/fixtures/grafana/compose.yaml", "down", "--project")
+	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
@@ -193,12 +191,11 @@ func (s *E2ESuite) TestUpDownScale() {
 			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "up", "--scale=web=3"},
 			wantErr: false,
 		},
-		{
-			name:    "down nginx-scale",
-			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "down", "--project"},
-			wantErr: false,
-		},
 	}
+
+	defer func() {
+		_ = s.run("-f", "../../test/fixtures/nginx-scale/compose.yaml", "down", "--project")
+	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
@@ -230,12 +227,11 @@ func (s *E2ESuite) TestUpDownDownscale() {
 			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "up", "--scale=web=6"},
 			wantErr: false,
 		},
-		{
-			name:    "down nginx-scale",
-			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "down", "--project"},
-			wantErr: false,
-		},
 	}
+
+	defer func() {
+		_ = s.run("-f", "../../test/fixtures/nginx-scale/compose.yaml", "down", "--project")
+	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
@@ -267,12 +263,11 @@ func (s *E2ESuite) TestUpDownImmich() {
 			args:    []string{"-f", "../../test/fixtures/immich/compose.yaml", "list"},
 			wantErr: false,
 		},
-		{
-			name:    "down immich",
-			args:    []string{"-f", "../../test/fixtures/immich/compose.yaml", "down", "--project"},
-			wantErr: false,
-		},
 	}
+
+	defer func() {
+		_ = s.run("-f", "../../test/fixtures/immich/compose.yaml", "down", "--project")
+	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
@@ -304,12 +299,11 @@ func (s *E2ESuite) TestUpDownWithScale() {
 			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "list"},
 			wantErr: false,
 		},
-		{
-			name:    "down nginx-scale",
-			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "down", "--project"},
-			wantErr: false,
-		},
 	}
+
+	defer func() {
+		_ = s.run("-f", "../../test/fixtures/nginx-scale/compose.yaml", "down", "--project")
+	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
@@ -341,12 +335,11 @@ func (s *E2ESuite) TestUpDownWithNatProxy() {
 			args:    []string{"-f", "../../test/fixtures/with-nat-proxy/compose.yaml", "list"},
 			wantErr: false,
 		},
-		{
-			name:    "down with-nat-proxy",
-			args:    []string{"-f", "../../test/fixtures/with-nat-proxy/compose.yaml", "down", "--project"},
-			wantErr: false,
-		},
 	}
+
+	defer func() {
+		_ = s.run("-f", "../../test/fixtures/with-nat-proxy/compose.yaml", "down", "--project")
+	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
@@ -378,12 +371,11 @@ func (s *E2ESuite) TestUpDownWithSecrets() {
 			args:    []string{"-f", "../../test/fixtures/with-secrets/compose.yaml", "list"},
 			wantErr: false,
 		},
-		{
-			name:    "down with-secrets",
-			args:    []string{"-f", "../../test/fixtures/with-secrets/compose.yaml", "down", "--project"},
-			wantErr: false,
-		},
 	}
+
+	defer func() {
+		_ = s.run("-f", "../../test/fixtures/with-secrets/compose.yaml", "down", "--project")
+	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
@@ -452,12 +444,11 @@ func (s *E2ESuite) TestUpDownWithVolume() {
 			args:    []string{"-f", "../../test/fixtures/with-volume/compose.yaml", "list"},
 			wantErr: false,
 		},
-		{
-			name:    "down with-volume",
-			args:    []string{"-f", "../../test/fixtures/with-volume/compose.yaml", "down", "--project"},
-			wantErr: false,
-		},
 	}
+
+	defer func() {
+		_ = s.run("-f", "../../test/fixtures/with-volume/compose.yaml", "down", "--project")
+	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {

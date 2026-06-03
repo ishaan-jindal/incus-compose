@@ -1,10 +1,10 @@
 package client
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base32"
 	"fmt"
-	"context"
 	"maps"
 	"net/netip"
 	"slices"
@@ -229,7 +229,6 @@ func (r *Network) create() error {
 		}
 	}
 }
-
 
 // applyDHCPRanges calculates and sets DHCP ranges on the network after creation.
 // It is a no-op when the ranges are already configured (e.g., via x-incus extensions).
