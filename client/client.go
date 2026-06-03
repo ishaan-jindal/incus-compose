@@ -106,9 +106,7 @@ func (c *Client) NetworkBridgeIPs(networkName string) (ipv4 []string, ipv6 []str
 		if err == nil {
 			ipv4 = append(ipv4, ip.String())
 		}
-	}
-
-	if v := network.Config["ipv6.address"]; v != "" && v != "none" {
+	} else if v := network.Config["ipv6.address"]; v != "" && v != "none" {
 		ip, _, err := net.ParseCIDR(v)
 		if err == nil {
 			ipv6 = append(ipv6, ip.String())
@@ -251,6 +249,44 @@ func (c *Client) Open() error {
 // Close fires the disconnecting hooks. Call before discarding the client.
 func (c *Client) Close() error {
 	return c.hookDisconnecting(nil)
+}
+
+// InstanceIPs fetches the global IPv4 and IPv6 addresses of a named
+// instance directly from Incus, without going through an Instance resource.
+func (c *Client) InstanceIPs(incusName string) (network string, ipv4 []string, ipv6 []string, err error) {
+	state, _, err := c.incus.GetInstanceState(incusName)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	for sDevice, sNetwork := range state.Network {
+		if sNetwork.Type == "loopback" {
+			continue
+		}
+
+		res, err := c.Resource(KindInstance, incusName, &InstanceConfig{})
+		if err != nil {
+			return "", nil, nil, err
+		}
+
+		inst, ok := res.(*Instance)
+		if !ok {
+			return "", nil, nil, ErrUnknownResource.WithText(string(KindInstance))
+		}
+
+		network = inst.IncusInstance.Devices[sDevice]["network"]
+
+		for _, addr := range sNetwork.Addresses {
+			if addr.Scope == "global" && addr.Family == "inet" {
+				ipv4 = append(ipv4, addr.Address)
+			}
+			if addr.Scope == "global" && addr.Family == "inet6" {
+				ipv6 = append(ipv6, addr.Address)
+			}
+		}
+	}
+
+	return network, ipv4, ipv6, nil
 }
 
 // sanitizeProjectName converts a string to a valid Incus project name.

@@ -18,8 +18,11 @@ services:
     # ports:
     #   - "2283:2283"
     depends_on:
-      - redis
-      - database
+      redis:
+        condition: service_healthy
+      database:
+        condition: service_healthy
+        restart: true
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "/usr/src/app/server/bin/immich-healthcheck"]
@@ -84,7 +87,6 @@ services:
 
 volumes:
   library:
-  localtime:
   immich-model-cache:
   postgres:
 

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -187,34 +186,24 @@ func (r *Instance) ServiceName() string {
 	return serviceName(r.name)
 }
 
-// IPs returns the instance's global IPv4 and IPv6 addresses, read from its
-// current state. Loopback and non-global addresses are excluded.
-func (r *Instance) IPs() (ipv4 []string, ipv6 []string, err error) {
-	state, _, err := r.client.incus.GetInstanceState(r.incusName)
-	if err != nil {
-		return nil, nil, err
-	}
-	return extractIPs(state), extractIPv6(state), nil
-}
-
 // WaitIPs polls the instance state until it reports at least one global address
 // or the timeout elapses. A freshly started container may not have its DHCP
 // lease yet, so this gives it time. On timeout it returns whatever was found
 // (possibly empty).
-func (r *Instance) WaitIPs(timeout time.Duration) (ipv4 []string, ipv6 []string, err error) {
+func (r *Instance) WaitIPs(timeout time.Duration) (network string, ipv4 []string, ipv6 []string, err error) {
 	deadline := time.Now().Add(timeout)
 	for {
-		ipv4, ipv6, err = r.IPs()
+		network, ipv4, ipv6, err = r.client.InstanceIPs(r.IncusName())
 		if err != nil {
-			return nil, nil, err
+			return "", nil, nil, err
 		}
 		if len(ipv4) > 0 || len(ipv6) > 0 || time.Now().After(deadline) {
-			return ipv4, ipv6, nil
+			return network, ipv4, ipv6, nil
 		}
 
 		select {
 		case <-r.client.globalClient.Ctx.Done():
-			return ipv4, ipv6, r.client.globalClient.Ctx.Err()
+			return network, ipv4, ipv6, r.client.globalClient.Ctx.Err()
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
@@ -530,28 +519,40 @@ func (r *Instance) attachPostStartDevices() error {
 	instance := r.IncusInstance
 
 	// Resolve container IPs once — instance is running so this should be fast.
-	ipv4s, ipv6s, err := r.WaitIPs(30 * time.Second)
+	network, ipv4s, _, err := r.WaitIPs(30 * time.Second)
 	if err != nil {
 		r.client.LogWarn("could not resolve IPs for post-start devices", "instance", r.incusName, "err", err)
 	}
 
+	var bridgeV4Addrs, bridgeV6Addrs []string
+	bridgeV4Addrs, bridgeV6Addrs, err = r.client.NetworkBridgeIPs(network)
+	if err != nil {
+		return fmt.Errorf("nat-proxy: could not get bridge IPs for network %s: %w", network, err)
+	}
+
+	if len(bridgeV4Addrs) == 0 && len(bridgeV6Addrs) == 0 {
+		return fmt.Errorf("nat-proxy: didn't get an IP for network %s", network)
+	}
+
 	for _, dev := range r.Config.PostStartDevices {
 		if dev.Config.DeviceType == InstanceDeviceTypeProxy && dev.Config.Proxy.Nat {
-			if net.ParseIP(dev.Config.Proxy.ListenAddr).To4() == nil {
-				if len(ipv6s) > 0 {
-					dev.Config.Proxy.ConnectAddr = ipv6s[0]
-				} else {
-					r.client.LogWarn("no IPv6 address for NAT proxy, falling back to ::1", "instance", r.incusName)
-					dev.Config.Proxy.ConnectAddr = "::1"
-				}
-			} else {
-				if len(ipv4s) > 0 {
-					dev.Config.Proxy.ConnectAddr = ipv4s[0]
-				} else {
-					r.client.LogWarn("no IPv4 address for NAT proxy, falling back to 127.0.0.1", "instance", r.incusName)
-					dev.Config.Proxy.ConnectAddr = "127.0.0.1"
-				}
+			if dev.Config.Proxy.ListenAddr == "" {
+				dev.Config.Proxy.ListenAddr = bridgeV4Addrs[0]
 			}
+
+			// if net.ParseIP(dev.Config.Proxy.ListenAddr).To4() == nil {
+			// 	if len(ipv6s) > 0 {
+			// 		dev.Config.Proxy.ConnectAddr = ipv6s[0]
+			// 	} else {
+			// 		return fmt.Errorf("no IPv6 address for NAT proxy, instance %s", r.Name())
+			// 	}
+			// } else {
+			if len(ipv4s) > 0 {
+				dev.Config.Proxy.ConnectAddr = ipv4s[0]
+			} else {
+				return fmt.Errorf("no IPv4 address for NAT proxy, instance %s", r.Name())
+			}
+			// }
 		}
 
 		devName, devConfig, err := dev.ToIncusDevice()

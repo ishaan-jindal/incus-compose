@@ -130,11 +130,11 @@ func (c *Client) RegisterScaleWatcher() error {
 			var ipv4, ipv6 []string
 			if inst, inRun := st.instances[name]; inRun {
 				// Freshly started: wait for DHCP lease.
-				ipv4, ipv6, e = inst.WaitIPs(dnsIPWaitTimeout)
+				_, ipv4, ipv6, e = inst.WaitIPs(dnsIPWaitTimeout)
 				c.LogDebug("ScaleWatcher WaitIPs", "instance", name, "ipv4", ipv4, "ipv6", ipv6, "err", e)
 			} else {
 				// Pre-existing instance not in this run: fetch state directly.
-				ipv4, ipv6, e = instanceStateIPs(c, name)
+				_, ipv4, ipv6, e = c.InstanceIPs(name)
 				c.LogDebug("ScaleWatcher stateIPs", "instance", name, "ipv4", ipv4, "ipv6", ipv6, "err", e)
 			}
 			if e != nil {
@@ -157,48 +157,6 @@ func (c *Client) RegisterScaleWatcher() error {
 	})
 
 	return nil
-}
-
-// instanceStateIPs fetches the global IPv4 and IPv6 addresses of a named
-// instance directly from Incus, without going through an Instance resource.
-func instanceStateIPs(c *Client, incusName string) (ipv4 []string, ipv6 []string, err error) {
-	state, _, err := c.incus.GetInstanceState(incusName)
-	if err != nil {
-		return nil, nil, err
-	}
-	return extractIPs(state), extractIPv6(state), nil
-}
-
-// extractIPs returns global IPv4 addresses from an instance state.
-func extractIPs(state *incusApi.InstanceState) []string {
-	var out []string
-	for _, network := range state.Network {
-		if network.Type == "loopback" {
-			continue
-		}
-		for _, addr := range network.Addresses {
-			if addr.Scope == "global" && addr.Family == "inet" {
-				out = append(out, addr.Address)
-			}
-		}
-	}
-	return out
-}
-
-// extractIPv6 returns global IPv6 addresses from an instance state.
-func extractIPv6(state *incusApi.InstanceState) []string {
-	var out []string
-	for _, network := range state.Network {
-		if network.Type == "loopback" {
-			continue
-		}
-		for _, addr := range network.Addresses {
-			if addr.Scope == "global" && addr.Family == "inet6" {
-				out = append(out, addr.Address)
-			}
-		}
-	}
-	return out
 }
 
 // serviceName strips the trailing "-{index}" from a scaled instance name.

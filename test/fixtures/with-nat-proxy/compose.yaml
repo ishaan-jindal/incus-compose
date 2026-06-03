@@ -5,16 +5,16 @@ services:
       - "2856:80"
       - "2456:443"
     networks:
-      - frontend
+      frontend:
+        ipv4_address: 10.139.38.17
     x-incus:
       nat-proxy:
         - port: 2856
-          listen:
-            - 127.0.0.1
-            - 192.168.1.1
           connect: 80
         - port: 2456
           connect: 443
 
 networks:
   frontend:
+    x-incus:
+      ipv4.address: 10.139.38.1/24
