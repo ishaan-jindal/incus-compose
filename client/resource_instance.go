@@ -541,18 +541,16 @@ func (r *Instance) attachPostStartDevices() error {
 				dev.Config.Proxy.ListenAddr = bridgeV4Addrs[0]
 			}
 
-			if net.ParseIP(dev.Config.Proxy.ListenAddr).To4() == nil {
-				if len(ipv6s) > 0 {
-					dev.Config.Proxy.ConnectAddr = ipv6s[0]
-				} else {
+			if ip := net.ParseIP(dev.Config.Proxy.ListenAddr).To4(); ip == nil {
+				if len(ipv6s) == 0 {
 					return fmt.Errorf("no IPv6 address for NAT proxy, instance %s", r.Name())
 				}
+				dev.Config.Proxy.ConnectAddr = ipv6s[0]
 			} else {
-				if len(ipv4s) > 0 {
-					dev.Config.Proxy.ConnectAddr = ipv4s[0]
-				} else {
+				if len(ipv4s) == 0 {
 					return fmt.Errorf("no IPv4 address for NAT proxy, instance %s", r.Name())
 				}
+				dev.Config.Proxy.ConnectAddr = ipv4s[0]
 			}
 		}
 
