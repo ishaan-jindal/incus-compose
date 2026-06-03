@@ -809,7 +809,7 @@ func ToStackScale(scale map[string]int) ToStackOption {
 
 // ProjectConfig reads `x-incus` extensions from the project and returns that.
 func (p *Project) ProjectConfig() map[string]string {
-	if p == nil || p.Extensions == nil {
+	if p == nil || p.Project == nil || p.Extensions == nil {
 		return nil
 	}
 
