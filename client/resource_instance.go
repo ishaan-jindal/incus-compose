@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -519,7 +520,7 @@ func (r *Instance) attachPostStartDevices() error {
 	instance := r.IncusInstance
 
 	// Resolve container IPs once — instance is running so this should be fast.
-	network, ipv4s, _, err := r.WaitIPs(30 * time.Second)
+	network, ipv4s, ipv6s, err := r.WaitIPs(30 * time.Second)
 	if err != nil {
 		r.client.LogWarn("could not resolve IPs for post-start devices", "instance", r.incusName, "err", err)
 	}
@@ -540,19 +541,19 @@ func (r *Instance) attachPostStartDevices() error {
 				dev.Config.Proxy.ListenAddr = bridgeV4Addrs[0]
 			}
 
-			// if net.ParseIP(dev.Config.Proxy.ListenAddr).To4() == nil {
-			// 	if len(ipv6s) > 0 {
-			// 		dev.Config.Proxy.ConnectAddr = ipv6s[0]
-			// 	} else {
-			// 		return fmt.Errorf("no IPv6 address for NAT proxy, instance %s", r.Name())
-			// 	}
-			// } else {
-			if len(ipv4s) > 0 {
-				dev.Config.Proxy.ConnectAddr = ipv4s[0]
+			if net.ParseIP(dev.Config.Proxy.ListenAddr).To4() == nil {
+				if len(ipv6s) > 0 {
+					dev.Config.Proxy.ConnectAddr = ipv6s[0]
+				} else {
+					return fmt.Errorf("no IPv6 address for NAT proxy, instance %s", r.Name())
+				}
 			} else {
-				return fmt.Errorf("no IPv4 address for NAT proxy, instance %s", r.Name())
+				if len(ipv4s) > 0 {
+					dev.Config.Proxy.ConnectAddr = ipv4s[0]
+				} else {
+					return fmt.Errorf("no IPv4 address for NAT proxy, instance %s", r.Name())
+				}
 			}
-			// }
 		}
 
 		devName, devConfig, err := dev.ToIncusDevice()
