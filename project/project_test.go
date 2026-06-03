@@ -526,6 +526,27 @@ func (s *LoadProjectTestSuite) TestLoadWithRestartPolicies() {
 	s.Equal("", defaultRestart.Restart)
 }
 
+// TestLoadWithXIncusOptions tests loading a compose file with x-incus extensions.
+func (s *LoadProjectTestSuite) TestLoadWithXIncusOptions() {
+	proj, err := project.New().Load(
+		s.ctx, project.LoadWorkingDir(s.fixturePath("with-incus-options")),
+	)
+
+	s.Require().NoError(err)
+	s.Require().NotNil(proj)
+	s.Equal("with-incus-options", proj.Name)
+	s.Len(proj.Services, 2)
+
+	// Verify services loaded
+	web, exists := proj.Services["web"]
+	s.True(exists, "web service should exist")
+	s.Equal("docker.io/nginx:alpine", web.Image)
+
+	database, exists := proj.Services["database"]
+	s.True(exists, "database service should exist")
+	s.Equal("docker.io/postgres:16-alpine", database.Image)
+}
+
 // TestLoadProjectSuite runs the test suite.
 func TestLoadProjectSuite(t *testing.T) {
 	// Skip if fixtures don't exist.

@@ -152,6 +152,44 @@ client.New(ctx, client.ClientProvideConnection(instanceServer, cacheServer))
 - `.env` files can use OS variables for interpolation
 - Use `--os-env` flag for Docker Compose compatibility
 
+## Extensions
+
+### x-incus (Raw Incus Options)
+
+Pass raw Incus configuration options directly to instances and networks:
+
+```yaml
+services:
+  web:
+    image: docker.io/nginx:alpine
+    x-incus:
+      limits.memory: 512MB
+      limits.cpu: "2"
+      security.nesting: "false"
+
+networks:
+  custom:
+    x-incus:
+      nat: "false"
+      ipv4.nat: "true"
+```
+
+All key-value pairs are passed verbatim to Incus. See the [Incus instance options reference](https://linuxcontainers.org/incus/docs/main/reference/instance_options/) for available options.
+
+### x-incus-compose (Compose-Specific Features)
+
+Reserved for compose-specific transformations and conveniences handled by incus-compose:
+
+```yaml
+services:
+  app:
+    image: docker.io/myapp:latest
+    x-incus-compose:
+      # compose-specific features will be added here
+```
+
+Currently placeholder for future compose-specific features (e.g., resource aliases, convenience wrappers).
+
 ## Quick Reference
 
 ### Common Commands

@@ -1,0 +1,17 @@
+version: "3"
+
+services:
+  web:
+    image: docker.io/nginx:alpine
+    ports:
+      - "8080:80"
+    x-incus:
+      limits.memory: 512MB
+      limits.cpu: "2"
+      security.nesting: "false"
+  
+  database:
+    image: docker.io/postgres:16-alpine
+    x-incus:
+      limits.memory: 1GB
+      limits.cpu: "4"

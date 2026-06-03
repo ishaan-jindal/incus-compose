@@ -219,8 +219,9 @@ func ServiceToInstance(c *client.Client, p *types.Project, serviceName string, f
 	}
 	natProxyEntries := map[uint32]natProxyEntry{}
 
-	if xIncus, ok := service.Extensions["x-incus"].(map[string]any); ok {
-		if rawList, ok := xIncus["nat-proxy"].([]any); ok {
+	// Extract nat-proxy configuration from x-incus-compose extension
+	if xIncusCompose := serviceXIncusComposeExtensions(service); xIncusCompose != nil {
+		if rawList, ok := xIncusCompose["nat-proxy"].([]any); ok {
 			for _, item := range rawList {
 				entry, ok := item.(map[string]any)
 				if !ok {
@@ -504,6 +505,17 @@ func ServiceToInstance(c *client.Client, p *types.Project, serviceName string, f
 		return nil, errs
 	}
 
+	// Apply x-incus extensions (raw Incus options)
+	if xIncusOpts := serviceXIncusExtensions(service); len(xIncusOpts) > 0 {
+		for k, v := range xIncusOpts {
+			config[k] = v
+		}
+	}
+
+	// x-incus-compose extensions are extracted but not yet handled in this implementation.
+	// They will be used for compose-specific transformations in future updates.
+	_ = serviceXIncusComposeExtensions(service)
+
 	// Instance name follows Docker Compose convention: {service}-{index}
 	instanceName := fmt.Sprintf("%s-%d", service.Name, index)
 	instanceConfig := &client.InstanceConfig{Full: full, Resources: slices.Clone(resources), Image: image.Name(), Config: config, Devices: devices, PostDevices: postDevices, PostStartDevices: postStartDevices, Secrets: instanceSecrets}
@@ -630,6 +642,37 @@ func networkExtensions(networkDef types.NetworkConfig) map[string]string {
 	}
 
 	return result
+}
+
+// serviceXIncusExtensions extracts the x-incus extension map from a compose service
+// definition and returns it as a flat map[string]string for use as Incus instance
+// config. Keys and values are taken verbatim from the x-incus YAML block.
+func serviceXIncusExtensions(service types.ServiceConfig) map[string]string {
+	var raw map[string]any
+	ok, err := service.Extensions.Get("x-incus", &raw)
+	if !ok || err != nil || len(raw) == 0 {
+		return nil
+	}
+
+	result := make(map[string]string, len(raw))
+	for k, v := range raw {
+		result[k] = fmt.Sprint(v)
+	}
+
+	return result
+}
+
+// serviceXIncusComposeExtensions extracts the x-incus-compose extension map from
+// a compose service definition. This is for compose-specific features and
+// transformations handled by incus-compose (not raw Incus options).
+func serviceXIncusComposeExtensions(service types.ServiceConfig) map[string]any {
+	var raw map[string]any
+	ok, err := service.Extensions.Get("x-incus-compose", &raw)
+	if !ok || err != nil || len(raw) == 0 {
+		return nil
+	}
+
+	return raw
 }
 
 // formatCommand formats a command slice for oci.entrypoint.

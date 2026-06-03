@@ -78,6 +78,11 @@ func (s *E2ESuite) TestConfigCommand() {
 			wantErr: false,
 		},
 		{
+			name:    "with-incus-options",
+			args:    []string{"-f", "../../test/fixtures/with-incus-options/compose.yaml", "config"},
+			wantErr: false,
+		},
+		{
 			name:    "nonexistent file",
 			args:    []string{"-f", "nonexistent.yaml", "config"},
 			wantErr: true,

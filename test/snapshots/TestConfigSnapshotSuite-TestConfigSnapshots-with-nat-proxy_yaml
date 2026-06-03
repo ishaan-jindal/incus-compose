@@ -14,7 +14,7 @@ services:
         target: 443
         published: "2456"
         protocol: tcp
-    x-incus:
+    x-incus-compose:
       nat-proxy:
         - connect: 80
           port: 2856

@@ -17,6 +17,28 @@ incus-compose implements a subset of the Compose Specification. This doc lists w
 - `volumes` - Named volumes and bind mounts
 - `deploy.replicas` - Service scaling (instances named `{service}-{index}`)
 - `restart` - Restart policies (`no`, `always`, `on-failure`, `unless-stopped`)
+- `x-incus` extension — pass any Incus instance option directly (see below)
+
+#### x-incus Instance Extensions
+
+Any Incus instance config key can be set via the `x-incus` extension block on a service definition. Keys are passed verbatim to the Incus instance config on creation.
+
+```yaml
+services:
+  web:
+    image: docker.io/nginx:alpine
+    x-incus:
+      limits.memory: 512MB
+      limits.cpu: "2"
+```
+
+Any [Incus instance option](https://linuxcontainers.org/incus/docs/main/reference/instance_options/) is accepted. Common options include:
+
+- `limits.memory` - Memory limit (e.g., "512MB", "1GB")
+- `limits.cpu` - CPU cores (e.g., "2", "4")
+- `security.nesting` - Allow nested containers/VMs
+- `boot.autostart` - Auto-start on Incus boot
+- `security.privileged` - Privileged container
 
 ### Networks
 
@@ -53,11 +75,11 @@ When a managed bridge network is created, incus-compose automatically configures
 
 **IPv4** — The first quarter of the address block is reserved for static assignment. The DHCP range starts at that boundary:
 
-| Subnet | Static range | DHCP range |
-| ------ | ------------ | ---------- |
-| /24    | `.1–.63`     | `.64–.254` |
+| Subnet | Static range   | DHCP range       |
+| ------ | -------------- | ---------------- |
+| /24    | `.1–.63`       | `.64–.254`       |
 | /16    | `.0.0–.63.255` | `.64.0–.255.254` |
-| /28    | `.1–.3`      | `.4–.14`   |
+| /28    | `.1–.3`        | `.4–.14`         |
 
 **IPv6** — The first 256 addresses (`::0–::ff`) are reserved for static; DHCP runs from `::100` to `::ffff`. Stateful DHCPv6 (`ipv6.dhcp.stateful`) is enabled automatically.
 
@@ -328,13 +350,13 @@ services:
       - "8080:80"
     networks:
       - frontend
-    x-incus:
+    x-incus-compose:
       nat-proxy:
-        - port: 8080     # listen port (matches the published port above)
-          connect: 80    # container port to forward to
+        - port: 8080 # listen port (matches the published port above)
+          connect: 80 # container port to forward to
         - port: 8443
           connect: 443
-          listen:        # optional: restrict listen IPs (default: all bridge IPs)
+          listen: # optional: restrict listen IPs (default: all bridge IPs)
             - 192.168.1.1
 ```
 

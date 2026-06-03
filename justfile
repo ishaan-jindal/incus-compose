@@ -91,7 +91,7 @@ release tag="v0.0.1-dev0" healthd_image="registry.gitlab.com/r3j0/incus-compose/
     podman push {{ healthd_image }}:latest
     podman tag {{ healthd_image }}:latest {{ healthd_image }}:{{ tag }}
     podman push {{ healthd_image }}:{{ tag }}
-    goreleaser release
+    goreleaser release --clean
 
 # Run with local healthd binary (for testing without an explicit OCI image) (ex. just run-healthd -f test/healthd/debug/compose.yaml up )
 run-healthd *args:
