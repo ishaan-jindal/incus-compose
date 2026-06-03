@@ -26,6 +26,7 @@ incus-compose implements a subset of the Compose Specification. This doc lists w
 - External networks (pre-existing Incus networks)
 - `x-incus` extension — pass any Incus network config key directly (see below)
 - Automatic DHCP range configuration on creation (see below)
+- Static IP assignment per service via `ipv4_address` / `ipv6_address` (see below)
 
 Not supported:
 
@@ -61,6 +62,39 @@ When a managed bridge network is created, incus-compose automatically configures
 **IPv6** — The first 256 addresses (`::0–::ff`) are reserved for static; DHCP runs from `::100` to `::ffff`. Stateful DHCPv6 (`ipv6.dhcp.stateful`) is enabled automatically.
 
 Setting `ipv4.dhcp.ranges` or `ipv6.dhcp.ranges` in `x-incus` disables auto-calculation for that protocol. Existing networks (already present in Incus when `up` runs) are never modified.
+
+#### Static IP Assignment
+
+A service can be assigned a fixed IP on a specific network using the standard Compose
+`ipv4_address` / `ipv6_address` fields on the per-service network attachment:
+
+```yaml
+services:
+  db:
+    image: docker.io/postgres:16-alpine
+    networks:
+      backend:
+        ipv4_address: 10.100.0.10
+
+  web:
+    image: docker.io/nginx:alpine
+    networks:
+      backend:
+        ipv4_address: 10.100.0.11
+        ipv6_address: fd42:abc::11
+
+networks:
+  backend:
+    x-incus:
+      ipv4.address: 10.100.0.1/24
+      ipv6.address: fd42:abc::1/64
+```
+
+The address is set as `ipv4.address` / `ipv6.address` on the Incus NIC device. The bridge's
+built-in DHCP server reserves it so the instance always receives that address on the network.
+
+The address must fall within the static zone (first quarter of the block) to avoid conflicts
+with DHCP-assigned addresses.
 
 ### Volumes
 
