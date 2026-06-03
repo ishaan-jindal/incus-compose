@@ -287,7 +287,7 @@ func (r *Image) refresh(args Options) error {
 
 	op, err := r.Config.cache.DeleteImage(r.IncusAlias.Target)
 	if err = r.client.hookOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
-		return ErrCreate.WithText("deleting stale cached image for refresh").Wrap(err)
+		r.client.LogDebug("deleting stale cached image for refresh", "error", err)
 	}
 
 	r.IncusAlias = nil
