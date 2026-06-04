@@ -86,7 +86,7 @@ var upCommand = &cli.Command{
 			start:         !cmd.Bool("no-start"),
 			noHealthd:     cmd.Bool("no-healthd"),
 			healthdBinary: cmd.String("healthd-binary"),
-			noPull:        cmd.Bool("pull"),
+			noPull:        cmd.Bool("no-pull"),
 			timeout:       int(cmd.Int("timeout")),
 			scale:         parseScale(cmd.StringSlice("scale")),
 		})
