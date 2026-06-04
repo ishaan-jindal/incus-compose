@@ -4,6 +4,38 @@ incus-compose implements a subset of the Compose Specification. This doc lists w
 
 ## Supported Features
 
+### Incus Override File
+
+If a `compose.incus.yaml` file exists next to the selected `compose.yaml`, incus-compose loads it automatically as an additional Compose file. Use it for Incus-specific overrides while keeping the upstream Docker Compose file unchanged.
+
+```text
+compose.yaml
+compose.incus.yaml
+```
+
+Example `compose.incus.yaml`:
+
+```yaml
+services:
+  web:
+    ports: !reset []
+    x-incus:
+      limits.memory: 512MB
+
+networks:
+  default:
+    x-incus:
+      ipv4.address: 10.100.0.1/24
+```
+
+Running with the base file also applies the Incus override when present:
+
+```bash
+incus-compose -f compose.yaml up
+```
+
+The override file follows normal Compose merge rules. For example, `!reset []` clears a list from the base file.
+
 ### Services
 
 - `image` - OCI images from any registry
