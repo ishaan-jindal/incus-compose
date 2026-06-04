@@ -51,7 +51,7 @@ incus-compose uses a **resource-first design**, see [Architecture Documentation]
 
 ### Prerequisites
 
-Switch to https remotes (required for healthchecking).
+Switch to a https remote (required for healthchecking).
 
 ```bash
 incus remote generate-certificate
