@@ -55,7 +55,7 @@ var downCommand = &cli.Command{
 		// Get the per Project client early, gives early errors if the project does not exists
 		c, err := globalClient.EnsureProject(p.Name)
 		if err != nil {
-			globalClient.LogError("Getting the incus project", "error", err)
+			globalClient.LogError("Getting the incus project", "project", p.Name, "error", err)
 			return errLogged.Wrap(err)
 		}
 		defer func() { _ = c.Close() }()
@@ -63,18 +63,18 @@ var downCommand = &cli.Command{
 		if deleteProject {
 			networks, err := projectNetworks(c, p)
 			if err != nil {
-				globalClient.LogError("Getting project networks", "error", err)
+				globalClient.LogError("Getting project networks", "project", p.Name, "error", err)
 				return errLogged.Wrap(err)
 			}
 
 			err = globalClient.DeleteProject(c.Project(), true)
 			if err != nil {
-				globalClient.LogError("Deleting the project", "error", err)
+				globalClient.LogError("Deleting the project", "project", p.Name, "error", err)
 				return errLogged
 			}
 
 			if err := deleteProjectNetworks(c, networks); err != nil {
-				globalClient.LogError("Deleting project networks", "error", err)
+				globalClient.LogError("Deleting project networks", "project", p.Name, "error", err)
 				return errLogged.Wrap(err)
 			}
 
@@ -82,12 +82,12 @@ var downCommand = &cli.Command{
 		}
 
 		if err := c.RegisterScaleWatcher(); err != nil {
-			globalClient.LogError("Registering the scale watcher", "error", err)
+			globalClient.LogError("Registering the scale watcher", "project", p.Name, "error", err)
 			return errLogged.Wrap(err)
 		}
 
 		if err := c.Open(); err != nil {
-			globalClient.LogError("Opening the project client", "error", err)
+			globalClient.LogError("Opening the project client", "project", p.Name, "error", err)
 			return errLogged.Wrap(err)
 		}
 
@@ -117,7 +117,6 @@ func projectNetworks(c *client.Client, p *project.Project) ([]*client.Network, e
 	}
 
 	if err := networkStack.Run(client.ActionEnsure); err != nil {
-		c.LogError("Getting project networks", "error", err)
 		return nil, err
 	}
 
