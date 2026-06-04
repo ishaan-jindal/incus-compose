@@ -253,14 +253,10 @@ func (s *ProjectInternalSuite) TestToStackUsesNetworkProfileWithoutNetworkResour
 			hasNetwork = true
 		}
 		if resource.Kind() == client.KindProfile {
-			var ok bool
-			profile, ok = resource.(*client.Profile)
-			s.True(ok)
+			profile = resource.(*client.Profile)
 		}
 		if resource.Kind() == client.KindInstance {
-			var ok bool
-			instance, ok = resource.(*client.Instance)
-			s.True(ok)
+			instance = resource.(*client.Instance)
 		}
 	}
 
