@@ -289,8 +289,6 @@ func (r *Image) refresh(args Options) error {
 		return nil
 	}
 
-	r.client.LogDebug("Infos", "cache", r.Config.cache, "alias", r.IncusAlias)
-
 	op, err := r.Config.cache.DeleteImage(r.IncusAlias.Target)
 	if err = r.client.hookOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
 		r.client.LogDebug("deleting stale cached image for refresh", "error", err)

@@ -1,5 +1,7 @@
 services:
   immich-server:
+    image: docker.io/pcdummy/immich-server:${IMMICH_VERSION:-release}
+    ports: !reset []
     depends_on:
       redis:
         condition: service_healthy
@@ -13,6 +15,7 @@ services:
         ipv4_address: 10.131.32.17
 
   immich-machine-learning:
+    image: docker.io/pcdummy/immich-machine-learning:${IMMICH_VERSION:-release}
     healthcheck:
       test: ["CMD", "python3", "/usr/src/healthcheck.py"]
     networks:
@@ -25,6 +28,7 @@ services:
         ipv4_address: 10.131.32.19
 
   database:
+    image: docker.io/pcdummy/immich-postgres:14-vectorchord0.4.3-pgvectors0.2.0
     healthcheck:
       test: ["CMD", "/usr/local/bin/healthcheck.sh"]
       interval: 10s

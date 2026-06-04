@@ -4,8 +4,7 @@ name: immich
 services:
   immich-server:
     container_name: immich_server
-    # image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}
-    image: docker.io/pcdummy/immich-server:${IMMICH_VERSION:-release}
+    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}
     # extends:
     #   file: hwaccel.transcoding.yml
     #   service: cpu # set to one of [nvenc, quicksync, rkmpp, vaapi, vaapi-wsl] for accelerated transcoding
@@ -15,8 +14,8 @@ services:
       # - /etc/localtime:/etc/localtime:ro
     env_file:
       - .env
-    # ports:
-    #   - "2283:2283"
+    ports:
+      - "2283:2283"
     restart: unless-stopped
 
   immich-machine-learning:

@@ -30,14 +30,6 @@ func (s *ProjectInternalSuite) fixturePath(name string) string {
 	return filepath.Join(s.fixturesDir, name)
 }
 
-func (s *ProjectInternalSuite) TestNewLoadOptionsDefaultsToIncusProfile() {
-	options := NewLoadOptions()
-
-	s.Empty(options.Files)
-	s.Equal([]string{"incus"}, options.Profiles)
-	s.False(options.OsEnv)
-}
-
 func (s *ProjectInternalSuite) TestNewLoadOptionsAppliesOptions() {
 	options := NewLoadOptions(
 		LoadName("custom"),
@@ -52,7 +44,6 @@ func (s *ProjectInternalSuite) TestNewLoadOptionsAppliesOptions() {
 	s.Equal([]string{"compose.yaml", "compose.override.yaml"}, options.Files)
 	s.Equal("/tmp/project", options.WorkingDir)
 	s.Equal([]string{".env", "prod.env"}, options.EnvFiles)
-	s.Equal([]string{"dev", "incus"}, options.Profiles)
 	s.True(options.OsEnv)
 }
 

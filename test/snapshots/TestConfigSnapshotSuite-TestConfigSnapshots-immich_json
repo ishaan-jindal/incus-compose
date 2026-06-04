@@ -11,9 +11,20 @@
         "POSTGRES_PASSWORD": "supersecretpassword",
         "POSTGRES_USER": "postgres"
       },
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "/usr/local/bin/healthcheck.sh"
+        ],
+        "timeout": "5s",
+        "interval": "10s",
+        "retries": 3
+      },
       "image": "docker.io/pcdummy/immich-postgres:14-vectorchord0.4.3-pgvectors0.2.0",
       "networks": {
-        "default": null
+        "default": {
+          "ipv4_address": "10.131.32.20"
+        }
       },
       "restart": "unless-stopped",
       "shm_size": "134217728",
@@ -44,9 +55,18 @@
           "path": "$FIXTURE_PATH/.env"
         }
       ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "python3",
+          "/usr/src/healthcheck.py"
+        ]
+      },
       "image": "docker.io/pcdummy/immich-machine-learning:v2",
       "networks": {
-        "default": null
+        "default": {
+          "ipv4_address": "10.131.32.18"
+        }
       },
       "restart": "unless-stopped",
       "volumes": [
@@ -61,6 +81,17 @@
     "immich-server": {
       "command": null,
       "container_name": "immich_server",
+      "depends_on": {
+        "database": {
+          "condition": "service_healthy",
+          "restart": true,
+          "required": true
+        },
+        "redis": {
+          "condition": "service_healthy",
+          "required": true
+        }
+      },
       "entrypoint": null,
       "environment": {
         "DB_DATABASE_NAME": "immich",
@@ -76,9 +107,17 @@
           "path": "$FIXTURE_PATH/.env"
         }
       ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "/usr/src/app/server/bin/immich-healthcheck"
+        ]
+      },
       "image": "docker.io/pcdummy/immich-server:v2",
       "networks": {
-        "default": null
+        "default": {
+          "ipv4_address": "10.131.32.17"
+        }
       },
       "restart": "unless-stopped",
       "volumes": [
@@ -105,7 +144,9 @@
       },
       "image": "docker.io/valkey/valkey:9@sha256:3b55fbaa0cd93cf0d9d961f405e4dfcc70efe325e2d84da207a0a8e6d8fde4f9",
       "networks": {
-        "default": null
+        "default": {
+          "ipv4_address": "10.131.32.19"
+        }
       },
       "restart": "unless-stopped"
     }

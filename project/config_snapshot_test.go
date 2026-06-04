@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -52,6 +53,10 @@ func (s *ConfigSnapshotSuite) runConfigTest(tc ConfigTestCase) {
 
 		loadOpts := []project.LoadOption{
 			project.LoadWorkingDir(fixturePath),
+		}
+
+		if _, err := os.Stat(filepath.Join(fixturePath, "compose.incus.yaml")); err == nil {
+			loadOpts = append(loadOpts, project.LoadFiles([]string{filepath.Join(fixturePath, "compose.yaml"), filepath.Join(fixturePath, "compose.incus.yaml")}))
 		}
 
 		if len(tc.Profiles) > 0 {

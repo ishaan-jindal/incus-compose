@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 
@@ -31,9 +32,30 @@ func buildLoadOptions(cmd *cli.Command) []project.LoadOption {
 		loadOpts = append(loadOpts, project.LoadName(name))
 	}
 
-	if files := cmd.StringSlice("file"); len(files) > 0 {
-		loadOpts = append(loadOpts, project.LoadFiles(files))
+	files := cmd.StringSlice("file")
+	cfile, _ := filepath.Abs("compose.yaml")
+
+	for _, f := range files {
+		if filepath.Base(f) == "compose.yaml" {
+			cfile = f
+			break
+		}
 	}
+
+	incusCFile := filepath.Join(filepath.Dir(cfile), "compose.incus.yaml")
+
+	_, err := os.Stat(incusCFile)
+	if err == nil {
+		files = append(files, incusCFile)
+	} else if dir := cmd.String("project-directory"); dir != "" {
+		incusCFile = filepath.Join(dir, "compose.incus.yaml")
+		_, err := os.Stat(incusCFile)
+		if err == nil {
+			files = append(files, incusCFile)
+		}
+	}
+
+	loadOpts = append(loadOpts, project.LoadFiles(files))
 
 	if dir := cmd.String("project-directory"); dir != "" {
 		loadOpts = append(loadOpts, project.LoadWorkingDir(dir))
