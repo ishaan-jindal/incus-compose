@@ -146,8 +146,19 @@ var listCommand = &cli.Command{
 		}
 
 		if ok, err := c.InstanceExists("ic-healthd"); ok && err == nil {
-			inst, err := c.Resource(client.KindInstance, "ic-healthd", &client.InstanceConfig{})
+			// Use CliConfig from globalClient for automatic image server resolution
+			imageConfig := &client.ImageConfig{CliConfig: globalClient.CliConfig()}
+
+			healthdImage := resolveHealthdImage(cmd.String("healthd-image"))
+			img, err := c.Resource(client.KindImage, healthdImage, imageConfig)
 			if err == nil {
+				stack.Add(img)
+
+				inst, err := c.Resource(client.KindInstance, "ic-healthd", &client.InstanceConfig{Image: healthdImage, Full: true})
+				if err != nil {
+					c.LogWarn(err.Error())
+				}
+
 				stack.Add(inst)
 			}
 		}
