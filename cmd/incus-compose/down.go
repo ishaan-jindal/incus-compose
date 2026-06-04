@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/urfave/cli/v3"
 
@@ -59,6 +60,27 @@ var downCommand = &cli.Command{
 		}
 		defer func() { _ = c.Close() }()
 
+		if deleteProject {
+			networks, err := projectNetworks(c, p)
+			if err != nil {
+				globalClient.LogError("Getting project networks", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			err = globalClient.DeleteProject(c.Project(), true)
+			if err != nil {
+				globalClient.LogError("Deleting the project", "error", err)
+				return errLogged
+			}
+
+			if err := deleteProjectNetworks(c, networks); err != nil {
+				globalClient.LogError("Deleting project networks", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			return nil
+		}
+
 		if err := c.RegisterScaleWatcher(); err != nil {
 			globalClient.LogError("Registering the scale watcher", "error", err)
 			return errLogged.Wrap(err)
@@ -69,22 +91,47 @@ var downCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		if deleteProject {
-			// Down with a project is easy, isn't it?
-			err = globalClient.DeleteProject(c.Project(), true)
-			if err != nil {
-				globalClient.LogError("Deleting the project", "error", err)
-				return errLogged
-			}
-			return nil
-		}
-
 		return runDown(globalClient, c, p, downParams{
 			services:  cmd.Args().Slice(),
 			timeout:   int(cmd.Int("timeout")),
 			noHealthd: noHealthd,
 		})
 	},
+}
+
+func projectNetworks(c *client.Client, p *project.Project) ([]*client.Network, error) {
+	stack := client.NewStack(c)
+	if err := p.ToStack(c, stack, project.ToStackReverse()); err != nil {
+		c.LogError("Adding the project to a stack", "error", err)
+		return nil, err
+	}
+
+	networkStack := client.NewStack(c)
+	networks := []*client.Network{}
+	for _, r := range stack.All() {
+		network, ok := r.(*client.Network)
+		if ok && !network.Config.External {
+			networkStack.Add(network)
+			networks = append(networks, network)
+		}
+	}
+
+	if err := networkStack.Run(client.ActionEnsure); err != nil {
+		c.LogError("Getting project networks", "error", err)
+		return nil, err
+	}
+
+	return networks, nil
+}
+
+func deleteProjectNetworks(c *client.Client, networks []*client.Network) error {
+	var errs error
+	for _, network := range networks {
+		if err := c.GlobalConnection().DeleteNetwork(network.IncusName()); err != nil {
+			errs = errors.Join(errs, fmt.Errorf("deleting network %q: %w", network.Name(), err))
+		}
+	}
+	return errs
 }
 
 // downParams holds the parsed arguments for a down run.

@@ -9,7 +9,11 @@ import (
 	"testing"
 
 	"github.com/bradleyjkemp/cupaloy/v2"
+	"github.com/lxc/incus/v6/shared/cliconfig"
 	"github.com/stretchr/testify/suite"
+
+	"gitlab.com/r3j0/incus-compose/client"
+	"gitlab.com/r3j0/incus-compose/project"
 )
 
 type E2ESuite struct {
@@ -44,6 +48,55 @@ func (s *E2ESuite) skipIfLocal() {
 	if os.Getenv("INCUS_COMPOSE_TEST_LOCAL") != "" {
 		s.T().Skip("Skipping: env INCUS_COMPOSE_TEST_LOCAL is set")
 	}
+}
+
+func (s *E2ESuite) plannedNetworkNames(compose string) []string {
+	proj, err := project.New().Load(s.ctx, project.LoadFiles([]string{compose}))
+	s.Require().NoError(err)
+
+	c := client.NewOfflineClient(s.ctx, proj.Name)
+	stack := client.NewStack(c)
+	s.Require().NoError(proj.ToStack(c, stack))
+
+	names := []string{}
+	for _, r := range stack.All() {
+		if r.Kind() == client.KindNetwork {
+			names = append(names, r.IncusName())
+		}
+	}
+	return names
+}
+
+func (s *E2ESuite) defaultProjectClient() *client.Client {
+	opts := []client.ClientOption{}
+	if url, ok := os.LookupEnv("INCUS_COMPOSE_URL"); ok {
+		opts = append(opts, client.ClientURL(url), client.ClientInsecureSkipVerify())
+		if cert, ok := os.LookupEnv("INCUS_COMPOSE_CERT"); ok {
+			opts = append(opts, client.ClientTLSClientCert(cert))
+		}
+		if key, ok := os.LookupEnv("INCUS_COMPOSE_KEY"); ok {
+			opts = append(opts, client.ClientTLSClientKey(key))
+		}
+	} else {
+		conf, err := cliconfig.LoadConfig("")
+		s.Require().NoError(err)
+
+		remote := os.Getenv("INCUS_REMOTE")
+		if remote == "" {
+			remote = conf.DefaultRemote
+		}
+
+		server, err := conf.GetInstanceServer(remote)
+		s.Require().NoError(err)
+		opts = append(opts, client.ClientProvideInstanceServer(server))
+	}
+
+	globalClient := client.New(s.ctx, opts...)
+	s.Require().NoError(globalClient.Connect())
+
+	c, err := globalClient.EnsureProject("default")
+	s.Require().NoError(err)
+	return c
 }
 
 func (s *E2ESuite) TestConfigCommand() {
@@ -108,6 +161,37 @@ func (s *E2ESuite) TestConfigCommand() {
 				s.NoError(err)
 			}
 		})
+	}
+}
+
+func (s *E2ESuite) TestDownProjectDeletesNetworks() {
+	s.skipIfLocal()
+
+	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+	networks := s.plannedNetworkNames(compose)
+	s.Require().NotEmpty(networks)
+
+	cleaned := false
+	defer func() {
+		if !cleaned {
+			_ = s.run("-f", compose, "down", "--project")
+		}
+	}()
+
+	s.Require().NoError(s.run("-f", compose, "up", "--no-pull"))
+
+	c := s.defaultProjectClient()
+	for _, name := range networks {
+		_, _, err := c.Connection().GetNetwork(name)
+		s.Require().NoError(err)
+	}
+
+	s.Require().NoError(s.run("-f", compose, "down", "--project"))
+	cleaned = true
+
+	for _, name := range networks {
+		_, _, err := c.Connection().GetNetwork(name)
+		s.Error(err)
 	}
 }
 
