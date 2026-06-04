@@ -329,6 +329,7 @@ func (c *Client) InstanceIPs(incusName string) (network string, ipv4 []string, i
 	return network, ipv4, ipv6, nil
 }
 
+// AddDebuggerHook adds a debugging hook for client resources.
 func AddDebuggerHook(c *GlobalClient) {
 	c.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
 		if err != nil {
