@@ -2,7 +2,6 @@ package client
 
 import (
 	"fmt"
-	"log/slog"
 	"maps"
 	"slices"
 )
@@ -110,8 +109,6 @@ func FilterDuplicates(resources []Resource) []Resource {
 		key := fmt.Sprintf("%v:%v", r.Kind(), r.Name())
 		if _, ok := known[key]; !ok {
 			known[key] = r
-		} else {
-			slog.Debug(key)
 		}
 	}
 

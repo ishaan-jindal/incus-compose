@@ -206,7 +206,9 @@ var listCommand = &cli.Command{
 			}
 
 			if r.Kind() == client.KindImage {
+				status.Name = ""
 				status.IncusName = ""
+				status.Image = r.Name()
 			}
 
 			if r.Kind() == client.KindInstance {
@@ -233,6 +235,7 @@ var listCommand = &cli.Command{
 
 				instFull := instance.IncusInstanceFull
 
+				status.Name = instance.ServiceName()
 				status.Status = instFull.State.Status
 				status.Image = instance.IncusImageAlias.Name
 				status.Description = instFull.Description
@@ -248,7 +251,7 @@ var listCommand = &cli.Command{
 
 				// Use the healthcheck status if available.
 				if val, ok := instFull.Config["user.healthcheck.status"]; ok {
-					status.Status = titleCaser.String(val)
+					status.Status = status.Status + " / " + titleCaser.String(val)
 				}
 			}
 

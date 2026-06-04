@@ -349,3 +349,11 @@ func sanitizeProjectName(name string) string {
 	safe = strings.ReplaceAll(safe, "_", "-")
 	return safe
 }
+
+// serviceName strips the trailing "-{index}" from a scaled instance name.
+func serviceName(name string) string {
+	if i := strings.LastIndex(name, "-"); i > 0 {
+		return name[:i]
+	}
+	return name
+}

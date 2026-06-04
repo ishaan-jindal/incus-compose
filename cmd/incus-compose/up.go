@@ -69,10 +69,6 @@ var upCommand = &cli.Command{
 			globalClient.LogError("Getting the incus project", "error", err)
 			return errLogged.Wrap(err)
 		}
-		if err := c.RegisterScaleWatcher(); err != nil {
-			globalClient.LogError("Registering the scale watcher", "error", err)
-			return errLogged.Wrap(err)
-		}
 
 		if err := c.Open(); err != nil {
 			globalClient.LogError("Opening the project client", "error", err)

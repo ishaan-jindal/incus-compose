@@ -81,11 +81,6 @@ var downCommand = &cli.Command{
 			return nil
 		}
 
-		if err := c.RegisterScaleWatcher(); err != nil {
-			globalClient.LogError("Registering the scale watcher", "project", p.Name, "error", err)
-			return errLogged.Wrap(err)
-		}
-
 		if err := c.Open(); err != nil {
 			globalClient.LogError("Opening the project client", "project", p.Name, "error", err)
 			return errLogged.Wrap(err)

@@ -48,11 +48,6 @@ var restartCommand = &cli.Command{
 		}
 		defer func() { _ = c.Close() }()
 
-		if err := c.RegisterScaleWatcher(); err != nil {
-			globalClient.LogError("Registering the scale watcher", "error", err)
-			return errLogged.Wrap(err)
-		}
-
 		if err := c.Open(); err != nil {
 			globalClient.LogError("Opening the project client", "error", err)
 			return errLogged.Wrap(err)

@@ -10,8 +10,6 @@ import (
 	"text/tabwriter"
 
 	"github.com/urfave/cli/v3"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
 
 	"gitlab.com/r3j0/incus-compose/client"
 	"gitlab.com/r3j0/incus-compose/project"
@@ -111,8 +109,6 @@ var psCommand = &cli.Command{
 			entries = append(entries, e)
 		}
 
-		titleCaser := cases.Title(language.English)
-
 		seenServices := map[string]struct{}{}
 
 		for _, r := range stack.All() {
@@ -166,11 +162,6 @@ var psCommand = &cli.Command{
 							entry.Addresses = append(entry.Addresses, a.Address)
 						}
 					}
-				}
-
-				// Use the healthcheck status if available.
-				if val, ok := full.Config["user.healthcheck.status"]; ok {
-					entry.Status = titleCaser.String(val)
 				}
 			}
 

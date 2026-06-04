@@ -157,6 +157,10 @@ func (c *Client) Instance(name string, config InstanceConfig) (*Instance, error)
 
 // InstanceExists reports whether an instance with the given name exists in Incus.
 func (c *Client) InstanceExists(name string) (bool, error) {
+	if c.incus == nil {
+		return false, nil
+	}
+
 	_, _, err := c.incus.GetInstance(sanitizeInstanceName(name))
 	return err == nil, nil
 }

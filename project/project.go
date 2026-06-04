@@ -129,14 +129,9 @@ func LoadModel(ctx context.Context, opts ...LoadOption) (map[string]any, error) 
 	return model, err
 }
 
-// ServiceToInstance translates a compose service to an Incus instance.
+// serviceToInstance translates a compose service to an Incus instance.
 // Environment vars become instance config, labels become user metadata.
 // Volumes default to bind mounts for paths starting with / or ., otherwise named volumes.
-// The index parameter is used for instance naming ({service}-{index}).
-func ServiceToInstance(c *client.Client, p *types.Project, serviceName string, full bool, index int) ([]client.Resource, error) {
-	return serviceToInstance(c, p, serviceName, full, index, nil)
-}
-
 func serviceToInstance(c *client.Client, p *types.Project, serviceName string, full bool, index int, networkProfile client.Resource) ([]client.Resource, error) {
 	service, ok := p.Services[serviceName]
 	if !ok {
@@ -943,6 +938,15 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 			scale = int(*service.Deploy.Replicas)
 		}
 
+		for {
+			instanceName := fmt.Sprintf("%s-%d", service.Name, scale+1)
+			if ok, err := c.InstanceExists(instanceName); !ok || err != nil {
+				break
+			}
+
+			scale = scale + 1
+		}
+
 		for i := 1; i <= scale; i++ {
 			instanceResources, err := serviceToInstance(c, p.Project, serviceName, options.Full, i, networkProfile)
 			if err != nil {
@@ -965,55 +969,7 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 		return nil
 	}
 
-	return p.PruneInstances(c, options)
-}
-
-// PruneInstances removes scaled instances whose index exceeds the desired scale
-// for each service. It is called by ToStack after the target resource set is built.
-func (p *Project) PruneInstances(c *client.Client, options *ToStackOptions) error {
-	var errs error
-	for _, service := range p.Services {
-		if len(options.OnlyServices) > 0 && !slices.ContainsFunc(options.OnlyServices, func(on string) bool {
-			return strings.HasPrefix(on+"-", service.Name+"-")
-		}) {
-			continue
-		}
-
-		scale := 1
-		if s, ok := options.Scale[service.Name]; ok {
-			scale = s
-		} else if service.Deploy != nil && service.Deploy.Replicas != nil {
-			scale = int(*service.Deploy.Replicas)
-		}
-
-		// Sentinel: if scale+1 doesn't exist there is nothing to prune.
-		exists, err := c.InstanceExists(fmt.Sprintf("%s-%d", service.Name, scale+1))
-		if err != nil || !exists {
-			continue
-		}
-
-		for i := scale + 1; ; i++ {
-			name := fmt.Sprintf("%s-%d", service.Name, i)
-			exists, err := c.InstanceExists(name)
-			if err != nil || !exists {
-				break
-			}
-
-			inst, err := c.Resource(client.KindInstance, name, &client.InstanceConfig{})
-			if err != nil {
-				errs = errors.Join(errs, err)
-				continue
-			}
-			if err := client.RunAction(inst, client.ActionEnsure); err != nil {
-				continue
-			}
-			_ = client.RunAction(inst, client.ActionStop, client.OptionForce())
-			if err := client.RunAction(inst, client.ActionDelete, client.OptionForce()); err != nil {
-				errs = errors.Join(errs, err)
-			}
-		}
-	}
-	return errs
+	return nil
 }
 
 // buildProjectOptions creates cli.ProjectOptions from LoadOptions.
