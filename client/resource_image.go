@@ -278,12 +278,18 @@ func (r *Image) get() error {
 // no layer pull). If it matches the cached fingerprint, the refresh is skipped.
 // On query failure the refresh proceeds to be safe.
 func (r *Image) refresh(args Options) error {
-	if r.source != nil {
-		remoteAlias, _, err := r.source.GetImageAlias(r.Config.Image)
-		if err == nil && remoteAlias != nil && remoteAlias.Target == r.IncusAlias.Target {
-			return nil
-		}
+	// No source || no cache || no alias, no download.
+	if r.source == nil || r.Config.cache == nil || r.IncusAlias == nil {
+		return nil
 	}
+
+	// Check if the remote image has the same fingerprint
+	remoteAlias, _, err := r.source.GetImageAlias(r.Config.Image)
+	if err == nil && remoteAlias != nil && remoteAlias.Target == r.IncusAlias.Target {
+		return nil
+	}
+
+	r.client.LogDebug("Infos", "cache", r.Config.cache, "alias", r.IncusAlias)
 
 	op, err := r.Config.cache.DeleteImage(r.IncusAlias.Target)
 	if err = r.client.hookOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
