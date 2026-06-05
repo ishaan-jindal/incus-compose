@@ -171,6 +171,55 @@ func TestDNSmasqRecords(t *testing.T) {
 }
 
 // ----------------------------------------------------------------------------
+// candidateNames Unit Tests (offline, no Incus required)
+// ----------------------------------------------------------------------------
+
+func TestCandidateNames_WithOverride(t *testing.T) {
+	c := NewOfflineClient(context.Background(), "myproject")
+	r, err := c.Resource(KindNetwork, "shared", &NetworkConfig{
+		External:     true,
+		OverrideName: "my-production-net",
+	})
+	require.NoError(t, err)
+	net, ok := r.(*Network)
+	require.True(t, ok)
+
+	candidates := net.candidateNames()
+	require.Len(t, candidates, 4)
+	assert.Equal(t, "my-production-net", candidates[0], "override raw first")
+	assert.True(t, strings.HasPrefix(candidates[1], "ic-"), "override sanitized second")
+	assert.Equal(t, "shared", candidates[2], "compose name raw third")
+	assert.True(t, strings.HasPrefix(candidates[3], "ic-"), "compose name sanitized fourth")
+}
+
+func TestCandidateNames_WithoutOverride(t *testing.T) {
+	c := NewOfflineClient(context.Background(), "myproject")
+	r, err := c.Resource(KindNetwork, "shared", &NetworkConfig{External: true})
+	require.NoError(t, err)
+	net, ok := r.(*Network)
+	require.True(t, ok)
+
+	candidates := net.candidateNames()
+	require.Len(t, candidates, 2)
+	assert.Equal(t, "shared", candidates[0], "compose name raw first")
+	assert.True(t, strings.HasPrefix(candidates[1], "ic-"), "compose name sanitized second")
+}
+
+func TestCandidateNames_DeduplicatesShortName(t *testing.T) {
+	// With empty project name, sanitize(name) == name for short names.
+	// The raw and sanitized candidates collapse into one entry.
+	c := NewOfflineClient(context.Background(), "")
+	r, err := c.Resource(KindNetwork, "mynet", &NetworkConfig{External: true})
+	require.NoError(t, err)
+	net, ok := r.(*Network)
+	require.True(t, ok)
+
+	candidates := net.candidateNames()
+	require.Len(t, candidates, 1, "raw and sanitized are the same — should deduplicate")
+	assert.Equal(t, "mynet", candidates[0])
+}
+
+// ----------------------------------------------------------------------------
 // Integration Tests
 // ----------------------------------------------------------------------------
 
@@ -514,7 +563,9 @@ func (s *NetworkSuite) TestIncusName_Deterministic() {
 // External Network Tests
 // ----------------------------------------------------------------------------
 
-func (s *NetworkSuite) TestExternal_IncusNameIsRaw() {
+func (s *NetworkSuite) TestExternal_InitialIncusNameIsRaw() {
+	// Without an OverrideName the static initial guess is the raw compose name.
+	// The real Incus name is confirmed via candidateNames() during Ensure.
 	r, err := s.client.Resource(KindNetwork, "incusbr0", &NetworkConfig{External: true})
 	s.Require().NoError(err)
 

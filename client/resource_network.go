@@ -37,16 +37,21 @@ type NetworkConfig struct {
 	// x-incus compose extension. All entries pass through verbatim to the
 	// Incus network config on creation.
 	Extensions map[string]string
+
+	// OverrideName is the x-incus-compose.network override. For external networks
+	// it is probed raw then sanitized before falling back to the compose name.
+	OverrideName string
 }
 
 // Network represents an Incus bridge network.
 type Network struct {
 	*BaseResource
 
-	client    *Client
-	incusName string
-	created   bool
-	Config    NetworkConfig
+	client      *Client
+	incusName   string
+	composeName string // original compose name; used as fallback in candidateNames
+	created     bool
+	Config      NetworkConfig
 
 	// State - nil means not ensured.
 	IncusNetwork *incusApi.Network
@@ -78,17 +83,50 @@ func newNetwork(c *Client, name string, configGetter Config) (*Network, error) {
 	network := &Network{
 		BaseResource: NewBaseResource(KindNetwork, name, PriorityNetwork),
 		client:       c,
+		composeName:  name,
 		Config:       *config,
 	}
 
-	// Generate Incus name: external networks use raw name, others get sanitized
-	if config.External {
-		network.incusName = name
-	} else {
+	// Static initial name: used offline and as first guess before Ensure resolves candidates.
+	if !config.External {
 		network.incusName = sanitizeNetworkName(c.project, c.Config().NetworkPrefix, name)
+	} else if config.OverrideName != "" {
+		network.incusName = config.OverrideName
+	} else {
+		network.incusName = name
 	}
 
 	return network, nil
+}
+
+// candidateNames returns the ordered list of Incus network names to probe for
+// external networks. Duplicates (e.g. when sanitize(x) == x) are omitted.
+// Resolution order:
+//  1. OverrideName raw
+//  2. OverrideName sanitized
+//  3. composeName raw
+//  4. composeName sanitized
+func (r *Network) candidateNames() []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(s string) {
+		if s != "" && !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+
+	prefix := r.client.Config().NetworkPrefix
+	project := r.client.project
+
+	if r.Config.OverrideName != "" {
+		add(r.Config.OverrideName)
+		add(sanitizeNetworkName(project, prefix, r.Config.OverrideName))
+	}
+	add(r.composeName)
+	add(sanitizeNetworkName(project, prefix, r.composeName))
+
+	return out
 }
 
 // String is for debugging.
@@ -125,8 +163,20 @@ func (r *Network) Ensure(opts ...Option) error {
 		}
 	}
 
-	// Try to get existing
-	err := r.get()
+	// Try to get existing network.
+	// External networks probe each candidate name in resolution order.
+	var err error
+	if r.Config.External {
+		for _, candidate := range r.candidateNames() {
+			r.incusName = candidate
+			if err = r.get(); err == nil {
+				break
+			}
+		}
+	} else {
+		err = r.get()
+	}
+
 	if err == nil {
 		if r.client.hookAfter != nil {
 			err = r.client.hookAfter(ActionEnsure, r, options, err)
@@ -135,7 +185,7 @@ func (r *Network) Ensure(opts ...Option) error {
 		return err
 	}
 
-	// External networks must exist - don't create them
+	// External networks must exist - don't create them.
 	if r.Config.External {
 		if r.client.hookAfter != nil {
 			err = r.client.hookAfter(ActionEnsure, r, options, err)
