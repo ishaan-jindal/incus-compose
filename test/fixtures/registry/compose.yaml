@@ -2,7 +2,7 @@ services:
   docker-registry:
     image: direct-docker.io/library/registry:${VERSION:-3}
     environment:
-      REGISTRY_HTTP_ADDR: ":5017"
+      REGISTRY_HTTP_ADDR: ":5000"
       REGISTRY_PROXY_REMOTEURL: "https://registry-1.docker.io"
       REGISTRY_PROXY_TTL: "168h"
       REGISTRY_LOG_LEVEL: "${REGISTRY_LOG_LEVEL:-info}"
@@ -11,5 +11,31 @@ services:
       - docker_registry_cache:/var/lib/registry
     restart: unless-stopped
 
+  ghcr-registry:
+    image: direct-docker.io/library/registry:${VERSION:-3}
+    environment:
+      REGISTRY_HTTP_ADDR: ":5000"
+      REGISTRY_PROXY_REMOTEURL: "https://ghcr.io"
+      REGISTRY_PROXY_TTL: "168h"
+      REGISTRY_LOG_LEVEL: "${REGISTRY_LOG_LEVEL:-info}"
+      REGISTRY_LOG_FIELDS_ENVIRONMENT: "production"
+    volumes:
+      - ghcr_registry_cache:/var/lib/registry
+    restart: unless-stopped
+
+  gitlab-registry:
+    image: direct-docker.io/library/registry:${VERSION:-3}
+    environment:
+      REGISTRY_HTTP_ADDR: ":5000"
+      REGISTRY_PROXY_REMOTEURL: "https://registry.gitlab.com"
+      REGISTRY_PROXY_TTL: "168h"
+      REGISTRY_LOG_LEVEL: "${REGISTRY_LOG_LEVEL:-info}"
+      REGISTRY_LOG_FIELDS_ENVIRONMENT: "production"
+    volumes:
+      - gitlab_registry_cache:/var/lib/registry
+    restart: unless-stopped
+
 volumes:
   docker_registry_cache:
+  ghcr_registry_cache:
+  gitlab_registry_cache:

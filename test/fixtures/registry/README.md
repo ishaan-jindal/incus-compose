@@ -16,7 +16,23 @@ docker-registry.example.com {
 		output file /var/log/caddy/docker-registry.example.com-access.log
 	}
 
-	reverse_proxy 10.132.32.17:5017
+	reverse_proxy 10.132.32.17:5000
+}
+
+ghcr-registry.example.com {
+	log {
+		output file /var/log/caddy/ghcr-registry.example.com-access.log
+	}
+
+	reverse_proxy 10.132.32.18:5000
+}
+
+gitlab-registry.example.com {
+	log {
+		output file /var/log/caddy/gitlab-registry.example.com-access.log
+	}
+
+	reverse_proxy 10.132.32.19:5000
 }
 ```
 
@@ -26,6 +42,12 @@ incus-compose -f docker-registry-cache/compose.yaml list
 
 incus remote remove docker.io
 incus remote add --protocol oci docker.io https://docker-registry.example.com
+
+incus remote remove ghcr.io
+incus remote add --protocol oci ghcr.io https://ghcr-registry.example.com
+
+incus remote remove registry.gitlab.com
+incus remote add --protocol oci registry.gitlab.com https://gitlab-registry.example.com
 ```
 
 ## Docs
