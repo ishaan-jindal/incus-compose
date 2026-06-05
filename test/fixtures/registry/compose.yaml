@@ -1,8 +1,15 @@
 services:
-  docker:
-    image: direct-docker.io/library/registry:${REGISTRY_VERSION:-3}
+  docker-registry:
+    image: direct-docker.io/library/registry:${VERSION:-3}
+    environment:
+      REGISTRY_HTTP_ADDR: ":5017"
+      REGISTRY_PROXY_REMOTEURL: "https://registry-1.docker.io"
+      REGISTRY_PROXY_TTL: "168h"
+      REGISTRY_LOG_LEVEL: "${REGISTRY_LOG_LEVEL:-info}"
+      REGISTRY_LOG_FIELDS_ENVIRONMENT: "production"
     volumes:
-      - docker-registry-cache:/var/lib/registry
+      - docker_registry_cache:/var/lib/registry
     restart: unless-stopped
+
 volumes:
-  docker-registry-cache:
+  docker_registry_cache:
