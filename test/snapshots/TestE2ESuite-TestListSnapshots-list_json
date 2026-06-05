@@ -1,10 +1,10 @@
 [
   {
     "kind": "image",
-    "name": "docker.io/nginx:alpine",
+    "name": "",
     "description": "",
     "incus_name": "",
-    "image": "",
+    "image": "docker.io/nginx:alpine",
     "status": "Cached",
     "addresses": []
   },
@@ -19,7 +19,7 @@
   },
   {
     "kind": "instance",
-    "name": "web-1",
+    "name": "web",
     "description": "incus-compose: simple-nginx:web-1",
     "incus_name": "web-1",
     "image": "docker.io/library/nginx:alpine",

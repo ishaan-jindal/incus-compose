@@ -781,8 +781,9 @@ func (r *Instance) Stop(opts ...Option) error {
 	}
 
 	op, err := r.client.incus.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
-		Action: "stop",
-		Force:  options.Force,
+		Action:  "stop",
+		Force:   options.Force,
+		Timeout: options.Timeout,
 	}, r.ETag)
 
 	err = r.client.hookOperation(r.client.globalClient.Ctx, ActionStop, r, options, op, err)

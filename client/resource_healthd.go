@@ -25,9 +25,6 @@ type HealthdConfig struct {
 	// IncusURL is the Incus API endpoint (network gateway IP).
 	IncusURL string `json:"incus_url"`
 
-	// Project is the Incus project to monitor.
-	// Project string `json:"project"`
-
 	// Image overrides the default healthd container image name.
 	Image string `json:"-"`
 
@@ -54,8 +51,9 @@ type Healthd struct {
 	config    *HealthdConfig
 	image     string
 
-	ensured bool
-	created bool
+	ensured  bool
+	created  bool
+	instance *Instance // backing Instance; set on creation or lazily by getInstance()
 }
 
 type healthdWatcherState struct {
@@ -157,13 +155,13 @@ func (c *Client) registerHealthdWatcher(h *Healthd) error {
 			return err
 		}
 
-		if e := h.reload(); e == nil {
+		if e := h.Reload(); e == nil {
 			c.LogDebug("HealthdWatcher reloaded healthd", "healthd", h.IncusName())
 			return err
 		}
 
 		c.LogWarn("Reloading healthd failed, restarting", "healthd", h.IncusName(), "error", e)
-		return errors.Join(err, e, h.restart())
+		return errors.Join(err, e, h.Stop(OptionForce()), h.Start())
 	})
 
 	return nil
@@ -220,6 +218,28 @@ func (r *Healthd) Created() bool {
 	return r.created
 }
 
+// getInstance resolves and ensures the backing ic-healthd Instance.
+// Returns ErrNotFound if the container does not exist in Incus.
+func (r *Healthd) getInstance() (*Instance, error) {
+	if r.instance != nil {
+		return r.instance, nil
+	}
+	res, err := r.client.Resource(KindInstance, r.name, &InstanceConfig{Image: r.image})
+	if err != nil {
+		return nil, err
+	}
+	inst, ok := res.(*Instance)
+	if !ok {
+		return nil, ErrUnknownConfig.WithKindName(KindInstance, r.name)
+	}
+	// no OptionCreate: loads existing state, returns ErrNotFound if absent
+	if err := inst.Ensure(); err != nil {
+		return nil, err
+	}
+	r.instance = inst
+	return inst, nil
+}
+
 // Ensure creates the healthd instance if it doesn't exist.
 func (r *Healthd) Ensure(opts ...Option) error {
 	options := NewOptions(opts...)
@@ -229,7 +249,9 @@ func (r *Healthd) Ensure(opts ...Option) error {
 	if err == nil {
 		r.ensured = true
 		r.created = false
-		// TODO: Update config if changed?
+		if inst, e := r.getInstance(); e == nil {
+			r.instance = inst
+		}
 		return nil
 	}
 
@@ -246,15 +268,14 @@ func (r *Healthd) Ensure(opts ...Option) error {
 		token = ""
 	}
 
-	// Create the healthd instance
+	// Create the healthd instance (stopped)
 	err = r.createInstance()
 	if err != nil {
 		return fmt.Errorf("creating instance: %w", err)
 	}
 
 	// Start instance first (/run is tmpfs, only exists when running)
-	err = r.start()
-	if err != nil {
+	if err := r.instance.Start(); err != nil {
 		return fmt.Errorf("starting instance: %w", err)
 	}
 
@@ -284,57 +305,67 @@ func (r *Healthd) Ensure(opts ...Option) error {
 	return nil
 }
 
+// Start starts the healthd instance.
+func (r *Healthd) Start(opts ...Option) error {
+	inst, err := r.getInstance()
+	if err != nil {
+		return err
+	}
+	return inst.Start(opts...)
+}
+
+// Stop stops the healthd instance.
+func (r *Healthd) Stop(opts ...Option) error {
+	inst, err := r.getInstance()
+	if err != nil {
+		return err
+	}
+	return inst.Stop(opts...)
+}
+
 // Delete removes the healthd instance.
 func (r *Healthd) Delete(opts ...Option) error {
-	options := NewOptions(opts...)
-
-	// Check if instance exists
-	instance, _, err := r.client.incus.GetInstance(r.incusName)
+	inst, err := r.getInstance()
 	if err != nil {
-		// Already gone
-		return nil
-	}
-
-	// Stop if running
-	if instance.StatusCode == incusApi.Running {
-		timeout := -1
-		if options.Timeout > 0 {
-			timeout = options.Timeout
+		if errors.Is(err, ErrNotFound) {
+			return nil // already gone
 		}
-
-		req := incusApi.InstanceStatePut{
-			Action:  "stop",
-			Timeout: timeout,
-			Force:   options.Force,
-		}
-
-		op, err := r.client.incus.UpdateInstanceState(r.incusName, req, "")
-		if err != nil {
-			return fmt.Errorf("stopping instance: %w", err)
-		}
-
-		if err := op.Wait(); err != nil {
-			return fmt.Errorf("waiting for stop: %w", err)
-		}
+		return err
 	}
-
-	// Delete instance
-	op, err := r.client.incus.DeleteInstance(r.incusName)
-	if err != nil {
-		return fmt.Errorf("deleting instance: %w", err)
+	if err := inst.Stop(OptionForce()); err != nil {
+		r.client.LogDebug("Stopping healthd before delete", "error", err)
 	}
-
-	if err := op.Wait(); err != nil {
-		return fmt.Errorf("waiting for delete: %w", err)
+	if err := inst.Delete(opts...); err != nil {
+		return err
 	}
-
-	if err := r.revokeCert(); err != nil {
-		r.client.LogWarn("Failed to revoke healthd certificate", "error", err)
-	}
-
 	r.ensured = false
 	r.created = false
-	return nil
+	return r.revokeCert()
+}
+
+// Log streams the healthd instance console log to the output handler.
+func (r *Healthd) Log(opts ...Option) error {
+	inst, err := r.getInstance()
+	if err != nil {
+		return err
+	}
+	return inst.Log(opts...)
+}
+
+// Reload sends SIGHUP to the ic-healthd process.
+func (r *Healthd) Reload() error {
+	req := incusApi.InstanceExecPost{
+		Command:     []string{"sh", "-c", "pids=\"$(pidof ic-healthd)\" && for pid in $pids; do kill -HUP \"$pid\"; done"},
+		WaitForWS:   false,
+		Interactive: false,
+	}
+
+	op, err := r.client.incus.ExecInstance(r.incusName, req, nil)
+	if err != nil {
+		return err
+	}
+
+	return op.Wait()
 }
 
 // revokeCert removes the healthd's trust-store certificate, if any.
@@ -449,6 +480,7 @@ func (r *Healthd) createToken() (string, error) {
 }
 
 // createInstance creates the healthd container using an Instance resource.
+// Sets r.instance on success; the caller is responsible for starting it.
 func (r *Healthd) createInstance() error {
 	// Get Incus URL from network's gateway IP
 	if err := r.resolveIncusURL(); err != nil {
@@ -550,7 +582,43 @@ func (r *Healthd) createInstance() error {
 		}
 	}
 
+	r.instance = instance
 	return nil
+}
+
+// execHealthd runs the healthd binary in the background (for native images).
+func (r *Healthd) execHealthd() error {
+	// Get Incus URL from network's gateway IP
+	if err := r.resolveIncusURL(); err != nil {
+		return fmt.Errorf("resolving incus URL: %w", err)
+	}
+
+	flags := []string{fmt.Sprintf(" --incus=%s --project=%s", r.config.IncusURL, r.client.IncusProject())}
+
+	// Passthrough debugging.
+	if r.client.globalClient.IsDebugging() {
+		flags = append(flags, " --debug")
+	}
+
+	// Wait for network to be ready, then run healthd in background.
+	// The network device might not be fully configured when the container starts.
+	cmd := []string{
+		"sh", "-c",
+		`nohup /usr/local/bin/ic-healthd run` + strings.Join(flags, " ") + `> /var/log/ic-healthd.log 2>&1 &`,
+	}
+
+	execReq := incusApi.InstanceExecPost{
+		Command:     cmd,
+		WaitForWS:   false,
+		Interactive: false,
+	}
+
+	op, err := r.client.incus.ExecInstance(r.incusName, execReq, nil)
+	if err != nil {
+		return err
+	}
+
+	return op.Wait()
 }
 
 // mkdirP creates a directory and all parent directories.
@@ -602,158 +670,6 @@ func (r *Healthd) pushFile(path string, content []byte, mode int) error {
 	})
 }
 
-// start starts the healthd instance.
-func (r *Healthd) start() error {
-	// Check if already running
-	instance, _, err := r.client.incus.GetInstance(r.incusName)
-	if err == nil && instance.StatusCode == incusApi.Running {
-		return nil
-	}
-
-	req := incusApi.InstanceStatePut{
-		Action:  "start",
-		Timeout: 30,
-	}
-
-	op, err := r.client.incus.UpdateInstanceState(r.incusName, req, "")
-	if err != nil {
-		return err
-	}
-
-	return op.Wait()
-}
-
-// execHealthd runs the healthd binary in the background (for native images).
-func (r *Healthd) execHealthd() error {
-	// Get Incus URL from network's gateway IP
-	if err := r.resolveIncusURL(); err != nil {
-		return fmt.Errorf("resolving incus URL: %w", err)
-	}
-
-	flags := []string{fmt.Sprintf(" --incus=%s --project=%s", r.config.IncusURL, r.client.IncusProject())}
-
-	// Passthrough debugging.
-	if r.client.globalClient.IsDebugging() {
-		flags = append(flags, " --debug")
-	}
-
-	// Wait for network to be ready, then run healthd in background.
-	// The network device might not be fully configured when the container starts.
-	cmd := []string{
-		"sh", "-c",
-		`nohup /usr/local/bin/ic-healthd run` + strings.Join(flags, " ") + `> /var/log/ic-healthd.log 2>&1 &`,
-	}
-
-	execReq := incusApi.InstanceExecPost{
-		Command:     cmd,
-		WaitForWS:   false,
-		Interactive: false,
-	}
-
-	op, err := r.client.incus.ExecInstance(r.incusName, execReq, nil)
-	if err != nil {
-		return err
-	}
-
-	return op.Wait()
-}
-
-func (r *Healthd) reload() error {
-	req := incusApi.InstanceExecPost{
-		Command:     []string{"sh", "-c", "pids=\"$(pidof ic-healthd)\" && for pid in $pids; do kill -HUP \"$pid\"; done"},
-		WaitForWS:   false,
-		Interactive: false,
-	}
-
-	op, err := r.client.incus.ExecInstance(r.incusName, req, nil)
-	if err != nil {
-		return err
-	}
-
-	return op.Wait()
-}
-
-func (r *Healthd) restart() error {
-	state, _, err := r.client.incus.GetInstanceState(r.incusName)
-	if err != nil {
-		return err
-	}
-
-	if state.StatusCode != incusApi.Stopped {
-		op, err := r.client.incus.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
-			Action:  "stop",
-			Timeout: -1,
-			Force:   true,
-		}, "")
-		if err != nil {
-			return err
-		}
-		if err := op.Wait(); err != nil {
-			return err
-		}
-	}
-
-	op, err := r.client.incus.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
-		Action:  "start",
-		Timeout: -1,
-	}, "")
-	if err != nil {
-		return err
-	}
-	return op.Wait()
-}
-
-// Stop stops the healthd instance.
-func (r *Healthd) Stop(opts ...Option) error {
-	options := NewOptions(opts...)
-
-	timeout := 30
-	if options.Timeout > 0 {
-		timeout = options.Timeout
-	}
-
-	req := incusApi.InstanceStatePut{
-		Action:  "stop",
-		Timeout: timeout,
-		Force:   options.Force,
-	}
-
-	op, err := r.client.incus.UpdateInstanceState(r.incusName, req, "")
-	if err != nil {
-		return err
-	}
-
-	return op.Wait()
-}
-
-// Start starts the healthd instance.
-func (r *Healthd) Start(opts ...Option) error {
-	// Check if already running
-	state, _, err := r.client.incus.GetInstanceState(r.incusName)
-	if err == nil && state.Status == "Running" {
-		return nil
-	}
-
-	options := NewOptions(opts...)
-
-	timeout := 30
-	if options.Timeout > 0 {
-		timeout = options.Timeout
-	}
-
-	req := incusApi.InstanceStatePut{
-		Action:  "start",
-		Timeout: timeout,
-	}
-
-	op, err := r.client.incus.UpdateInstanceState(r.incusName, req, "")
-	if err != nil {
-		return err
-	}
-
-	return op.Wait()
-}
-
 // compile-time interface checks.
 var (
 	_ Resource   = (*Healthd)(nil)
@@ -761,4 +677,5 @@ var (
 	_ DeleteAble = (*Healthd)(nil)
 	_ StartAble  = (*Healthd)(nil)
 	_ StopAble   = (*Healthd)(nil)
+	_ LogAble    = (*Healthd)(nil)
 )

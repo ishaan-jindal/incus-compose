@@ -143,24 +143,6 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 	var rErr error
 	stack := client.NewStack(c)
 
-	// Prepare healthd early (before image loop) so we can add its image
-
-	var healthdConfig *client.HealthdConfig
-	if !noHealthd && start {
-		for _, sName := range services {
-			cSv, ok := p.Services[sName]
-			if ok && cSv.HealthCheck != nil {
-				healthdConfig = &client.HealthdConfig{}
-				c.LogDebug("Found healthchecks")
-				if healthdBinary != "" {
-					healthdConfig.Binary = healthdBinary
-					c.LogDebug("Using local healthd binary", "path", healthdBinary)
-				}
-				break
-			}
-		}
-	}
-
 	// Use CliConfig from globalClient for automatic image server resolution
 	imageConfig := &client.ImageConfig{CliConfig: globalClient.CliConfig()}
 
@@ -194,50 +176,18 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 		return rErr
 	}
 
-	// Handle healthd image (same pattern as service images)
-	if healthdConfig != nil {
-		var imageName string
-		if healthdBinary != "" {
-			// Use system container for local binary
-			imageName = "images:alpine/edge"
-		} else {
-			// Use OCI image
-			imageName = healthdImage
-		}
-
-		c.LogDebug("Using healthd image", "image", imageName)
-
-		// Setup the request
-		r, err := c.Resource(client.KindImage, imageName, imageConfig)
+	if !noHealthd && start && projectUsesHealthd(p, services) {
+		c.LogDebug("Found healthchecks")
+		healthd, img, err := prepareHealthd(globalClient, c, healthdParams{
+			binary:   healthdBinary,
+			image:    healthdImage,
+			reCreate: reCreate,
+		})
 		if err != nil {
-			c.LogError("Getting healthd image", "image", imageName, "error", err)
+			c.LogError("Preparing healthd", "error", err)
 			return errLogged.Wrap(err)
 		}
-
-		// Cast the request to image
-		healthdImage, ok := r.(*client.Image)
-		if !ok {
-			err = client.ErrUnknown.WithResource(r)
-			c.LogError("Getting healthd image", err)
-			return errLogged.Wrap(err)
-		}
-
-		// Add the request to images
-		stack.Add(healthdImage)
-
-		// Set image on config
-		healthdConfig.Image = imageName
-		healthdConfig.ImageResource = healthdImage
-
-		healthdName := "ic-healthd"
-		healthd, err := c.Healthd(healthdName, *healthdConfig, reCreate)
-		if err != nil {
-			c.LogError("Creating healthd resource", "error", err)
-			return errLogged.Wrap(err)
-		}
-		c.LogDebug("Prepared healthd sidecar image", "name", healthdName)
-
-		// Add healthd to the stack
+		stack.Add(img)
 		stack.Add(healthd)
 	}
 

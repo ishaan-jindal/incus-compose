@@ -60,28 +60,14 @@ var startCommand = &cli.Command{
 			return errLogged
 		}
 
-		if !noHealthd {
-			services := cmd.Args().Slice()
-			if len(services) == 0 {
-				services = make([]string, 0, len(p.Services))
-				for _, n := range p.Services {
-					services = append(services, n.Name)
-				}
+		if !noHealthd && projectUsesHealthd(p, cmd.Args().Slice()) {
+			healthd, err := c.Healthd("ic-healthd", client.HealthdConfig{}, false)
+			if err != nil {
+				c.LogError("Getting healthd resource", "error", err)
+				return errLogged.Wrap(err)
 			}
-
-			for _, sName := range services {
-				cSv, ok := p.Services[sName]
-				if ok && cSv.HealthCheck != nil {
-					healthd, err := c.Healthd("ic-healthd", client.HealthdConfig{}, false)
-					if err != nil {
-						c.LogError("Getting healthd resource", "error", err)
-						return errLogged.Wrap(err)
-					}
-					stack.Add(healthd)
-					c.LogDebug("Added healthd sidecar to stack")
-					break
-				}
-			}
+			stack.Add(healthd)
+			c.LogDebug("Added healthd sidecar to stack")
 		}
 
 		var errs error

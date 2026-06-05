@@ -171,20 +171,14 @@ func runDown(globalClient *client.GlobalClient, c *client.Client, p *project.Pro
 		stack.Add(image)
 	}
 
-	if !params.noHealthd {
-		for _, sName := range services {
-			cSv, ok := p.Services[sName]
-			if ok && cSv.HealthCheck != nil {
-				healthd, err := c.Healthd("ic-healthd", client.HealthdConfig{}, false)
-				if err != nil {
-					c.LogError("Getting healthd resource", "error", err)
-					return errLogged.Wrap(err)
-				}
-				stack.Add(healthd)
-				c.LogDebug("Added healthd sidecar to stack")
-				break
-			}
+	if !params.noHealthd && projectUsesHealthd(p, services) {
+		healthd, err := c.Healthd("ic-healthd", client.HealthdConfig{}, false)
+		if err != nil {
+			c.LogError("Getting healthd resource", "error", err)
+			return errLogged.Wrap(err)
 		}
+		stack.Add(healthd)
+		c.LogDebug("Added healthd sidecar to stack")
 	}
 
 	var errs error

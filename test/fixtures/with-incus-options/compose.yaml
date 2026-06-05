@@ -9,7 +9,7 @@ services:
       security.nesting: "false"
 
   database:
-    image: docker.io/postgres:16-alpine
+    image: docker.io/nginx:alpine
     x-incus:
       limits.memory: 1GB
       limits.cpu: "4"
