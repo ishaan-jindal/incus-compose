@@ -144,8 +144,6 @@ var logsCommand = &cli.Command{
 		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
-		follow := cmd.Bool("follow")
-
 		globalClient, err := clientFromContext(ctx)
 		if err != nil {
 			return err
@@ -169,56 +167,46 @@ var logsCommand = &cli.Command{
 		}
 		defer func() { _ = c.Close() }()
 
-		// Create log formatter with colorable output
-		// Use cmd.Root().Writer if it's a file, otherwise fallback to os.Stdout
 		var out io.Writer
 		if f, ok := cmd.Root().Writer.(*os.File); ok {
 			out = colorable.NewColorable(f)
 		} else {
 			out = cmd.Root().Writer
 		}
-		formatter := newLogFormatter(out, noColor)
 
-		// Set up output handler
-		globalClient.SetOutputHandler(formatter.write)
-
-		// Build stack with only requested services (or all)
-		stack := client.NewStack(c)
-		services := cmd.Args().Slice()
-		err = p.ToStack(c, stack, project.ToStackOnlyServices(services))
-		if err != nil {
-			c.LogError(err.Error())
-			return errLogged.Wrap(err)
-		}
-
-		// Ensure instances exist (fetch state)
-		err = stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure)
-		if err != nil {
-			c.LogError("Ensuring the stack", "error", err)
-			return errLogged.Wrap(err)
-		}
-
-		// Pre-register services for consistent prefix width
-		for _, r := range stack.ForAction(client.ActionLog).All() {
-			formatter.registerService(r.Name())
-		}
-
-		// Build options for log action
-		var opts []client.Option
-		if follow {
-			opts = append(opts, client.OptionFollow())
-		}
-
-		// Stream logs
-		err = stack.ForAction(client.ActionLog).Run(client.ActionLog, opts...)
-		if err != nil {
-			c.LogError("Getting logs", "error", err)
-			return errLogged.Wrap(err)
-		}
-
-		// Flush any remaining buffered output
-		formatter.flush()
-
-		return nil
+		return runLogs(globalClient, c, p, cmd.Args().Slice(), cmd.Bool("follow"), out)
 	},
+}
+
+// runLogs streams logs from the given services using an already-open client.
+func runLogs(globalClient *client.GlobalClient, c *client.Client, p *project.Project, services []string, follow bool, out io.Writer) error {
+	formatter := newLogFormatter(out, noColor)
+	globalClient.SetOutputHandler(formatter.write)
+
+	stack := client.NewStack(c)
+	if err := p.ToStack(c, stack, project.ToStackOnlyServices(services)); err != nil {
+		c.LogError(err.Error())
+		return errLogged.Wrap(err)
+	}
+
+	if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure); err != nil {
+		c.LogWarn("Ensuring the stack", "error", err)
+	}
+
+	for _, r := range stack.ForAction(client.ActionLog).All() {
+		formatter.registerService(r.Name())
+	}
+
+	var opts []client.Option
+	if follow {
+		opts = append(opts, client.OptionFollow())
+	}
+
+	if err := stack.ForAction(client.ActionLog).Run(client.ActionLog, opts...); err != nil {
+		c.LogError("Getting logs", "error", err)
+		return errLogged.Wrap(err)
+	}
+
+	formatter.flush()
+	return nil
 }

@@ -27,6 +27,7 @@ incus-compose up [SERVICE...]
 
 | Option             | Description                                                             |
 | ------------------ | ----------------------------------------------------------------------- |
+| `-d`, `--detach`   | Detached mode: run containers in the background                         |
 | `--recreate`       | Recreate containers even if they exist                                  |
 | `--no-start`       | Don't start containers after creating                                   |
 | `--no-pull`        | Skip refreshing cached images from their source registry (pull is on by default) |
@@ -34,6 +35,8 @@ incus-compose up [SERVICE...]
 | `--scale`          | Scale service: `web=3` (repeatable)                                     |
 | `--no-healthd`     | Don't create healthd sidecar for healthchecks                           |
 | `--healthd-binary` | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image) |
+
+Without `--detach`, `up` streams logs from all started services (equivalent to running `logs --follow` immediately after). Use `--detach` to return as soon as containers are started.
 
 ## down
 
@@ -100,6 +103,8 @@ incus-compose logs [SERVICE...]
 | Option           | Description   |
 | ---------------- | ------------- |
 | `-f`, `--follow` | Follow output |
+
+Missing instances are skipped with a warning; logs from available instances are still shown.
 
 ## config
 

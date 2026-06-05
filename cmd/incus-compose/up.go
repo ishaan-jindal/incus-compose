@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
 	"strconv"
 	"strings"
 
+	"github.com/mattn/go-colorable"
 	"github.com/urfave/cli/v3"
 
 	"gitlab.com/r3j0/incus-compose/client"
@@ -49,6 +52,11 @@ var upCommand = &cli.Command{
 			Name:  "no-pull",
 			Usage: "Do not refresh cached images from their source registry before creating",
 		},
+		&cli.BoolFlag{
+			Name:    "detach",
+			Aliases: []string{"d"},
+			Usage:   "Detached mode: run containers in the background",
+		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
 		globalClient, err := clientFromContext(ctx)
@@ -84,7 +92,7 @@ var upCommand = &cli.Command{
 		}
 		defer func() { _ = c.Close() }()
 
-		return runUp(globalClient, c, p, upParams{
+		params := upParams{
 			services:      cmd.Args().Slice(),
 			reCreate:      cmd.Bool("recreate"),
 			start:         !cmd.Bool("no-start"),
@@ -94,7 +102,21 @@ var upCommand = &cli.Command{
 			noPull:        cmd.Bool("no-pull"),
 			timeout:       int(cmd.Int("timeout")),
 			scale:         parseScale(cmd.StringSlice("scale")),
-		})
+			detach:        cmd.Bool("detach"),
+		}
+		if err := runUp(globalClient, c, p, params); err != nil {
+			return err
+		}
+		if params.start && !params.detach {
+			var out io.Writer
+			if f, ok := cmd.Root().Writer.(*os.File); ok {
+				out = colorable.NewColorable(f)
+			} else {
+				out = cmd.Root().Writer
+			}
+			return runLogs(globalClient, c, p, params.services, true, out)
+		}
+		return nil
 	},
 }
 
@@ -110,6 +132,7 @@ type upParams struct {
 	noPull        bool
 	timeout       int
 	scale         map[string]int
+	detach        bool
 }
 
 func mkUpStack(params upParams, p *project.Project, globalClient *client.GlobalClient, c *client.Client) (*client.Stack, error) {
