@@ -81,6 +81,12 @@ var downCommand = &cli.Command{
 			return nil
 		}
 
+		// Register the DNS Watcher
+		if err := c.RegisterDNSWatcher(); err != nil {
+			globalClient.LogError("Registering the DNS watcher", "project", p.Name, "error", err)
+			return errLogged.Wrap(err)
+		}
+
 		if err := c.Open(); err != nil {
 			globalClient.LogError("Opening the project client", "project", p.Name, "error", err)
 			return errLogged.Wrap(err)
@@ -172,7 +178,7 @@ func runDown(globalClient *client.GlobalClient, c *client.Client, p *project.Pro
 	}
 
 	if !params.noHealthd && projectUsesHealthd(p, services) {
-		healthd, err := c.Healthd("ic-healthd", client.HealthdConfig{}, false)
+		healthd, err := c.Resource(client.KindHealthd, "ic-healthd", &client.HealthdConfig{})
 		if err != nil {
 			c.LogError("Getting healthd resource", "error", err)
 			return errLogged.Wrap(err)

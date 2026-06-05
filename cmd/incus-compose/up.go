@@ -72,6 +72,12 @@ var upCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
+		// Register the DNS Watcher
+		if err := c.RegisterDNSWatcher(); err != nil {
+			globalClient.LogError("Registering the DNS watcher", "project", p.Name, "error", err)
+			return errLogged.Wrap(err)
+		}
+
 		if err := c.Open(); err != nil {
 			globalClient.LogError("Opening the project client", "error", err)
 			return errLogged.Wrap(err)

@@ -48,6 +48,12 @@ var restartCommand = &cli.Command{
 		}
 		defer func() { _ = c.Close() }()
 
+		// Register the DNS Watcher
+		if err := c.RegisterDNSWatcher(); err != nil {
+			globalClient.LogError("Registering the DNS watcher", "project", p.Name, "error", err)
+			return errLogged.Wrap(err)
+		}
+
 		if err := c.Open(); err != nil {
 			globalClient.LogError("Opening the project client", "error", err)
 			return errLogged.Wrap(err)
@@ -61,7 +67,7 @@ var restartCommand = &cli.Command{
 		}
 
 		if !noHealthd && projectUsesHealthd(p, cmd.Args().Slice()) {
-			healthd, err := c.Healthd("ic-healthd", client.HealthdConfig{}, false)
+			healthd, err := c.Resource(client.KindHealthd, "ic-healthd", &client.HealthdConfig{})
 			if err != nil {
 				c.LogError("Getting healthd resource", "error", err)
 				return errLogged.Wrap(err)
