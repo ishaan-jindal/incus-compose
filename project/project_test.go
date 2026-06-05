@@ -544,7 +544,7 @@ func (s *LoadProjectTestSuite) TestLoadWithXIncusOptions() {
 
 	database, exists := proj.Services["database"]
 	s.True(exists, "database service should exist")
-	s.Equal("docker.io/postgres:16-alpine", database.Image)
+	s.Equal("docker.io/nginx:alpine", database.Image)
 }
 
 // TestLoadProjectSuite runs the test suite.

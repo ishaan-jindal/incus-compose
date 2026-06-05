@@ -1,0 +1,10 @@
+services:
+  docker:
+    networks:
+      default:
+        ipv4_address: 10.132.32.17
+
+networks:
+  default:
+    x-incus:
+      ipv4.address: 10.132.32.1/24

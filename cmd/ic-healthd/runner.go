@@ -108,25 +108,36 @@ func (r *Runner) startCheckers(ctx context.Context) <-chan struct{} {
 // with the one-time TrustToken, and persist it for subsequent runs.
 // On restart, the persisted cert is reused and the token (already consumed) is ignored.
 func (r *Runner) connect() (incus.InstanceServer, error) {
-	certPath := filepath.Join(r.config.DataDir, certFile)
-	keyPath := filepath.Join(r.config.DataDir, keyFile)
+	// Token to register (generates KEY/CERT)
+	tokenPath := filepath.Join(r.config.SecretsDir, tokenFile)
 
-	if !fileExists(certPath) || !fileExists(keyPath) {
+	// Paths after r.register(...)
+	certDataPath := filepath.Join(r.config.DataDir, certFile)
+	keyDataPath := filepath.Join(r.config.DataDir, keyFile)
+
+	if fileExists(tokenPath) {
 		if r.config.Debug {
-			log.Println("no persisted cert; performing first-run registration")
+			log.Println("fresh token performing first-run registration")
 		}
-		if err := r.register(certPath, keyPath); err != nil {
+
+		// Source for register
+		certPath := filepath.Join(r.config.SecretsDir, certFile)
+		keyPath := filepath.Join(r.config.SecretsDir, keyFile)
+
+		if err := r.register(tokenPath, certPath, keyPath); err != nil {
 			return nil, fmt.Errorf("first-run registration: %w", err)
 		}
+	} else if !fileExists(keyDataPath) || !fileExists(certDataPath) {
+		return nil, fmt.Errorf("no token and no registration happened before")
 	} else if r.config.Debug {
 		log.Println("reusing persisted cert from data dir")
 	}
 
-	certPEM, err := os.ReadFile(certPath)
+	certPEM, err := os.ReadFile(certDataPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading cert: %w", err)
 	}
-	keyPEM, err := os.ReadFile(keyPath)
+	keyPEM, err := os.ReadFile(keyDataPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading key: %w", err)
 	}
@@ -142,8 +153,8 @@ func (r *Runner) connect() (incus.InstanceServer, error) {
 // and asks the server to add it to the trust store using the one-time token.
 // The server reads the cert from the TLS handshake (see incusd certificates.go),
 // applies the restrictions stored in the token metadata, and returns trusted=true.
-func (r *Runner) register(certPath, keyPath string) error {
-	tokenBytes, err := os.ReadFile(filepath.Join(r.config.SecretsDir, tokenFile))
+func (r *Runner) register(tokenPath, certPath, keyPath string) error {
+	tokenBytes, err := os.ReadFile(tokenPath)
 	if err != nil {
 		return fmt.Errorf("reading token: %w", err)
 	}
@@ -155,6 +166,21 @@ func (r *Runner) register(certPath, keyPath string) error {
 	certPEM, keyPEM, err := generateClientCert()
 	if err != nil {
 		return fmt.Errorf("generating cert: %w", err)
+	}
+
+	// Save key and cert
+	if err := os.MkdirAll(r.config.DataDir, 0o700); err != nil {
+		return fmt.Errorf("creating data-dir %v: %w", r.config.DataDir, err)
+	}
+
+	keySecretsPath := filepath.Join(r.config.DataDir, keyFile)
+	if err := os.WriteFile(keySecretsPath, keyPEM, 0o600); err != nil {
+		return fmt.Errorf("saving cert key %v: %w", keySecretsPath, err)
+	}
+
+	certSecretsPath := filepath.Join(r.config.DataDir, certFile)
+	if err := os.WriteFile(certSecretsPath, certPEM, 0o600); err != nil {
+		return fmt.Errorf("saving cert key %v: %w", certSecretsPath, err)
 	}
 
 	srv, err := incus.ConnectIncus(r.config.IncusURL, &incus.ConnectionArgs{

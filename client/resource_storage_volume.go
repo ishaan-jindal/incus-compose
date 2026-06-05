@@ -248,6 +248,7 @@ func (r *StorageVolume) Delete(opts ...Option) error {
 	// Clear state
 	r.IncusVolume = nil
 	r.ETag = ""
+	r.client.resources.Remove(r)
 	return nil
 }
 

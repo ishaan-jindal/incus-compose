@@ -360,6 +360,7 @@ func (r *Image) Delete(opts ...Option) error {
 	// missing alias means nothing was copied here, so there is nothing to do.
 	alias, _, err := r.client.incus.GetImageAlias(r.incusName)
 	if err != nil || alias == nil {
+		r.client.resources.Remove(r)
 		if r.client.hookAfter != nil {
 			return r.client.hookAfter(ActionDelete, r, options, nil)
 		}
@@ -368,6 +369,10 @@ func (r *Image) Delete(opts ...Option) error {
 
 	op, err := r.client.incus.DeleteImage(alias.Target)
 	err = r.client.hookOperation(r.client.globalClient.Ctx, ActionDelete, r, options, op, err)
+
+	if err == nil {
+		r.client.resources.Remove(r)
+	}
 
 	if r.client.hookAfter != nil {
 		return r.client.hookAfter(ActionDelete, r, options, err)

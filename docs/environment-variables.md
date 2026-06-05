@@ -93,13 +93,15 @@ When `INCUS_REMOTE` is set to anything other than `local`, the `INCUS_COMPOSE_UR
 
 ### Variables
 
-| Variable                    | Description                                                    |
-| --------------------------- | -------------------------------------------------------------- |
-| `INCUS_REMOTE`              | Incus remote name from CLI config (e.g., `local`, `myserver`)  |
-| `INCUS_COMPOSE_URL`         | Direct URL to Incus server (only used when remote is `local`)  |
-| `INCUS_COMPOSE_CERT`        | Path to TLS client certificate (used with `INCUS_COMPOSE_URL`) |
-| `INCUS_COMPOSE_KEY`         | Path to TLS client key (used with `INCUS_COMPOSE_URL`)         |
-| `INCUS_COMPOSE_IMAGE_CACHE` | Incus project for image cache (default: `default`)             |
+| Variable                       | Description                                                                    |
+| ------------------------------ | ------------------------------------------------------------------------------ |
+| `INCUS_REMOTE`                 | Incus remote name from CLI config (e.g., `local`, `myserver`)                  |
+| `INCUS_COMPOSE_URL`            | Direct URL to Incus server (only used when remote is `local`)                  |
+| `INCUS_COMPOSE_CERT`           | Path to TLS client certificate (used with `INCUS_COMPOSE_URL`)                 |
+| `INCUS_COMPOSE_KEY`            | Path to TLS client key (used with `INCUS_COMPOSE_URL`)                         |
+| `INCUS_COMPOSE_IMAGE_CACHE`    | Incus project for image cache (default: `default`)                             |
+| `INCUS_COMPOSE_HEALTHD_IMAGE`  | Healthd OCI image to use; {version} is replaced with the incus-compose version |
+| `INCUS_COMPOSE_HEALTHD_BINARY` | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image) |
 
 ### Examples
 

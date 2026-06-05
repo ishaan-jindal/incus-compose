@@ -43,7 +43,7 @@ func projectUsesHealthd(p *project.Project, services []string) bool {
 // prepareHealthd resolves the sidecar image, builds HealthdConfig, and returns the
 // registered *client.Healthd plus its *client.Image. The caller adds them to a stack
 // or ensures them directly.
-func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params healthdParams) (*client.Healthd, *client.Image, error) {
+func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params healthdParams) (client.Resource, *client.Image, error) {
 	imageName := params.image
 	if params.binary != "" {
 		imageName = "images:alpine/edge"
@@ -54,7 +54,7 @@ func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params 
 	imageConfig := &client.ImageConfig{CliConfig: globalClient.CliConfig()}
 	r, err := c.Resource(client.KindImage, imageName, imageConfig)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting healthd image %s: %w", imageName, err)
+		return nil, nil, fmt.Errorf("getting healthd image '%v': %w", imageName, err)
 	}
 
 	img, ok := r.(*client.Image)
@@ -62,7 +62,7 @@ func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params 
 		return nil, nil, client.ErrUnknown.WithResource(r)
 	}
 
-	config := client.HealthdConfig{
+	config := &client.HealthdConfig{
 		Image:         imageName,
 		ImageResource: img,
 	}
@@ -70,7 +70,7 @@ func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params 
 		config.Binary = params.binary
 	}
 
-	healthd, err := c.Healthd("ic-healthd", config, params.reCreate)
+	healthd, err := c.Resource(client.KindHealthd, "ic-healthd", config)
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating healthd resource: %w", err)
 	}
@@ -270,6 +270,30 @@ var healthdRestartCommand = &cli.Command{
 	},
 }
 
+func mkHealthdStack(cmd *cli.Command, p *project.Project, globalClient *client.GlobalClient, c *client.Client) (*client.Stack, error) {
+	// Register project resources so resolveIncusURL can find a network.
+	if err := p.ToStack(c, client.NewStack(c)); err != nil {
+		return nil, err
+	}
+
+	params := healthdParams{
+		binary:   cmd.String("healthd-binary"),
+		image:    resolveHealthdImage(cmd.Root().String("healthd-image")),
+		reCreate: cmd.Bool("recreate"),
+	}
+
+	healthd, img, err := prepareHealthd(globalClient, c, params)
+	if err != nil {
+		return nil, err
+	}
+
+	stack := client.NewStack(c)
+	stack.Add(img)
+	stack.Add(healthd)
+
+	return stack, nil
+}
+
 var healthdUpCommand = &cli.Command{
 	Name:  "up",
 	Usage: "Create or recreate the ic-healthd sidecar",
@@ -279,8 +303,13 @@ var healthdUpCommand = &cli.Command{
 			Usage: "Recreate the sidecar even if it already exists",
 		},
 		&cli.StringFlag{
-			Name:  "healthd-binary",
-			Usage: "Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)",
+			Name:    "healthd-binary",
+			Usage:   "Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)",
+			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_BINARY"),
+		},
+		&cli.BoolFlag{
+			Name:  "no-pull",
+			Usage: "Do not refresh cached images from their source registry before creating",
 		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -314,29 +343,35 @@ var healthdUpCommand = &cli.Command{
 		}
 		defer func() { _ = c.Close() }()
 
-		// Register project resources so resolveIncusURL can find a network.
-		if err := p.ToStack(c, client.NewStack(c)); err != nil {
-			c.LogError("Loading project resources", "error", err)
-			return errLogged.Wrap(err)
+		if cmd.Bool("recreate") {
+			stack, err := mkHealthdStack(cmd, p, globalClient, c)
+			if err != nil {
+				globalClient.LogError("Creating the stack", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure); err != nil {
+				c.LogWarn("Ensuring healthd in recreate", "error", err)
+			} else {
+				if err := stack.ForAction(client.ActionDelete).Run(client.ActionDelete, client.OptionForce()); err != nil {
+					c.LogDebug("Deleting healthd", "error", err)
+				}
+			}
 		}
 
-		params := healthdParams{
-			binary:   cmd.String("healthd-binary"),
-			image:    resolveHealthdImage(cmd.Root().String("healthd-image")),
-			reCreate: cmd.Bool("recreate"),
-		}
-
-		healthd, img, err := prepareHealthd(globalClient, c, params)
+		// Create a new stack after Delete as stack entries are now invalid.
+		stack, err := mkHealthdStack(cmd, p, globalClient, c)
 		if err != nil {
-			c.LogError("Preparing healthd", "error", err)
+			globalClient.LogError("Creating the stack", "error", err)
 			return errLogged.Wrap(err)
 		}
 
-		stack := client.NewStack(c)
-		stack.Add(img)
-		stack.Add(healthd)
+		// Ensure with create. --no-pull doesn't refresh the cached image first.
+		ensureOpts := []client.Option{client.OptionCreate()}
+		if !cmd.Bool("no-pull") {
+			ensureOpts = append(ensureOpts, client.OptionPull())
+		}
 
-		ensureOpts := []client.Option{client.OptionCreate(), client.OptionPull()}
 		if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure, ensureOpts...); err != nil {
 			c.LogError("Creating healthd", "error", err)
 			return errLogged.Wrap(err)

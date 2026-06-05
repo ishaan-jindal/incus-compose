@@ -156,6 +156,24 @@ incus-compose ps [SERVICE...]
 | `--services`    | Display compose service names instead of instances   |
 | `--format`      | table (default) or json                              |
 
+## healthd
+
+Manage the ic-healthd sidecar. See [Health Checking](healthd.md) for full details.
+
+```
+incus-compose healthd <subcommand>
+```
+
+| Subcommand          | Description                                          |
+| ------------------- | ---------------------------------------------------- |
+| `logs [--follow]`   | Stream the ic-healthd container log                  |
+| `reload`            | Send SIGHUP to the ic-healthd process                |
+| `restart`           | Restart the ic-healthd container                     |
+| `up [--recreate]`   | Create or recreate the sidecar                       |
+| `down`              | Stop and remove the sidecar                          |
+
+`healthd up` also accepts `--healthd-image` and `--healthd-binary`.
+
 ## list
 
 List project resources.

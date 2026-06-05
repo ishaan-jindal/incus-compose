@@ -1,0 +1,8 @@
+services:
+  docker:
+    image: direct-docker.io/library/registry:${REGISTRY_VERSION:-3}
+    volumes:
+      - docker-registry-cache:/var/lib/registry
+    restart: unless-stopped
+volumes:
+  docker-registry-cache:

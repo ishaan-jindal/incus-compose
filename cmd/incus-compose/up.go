@@ -40,8 +40,10 @@ var upCommand = &cli.Command{
 			Usage: "Don't create healthd sidecar for healthchecks",
 		},
 		&cli.StringFlag{
-			Name:  "healthd-binary",
-			Usage: "Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)",
+			Name:    "healthd-image",
+			Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
+			Value:   client.DefaultHealthdImage,
+			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
 		},
 		&cli.BoolFlag{
 			Name:  "no-pull",
@@ -82,7 +84,7 @@ var upCommand = &cli.Command{
 			start:         !cmd.Bool("no-start"),
 			noHealthd:     cmd.Bool("no-healthd"),
 			healthdBinary: cmd.String("healthd-binary"),
-			healthdImage:  resolveHealthdImage(cmd.String("healthd-image")),
+			healthdImage:  resolveHealthdImage(cmd.Root().String("healthd-image")),
 			noPull:        cmd.Bool("no-pull"),
 			timeout:       int(cmd.Int("timeout")),
 			scale:         parseScale(cmd.StringSlice("scale")),
@@ -104,34 +106,7 @@ type upParams struct {
 	scale         map[string]int
 }
 
-// parseScale parses --scale flags of the form "service=num".
-func parseScale(values []string) map[string]int {
-	scaleOverrides := make(map[string]int)
-	for _, s := range values {
-		parts := strings.SplitN(s, "=", 2)
-		if len(parts) == 2 {
-			if n, err := strconv.Atoi(parts[1]); err == nil {
-				scaleOverrides[parts[0]] = n
-			}
-		}
-	}
-	return scaleOverrides
-}
-
-// runUp creates (and optionally starts) the services of a loaded project.
-func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Project, params upParams) error {
-	reCreate := params.reCreate
-	timeout := params.timeout
-	start := params.start
-	noHealthd := params.noHealthd
-	noPull := params.noPull
-	healthdBinary := params.healthdBinary
-	healthdImage := params.healthdImage
-	if healthdImage == "" {
-		healthdImage = client.DefaultHealthdImage
-	}
-	scaleOverrides := params.scale
-
+func mkUpStack(params upParams, p *project.Project, globalClient *client.GlobalClient, c *client.Client) (*client.Stack, error) {
 	services := params.services
 	if len(services) == 0 {
 		services = make([]string, 0, len(p.Services))
@@ -173,33 +148,57 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 		stack.Add(r)
 	}
 	if rErr != nil {
-		return rErr
+		return nil, rErr
 	}
 
-	if !noHealthd && start && projectUsesHealthd(p, services) {
+	if !params.noHealthd && params.start && projectUsesHealthd(p, services) {
 		c.LogDebug("Found healthchecks")
 		healthd, img, err := prepareHealthd(globalClient, c, healthdParams{
-			binary:   healthdBinary,
-			image:    healthdImage,
-			reCreate: reCreate,
+			binary:   params.healthdBinary,
+			image:    params.healthdImage,
+			reCreate: params.reCreate,
 		})
 		if err != nil {
 			c.LogError("Preparing healthd", "error", err)
-			return errLogged.Wrap(err)
+			return nil, errLogged.Wrap(err)
 		}
 		stack.Add(img)
 		stack.Add(healthd)
 	}
 
 	toStackOpts := []project.ToStackOption{project.ToStackOnlyServices(params.services)}
-	if len(scaleOverrides) > 0 {
-		toStackOpts = append(toStackOpts, project.ToStackScale(scaleOverrides))
+	if len(params.scale) > 0 {
+		toStackOpts = append(toStackOpts, project.ToStackScale(params.scale))
 	}
 	err := p.ToStack(c, stack, toStackOpts...)
 	if err != nil {
 		c.LogError("Adding the project to a stack", "error", err)
-		return errLogged.Wrap(err)
+		return nil, errLogged.Wrap(err)
 	}
+
+	return stack, nil
+}
+
+// parseScale parses --scale flags of the form "service=num".
+func parseScale(values []string) map[string]int {
+	scaleOverrides := make(map[string]int)
+	for _, s := range values {
+		parts := strings.SplitN(s, "=", 2)
+		if len(parts) == 2 {
+			if n, err := strconv.Atoi(parts[1]); err == nil {
+				scaleOverrides[parts[0]] = n
+			}
+		}
+	}
+	return scaleOverrides
+}
+
+// runUp creates (and optionally starts) the services of a loaded project.
+func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Project, params upParams) error {
+	reCreate := params.reCreate
+	timeout := params.timeout
+	start := params.start
+	noPull := params.noPull
 
 	// defer func() {
 	// 	if c.Errors() != nil {
@@ -216,22 +215,33 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 	// }()
 
 	if reCreate {
+		stack, err := mkUpStack(params, p, globalClient, c)
+		if err != nil {
+			c.LogError("Creating the stack in reCreate", "error", err)
+			return errLogged.Wrap(err)
+		}
+
 		// Ensure without create for "recreate"
 		if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure); err != nil {
-			c.LogDebug("Stopping resources", "error", err)
-		}
+			c.LogDebug("Ensuring for reCreate", "error", err)
+		} else {
+			// Stop
+			if err := stack.ForAction(client.ActionStop).Run(client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
+				c.LogDebug("Stopping resources", "error", err)
+			}
 
-		// Stop
-		if err := stack.ForAction(client.ActionStop).Run(client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
-			c.LogDebug("Stopping resources", "error", err)
+			// Delete
+			deleteStack := stack.ForAction(client.ActionDelete)
+			c.LogDebug("Recreate delete", "resources", deleteStack.All())
+			if err := deleteStack.Run(client.ActionDelete, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
+				c.LogDebug("Deleting resources", "error", err)
+			}
 		}
+	}
 
-		// Delete
-		deleteStack := stack.ForAction(client.ActionDelete)
-		c.LogDebug("Recreate delete", "resources", deleteStack.All())
-		if err := deleteStack.Run(client.ActionDelete, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
-			c.LogDebug("Deleting resources", "error", err)
-		}
+	stack, err := mkUpStack(params, p, globalClient, c)
+	if err != nil {
+		return err
 	}
 
 	c.LogDebug("Ensure", "resources", stack.All())

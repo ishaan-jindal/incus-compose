@@ -1,13 +1,11 @@
 package client
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 
-	incusClient "github.com/lxc/incus/v6/client"
 	incusApi "github.com/lxc/incus/v6/shared/api"
 )
 
@@ -279,16 +277,14 @@ func (r *Healthd) Ensure(opts ...Option) error {
 		return fmt.Errorf("starting instance: %w", err)
 	}
 
-	if token != "" {
-		// Token lives on the tmpfs at /run, single use; consumed on first registration.
-		err = r.mkdirP("/run/secrets/ic-healthd")
-		if err != nil {
-			return fmt.Errorf("creating secrets dir: %w", err)
-		}
+	if err := r.instance.mkdirP("/var/lib/ic-healthd"); err != nil {
+		return fmt.Errorf("creating data-dir '/var/lib/ic-healthd': %w", err)
+	}
 
-		err = r.pushFile("/run/secrets/ic-healthd/token", []byte(token), 0o400)
+	if token != "" {
+		err = r.instance.pushFile("/run/secrets/ic-healthd/token", []byte(token), 0o400, true)
 		if err != nil {
-			return fmt.Errorf("pushing token: %w", err)
+			return fmt.Errorf("pushing token to '/run/secrets/ic-healthd/token': %w", err)
 		}
 	}
 
@@ -340,6 +336,8 @@ func (r *Healthd) Delete(opts ...Option) error {
 	}
 	r.ensured = false
 	r.created = false
+	r.client.resources.Remove(r)
+
 	return r.revokeCert()
 }
 
@@ -503,6 +501,7 @@ func (r *Healthd) createInstance() error {
 			"user.healthcheck.daemon": "true",
 			"oci.entrypoint":          "/usr/local/bin/ic-healthd run" + strings.Join(flags, " "),
 		},
+		Files: map[string]InstanceFile{},
 	}
 
 	// Add network device - find a network from the client's resources
@@ -548,11 +547,9 @@ func (r *Healthd) createInstance() error {
 		}
 		// File will be closed after instance.Ensure() pushes files
 
-		instanceConfig.Files = map[string]InstanceFile{
-			"/usr/local/bin/ic-healthd": {
-				Content: f,
-				Mode:    0o755,
-			},
+		instanceConfig.Files["/usr/local/bin/ic-healthd"] = InstanceFile{
+			Content: f,
+			Mode:    0o755,
 		}
 	}
 
@@ -619,55 +616,6 @@ func (r *Healthd) execHealthd() error {
 	}
 
 	return op.Wait()
-}
-
-// mkdirP creates a directory and all parent directories.
-// Directories are owned by nobody (65534) to match the container user.
-func (r *Healthd) mkdirP(path string) error {
-	// Build list of directories from root to leaf
-	dirs := []string{}
-	for p := path; p != "/" && p != ""; p = parentDir(p) {
-		dirs = append([]string{p}, dirs...)
-	}
-
-	for _, dir := range dirs {
-		err := r.client.incus.CreateInstanceFile(r.incusName, dir, incusClient.InstanceFileArgs{
-			Type: "directory",
-			Mode: 0o755,
-			UID:  65534,
-			GID:  65534,
-		})
-		if err != nil {
-			// Ignore if directory already exists
-			continue
-		}
-	}
-
-	return nil
-}
-
-// parentDir returns the parent directory of a path.
-func parentDir(path string) string {
-	for i := len(path) - 1; i >= 0; i-- {
-		if path[i] == '/' {
-			if i == 0 {
-				return "/"
-			}
-			return path[:i]
-		}
-	}
-	return ""
-}
-
-// pushFile writes content to a file in the instance.
-// Files are owned by nobody (65534) to match the container user.
-func (r *Healthd) pushFile(path string, content []byte, mode int) error {
-	return r.client.incus.CreateInstanceFile(r.incusName, path, incusClient.InstanceFileArgs{
-		Content: bytes.NewReader(content),
-		Mode:    mode,
-		UID:     65534,
-		GID:     65534,
-	})
 }
 
 // compile-time interface checks.

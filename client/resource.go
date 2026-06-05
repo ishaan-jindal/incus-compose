@@ -218,6 +218,13 @@ func (s *ResourceStore) Add(r Resource) {
 	s.resources = append(s.resources, r)
 }
 
+// Remove removes a resource from the store by kind and name.
+func (s *ResourceStore) Remove(r Resource) {
+	s.resources = slices.DeleteFunc(s.resources, func(res Resource) bool {
+		return res.Kind() == r.Kind() && res.Name() == r.Name()
+	})
+}
+
 // Get retrieves a resource by kind and name. Returns nil if not found.
 func (s *ResourceStore) Get(kind Kind, name string) Resource {
 	idx := slices.IndexFunc(s.resources, func(r Resource) bool {

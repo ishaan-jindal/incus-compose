@@ -8,6 +8,9 @@ import (
 	"io"
 	"maps"
 	"net"
+	"os"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -721,26 +724,64 @@ func (r *Instance) PushFiles() error {
 }
 
 // mkdirP creates a directory and all parent directories.
+// Directories are owned by oci.UID/oci.GID to match the container user.
+// TODO: This wont work for windows containers or incus-compose running on windows?
 func (r *Instance) mkdirP(path string) error {
-	if path == "" || path == "/" {
-		return nil
+	r.client.LogDebug("Creating directories", "dir", path)
+
+	dirs := []string{}
+	p := filepath.Clean(path)
+	for {
+		dirs = append(dirs, p)
+		parent := filepath.Dir(p)
+		if parent == p {
+			break // reached root (e.g., "/" or ".")
+		}
+		p = parent
 	}
 
-	// Build list of directories to create from root to leaf
-	var dirs []string
-	for p := path; p != "" && p != "/"; p = p[:strings.LastIndex(p, "/")] {
-		dirs = append([]string{p}, dirs...)
-	}
+	slices.Reverse(dirs)
 
 	for _, dir := range dirs {
 		err := r.client.incus.CreateInstanceFile(r.incusName, dir, incusClient.InstanceFileArgs{
 			Type: "directory",
 			Mode: 0o755,
+			UID:  int64(r.UID),
+			GID:  int64(r.GID),
 		})
-		// Ignore "already exists" errors
-		if err != nil && !strings.Contains(err.Error(), "exist") {
-			return err
+		if err != nil {
+			if os.IsExist(err) {
+				continue
+			}
+			return fmt.Errorf("mkdirP failed on %s: %w", dir, err)
 		}
+	}
+
+	return nil
+}
+
+// pushFile writes content to a file in the instance.
+// Files are owned by nobody (65534) to match the container user.
+func (r *Instance) pushFile(path string, content []byte, mode int, mkdir bool) error {
+	// Clean the path to handle redundant separators and dots
+	path = filepath.Clean(path)
+
+	if mkdir {
+		// Create the directory first.
+		err := r.mkdirP(filepath.Dir(path))
+		if err != nil {
+			return fmt.Errorf("creating secrets dir '%v': %w", filepath.Dir(path), err)
+		}
+	}
+
+	err := r.client.incus.CreateInstanceFile(r.incusName, path, incusClient.InstanceFileArgs{
+		Content: bytes.NewReader(content),
+		Mode:    mode,
+		UID:     int64(r.UID),
+		GID:     int64(r.GID),
+	})
+	if err != nil {
+		return fmt.Errorf("while pushing file '%v' (%d:%d - %d), %w", path, r.UID, r.GID, mode, err)
 	}
 
 	return nil
@@ -827,6 +868,7 @@ func (r *Instance) Delete(opts ...Option) error {
 	r.ETag = ""
 	r.UID = 0
 	r.GID = 0
+	r.client.resources.Remove(r)
 
 	return nil
 }

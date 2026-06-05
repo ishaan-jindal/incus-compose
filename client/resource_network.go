@@ -292,6 +292,7 @@ func (r *Network) Delete(opts ...Option) error {
 
 	r.IncusNetwork = nil
 	r.ETag = ""
+	r.client.resources.Remove(r)
 	return nil
 }
 

@@ -292,6 +292,7 @@ func (r *Profile) Delete(opts ...Option) error {
 	// Clear state
 	r.IncusProfile = nil
 	r.ETag = ""
+	r.client.resources.Remove(r)
 	return nil
 }
 

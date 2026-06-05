@@ -1,12 +1,11 @@
-# Health Checking
+# Health Checking (ic-healthd)
 
 incus-compose implements health checks via a sidecar container called `ic-healthd`.
 Incus has no native healthcheck support, so ic-healthd fills that role.
 
 ## How It Works
 
-When `incus-compose up` finds services with a `healthcheck` directive or
-`restart: always|on-failure`, it:
+When `incus-compose up` finds services with a `healthcheck` directive, it:
 
 1. Creates a restricted Incus trust token scoped to the project.
 2. Starts an `ic-healthd` sidecar container and injects the token as a secret.
@@ -95,6 +94,29 @@ The restricted token gives ic-healthd project-scoped access only:
 - Can manage instance state (start/stop/restart) within the project.
 - Cannot access other projects or perform global operations.
 
+## Management Commands
+
+The `healthd` command group lets you manage the sidecar directly without touching services:
+
+```
+incus-compose healthd logs [--follow]
+incus-compose healthd reload
+incus-compose healthd restart
+incus-compose healthd up [--recreate]
+incus-compose healthd down
+```
+
+| Subcommand        | Description                                           |
+| ----------------- | ----------------------------------------------------- |
+| `logs [--follow]` | Stream the ic-healthd container log                   |
+| `reload`          | Send SIGHUP to the ic-healthd process (reload config) |
+| `restart`         | Restart the ic-healthd container                      |
+| `up [--recreate]` | Create or recreate the sidecar                        |
+| `down`            | Stop and remove the sidecar                           |
+
+`healthd up` accepts `--healthd-image` and `--healthd-binary` (same as `incus-compose up`).
+`healthd up` refuses with an error when no service in the project declares a `healthcheck`.
+
 ## Disabling the Sidecar
 
 ```bash
@@ -113,7 +135,25 @@ itself.
 
 ## Sidecar Image
 
-Default image: `registry.gitlab.com:r3j0/incus-compose/ic-healthd:latest`
+Default image: `registry.gitlab.com/r3j0/incus-compose/ic-healthd:{version}`
+
+Override with `--healthd-image` flag or `INCUS_COMPOSE_HEALTHD_IMAGE` env var.
 
 The container is named `ic-healthd` within the project and tagged with
 `user.healthcheck.daemon=true` so ic-healthd skips itself during discovery.
+
+## Troubleshooting
+
+**Sidecar has wrong config (missing `--incus`/`--project` flags)?**
+
+This can happen when ic-healthd was created by an older version of incus-compose.
+Recreate it:
+
+```bash
+incus-compose healthd up --recreate
+```
+
+**Sidecar not running after `incus-compose start`?**
+
+Healthd is only included in `start` if the project has services with a `healthcheck`.
+Use `incus-compose healthd up` to start it independently.

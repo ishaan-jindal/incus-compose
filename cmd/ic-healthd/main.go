@@ -39,25 +39,29 @@ var runCommand = &cli.Command{
 	Usage: "Run the health check daemon",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
-			Name:  "incus",
-			Usage: "URL of the incus api",
+			Name:    "incus",
+			Usage:   "URL of the incus api",
+			Sources: cli.EnvVars("IC_HEALTHD_INCUS_URL"),
 		},
 		&cli.StringSliceFlag{
 			Name:  "project",
 			Usage: "projects to manage",
 		}, &cli.StringFlag{
-			Name:  "data-dir",
-			Usage: "Persistent volume directory containing the generated cert/key",
-			Value: defaultDataDir,
+			Name:    "data-dir",
+			Usage:   "Persistent volume directory containing the generated cert/key",
+			Value:   defaultDataDir,
+			Sources: cli.EnvVars("IC_HEALTHD_INCUS_PROJECT"),
 		},
 		&cli.StringFlag{
-			Name:  "secrets-dir",
-			Usage: "Tmpfs directory containing the one-time registration token",
-			Value: defaultSecretsDir,
+			Name:    "secrets-dir",
+			Usage:   "Tmpfs directory containing the one-time registration token",
+			Value:   defaultSecretsDir,
+			Sources: cli.EnvVars("IC_HEALTHD_SECRETS_DIR"),
 		},
 		&cli.BoolFlag{
-			Name:  "debug",
-			Usage: "Enable verbose logging",
+			Name:    "debug",
+			Usage:   "Enable verbose logging",
+			Sources: cli.EnvVars("IC_HEALTHD_DEBUG"),
 		},
 	},
 	Before: func(ctx context.Context, _ *cli.Command) (context.Context, error) {
