@@ -46,7 +46,7 @@ var startCommand = &cli.Command{
 			globalClient.LogError("Getting the incus project", "error", err)
 			return errLogged
 		}
-		defer func() { _ = c.Close() }()
+		defer func() { _ = c.Done() }()
 
 		// Register the DNS Watcher
 		if err := c.RegisterDNSWatcher(); err != nil {

@@ -90,7 +90,6 @@ var upCommand = &cli.Command{
 			globalClient.LogError("Opening the project client", "error", err)
 			return errLogged.Wrap(err)
 		}
-		defer func() { _ = c.Close() }()
 
 		params := upParams{
 			services:      cmd.Args().Slice(),
@@ -105,8 +104,10 @@ var upCommand = &cli.Command{
 			detach:        cmd.Bool("detach"),
 		}
 		if err := runUp(globalClient, c, p, params); err != nil {
+			_ = c.Done()
 			return err
 		}
+		_ = c.Done()
 		if params.start && !params.detach {
 			var out io.Writer
 			if f, ok := cmd.Root().Writer.(*os.File); ok {

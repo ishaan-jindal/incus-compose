@@ -58,7 +58,7 @@ var downCommand = &cli.Command{
 			globalClient.LogError("Getting the incus project", "project", p.Name, "error", err)
 			return errLogged.Wrap(err)
 		}
-		defer func() { _ = c.Close() }()
+		defer func() { _ = c.Done() }()
 
 		if deleteProject {
 			networks, err := projectNetworks(c, p)

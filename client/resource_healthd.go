@@ -111,7 +111,7 @@ func (c *Client) registerHealthdWatcher(h *Healthd) error {
 		return err
 	})
 
-	c.AddHookDisconnecting(func(err error) error {
+	c.AddHookDone(func(err error) error {
 		c.LogDebug("HealthdWatcher disconnecting", "healthd", h.IncusName(), "existed", st.existed, "changed", st.changed)
 		if !st.existed || !st.changed {
 			return err

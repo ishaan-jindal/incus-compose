@@ -97,7 +97,7 @@ func (c *Client) RegisterDNSWatcher() error {
 		return err
 	})
 
-	c.AddHookDisconnecting(func(err error) error {
+	c.AddHookDone(func(err error) error {
 		live := map[string]int{}
 		for _, inst := range st.instances {
 			live[inst.ServiceName()]++

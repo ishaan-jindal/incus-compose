@@ -165,7 +165,7 @@ var logsCommand = &cli.Command{
 			globalClient.LogError("Opening the project client", "error", err)
 			return errLogged.Wrap(err)
 		}
-		defer func() { _ = c.Close() }()
+		defer func() { _ = c.Done() }()
 
 		var out io.Writer
 		if f, ok := cmd.Root().Writer.(*os.File); ok {

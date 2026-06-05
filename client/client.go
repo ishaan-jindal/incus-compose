@@ -41,8 +41,8 @@ type Client struct {
 	// hookConnected is called once when the client is ready, before any action.
 	hookConnected func(err error) error
 
-	// hookDisconnecting is called once before the client is discarded, for cleanup.
-	hookDisconnecting func(err error) error
+	// hookDone is called once when the client's work is complete, for cleanup.
+	hookDone func(err error) error
 }
 
 func (c *GlobalClient) newClientProject(name, incusName string, created bool) (*Client, error) {
@@ -70,8 +70,8 @@ func (c *GlobalClient) newClientProject(name, incusName string, created bool) (*
 		hookOperation:       c.hookOperation,
 		hookRemoteOperation: c.hookRemoteOperation,
 
-		hookConnected:     func(err error) error { return err },
-		hookDisconnecting: func(err error) error { return err },
+		hookConnected: func(err error) error { return err },
+		hookDone:      func(err error) error { return err },
 	}
 
 	if c.IsDebugging() {
@@ -262,16 +262,16 @@ func (c *Client) AddHookConnected(hook func(err error) error) {
 	c.hookConnected = newHook
 }
 
-// AddHookDisconnecting adds a hook that will be executed before the client disconnects (LIFO order).
-func (c *Client) AddHookDisconnecting(hook func(err error) error) {
-	prevHook := c.hookDisconnecting
+// AddHookDone adds a hook that will be executed when the client's work is complete (LIFO order).
+func (c *Client) AddHookDone(hook func(err error) error) {
+	prevHook := c.hookDone
 	newHook := func(err error) error {
 		// Run new hook FIRST, then pass result to previous hooks (LIFO)
 		err = hook(err)
 		return prevHook(err)
 	}
 
-	c.hookDisconnecting = newHook
+	c.hookDone = newHook
 }
 
 // Open fires the connected hooks. Call once after registering all hooks,
@@ -280,9 +280,9 @@ func (c *Client) Open() error {
 	return c.hookConnected(nil)
 }
 
-// Close fires the disconnecting hooks. Call before discarding the client.
-func (c *Client) Close() error {
-	return c.hookDisconnecting(nil)
+// Done fires the done hooks. Call when the client's work is complete.
+func (c *Client) Done() error {
+	return c.hookDone(nil)
 }
 
 // InstanceIPs fetches the global IPv4 and IPv6 addresses of a named

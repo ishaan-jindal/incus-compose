@@ -144,7 +144,7 @@ var healthdLogsCommand = &cli.Command{
 			globalClient.LogError("Opening the project client", "error", err)
 			return errLogged.Wrap(err)
 		}
-		defer func() { _ = c.Close() }()
+		defer func() { _ = c.Done() }()
 
 		h, err := resolveHealthd(c)
 		if err != nil {
@@ -201,7 +201,7 @@ var healthdReloadCommand = &cli.Command{
 			globalClient.LogError("Opening the project client", "error", err)
 			return errLogged.Wrap(err)
 		}
-		defer func() { _ = c.Close() }()
+		defer func() { _ = c.Done() }()
 
 		h, err := resolveHealthd(c)
 		if err != nil {
@@ -249,7 +249,7 @@ var healthdRestartCommand = &cli.Command{
 			globalClient.LogError("Opening the project client", "error", err)
 			return errLogged.Wrap(err)
 		}
-		defer func() { _ = c.Close() }()
+		defer func() { _ = c.Done() }()
 
 		h, err := resolveHealthd(c)
 		if err != nil {
@@ -341,7 +341,7 @@ var healthdUpCommand = &cli.Command{
 			globalClient.LogError("Opening the project client", "error", err)
 			return errLogged.Wrap(err)
 		}
-		defer func() { _ = c.Close() }()
+		defer func() { _ = c.Done() }()
 
 		if cmd.Bool("recreate") {
 			stack, err := mkHealthdStack(cmd, p, globalClient, c)
@@ -417,7 +417,7 @@ var healthdDownCommand = &cli.Command{
 			globalClient.LogError("Opening the project client", "error", err)
 			return errLogged.Wrap(err)
 		}
-		defer func() { _ = c.Close() }()
+		defer func() { _ = c.Done() }()
 
 		h, err := resolveHealthd(c)
 		if err != nil {

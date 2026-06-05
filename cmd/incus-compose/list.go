@@ -136,7 +136,7 @@ var listCommand = &cli.Command{
 			globalClient.LogError("Opening the project client", "error", err)
 			return errLogged.Wrap(err)
 		}
-		defer func() { _ = c.Close() }()
+		defer func() { _ = c.Done() }()
 
 		stack := client.NewStack(c)
 		err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackFull())

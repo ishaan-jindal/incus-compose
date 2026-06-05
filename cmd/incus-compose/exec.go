@@ -103,7 +103,7 @@ var execCommand = &cli.Command{
 			globalClient.LogError("Opening the project client", "error", err)
 			return errLogged.Wrap(err)
 		}
-		defer func() { _ = c.Close() }()
+		defer func() { _ = c.Done() }()
 
 		// Build stack with only requested service
 		stack := client.NewStack(c)
