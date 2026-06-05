@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strconv"
 	"strings"
 
 	"github.com/gosimple/slug"
@@ -352,8 +353,13 @@ func sanitizeProjectName(name string) string {
 
 // serviceName strips the trailing "-{index}" from a scaled instance name.
 func serviceName(name string) string {
-	if i := strings.LastIndex(name, "-"); i > 0 {
-		return name[:i]
+	i := strings.LastIndex(name, "-")
+	if i <= 0 {
+		return name
 	}
-	return name
+	suffix := name[i+1:]
+	if _, err := strconv.Atoi(suffix); err != nil {
+		return name
+	}
+	return name[:i]
 }
