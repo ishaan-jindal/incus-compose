@@ -15,7 +15,7 @@ func (s *E2ESuite) TestLifecycleHealthd() {
 	}{
 		{
 			name: "up",
-			args: []string{"-f", compose, "up", "--no-pull"},
+			args: []string{"-f", compose, "up", "--detach", "--no-pull"},
 		},
 		{
 			name: "list",
