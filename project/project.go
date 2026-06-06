@@ -132,7 +132,7 @@ func LoadModel(ctx context.Context, opts ...LoadOption) (map[string]any, error) 
 // serviceToInstance translates a compose service to an Incus instance.
 // Environment vars become instance config, labels become user metadata.
 // Volumes default to bind mounts for paths starting with / or ., otherwise named volumes.
-func serviceToInstance(c *client.Client, p *types.Project, serviceName string, full bool, index int, networkProfile client.Resource) ([]client.Resource, error) {
+func serviceToInstance(c *client.Client, p *types.Project, serviceName string, full bool, noImages bool, index int, networkProfile client.Resource) ([]client.Resource, error) {
 	service, ok := p.Services[serviceName]
 	if !ok {
 		return nil, fmt.Errorf("service %q not found", serviceName)
@@ -167,15 +167,21 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, f
 	// Restart policy
 	applyRestartPolicy(config, service.Restart)
 
-	// image, this will fail if the image hasn't been configured before.
-	image, err := c.Resource(client.KindImage, service.Image, &client.ImageConfig{})
-	if err != nil {
-		errs = errors.Join(errs, err)
-	}
+	var (
+		image client.Resource
+		err   error
+	)
+	if !noImages {
+		// image, this will fail if the image hasn't been configured before.
+		image, err = c.Resource(client.KindImage, service.Image, &client.ImageConfig{})
+		if err != nil {
+			errs = errors.Join(errs, err)
+		}
 
-	if full && image != nil {
-		// Full needs images.
-		resources = append(resources, image)
+		if image != nil {
+			// Full needs images.
+			resources = append(resources, image)
+		}
 	}
 
 	// Networks
@@ -528,7 +534,13 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, f
 
 	// Instance name follows Docker Compose convention: {service}-{index}
 	instanceName := fmt.Sprintf("%s-%d", service.Name, index)
-	instanceConfig := &client.InstanceConfig{Full: full, Resources: slices.Clone(resources), Image: image.Name(), Config: config, Devices: devices, PostDevices: postDevices, PostStartDevices: postStartDevices, Secrets: instanceSecrets}
+
+	var instanceConfig *client.InstanceConfig
+	if image != nil {
+		instanceConfig = &client.InstanceConfig{Full: full, Resources: slices.Clone(resources), Image: image.Name(), Config: config, Devices: devices, PostDevices: postDevices, PostStartDevices: postStartDevices, Secrets: instanceSecrets}
+	} else {
+		instanceConfig = &client.InstanceConfig{Full: full, Resources: slices.Clone(resources), Config: config, Devices: devices, PostDevices: postDevices, PostStartDevices: postStartDevices, Secrets: instanceSecrets}
+	}
 	instance, err := c.Resource(client.KindInstance, instanceName, instanceConfig)
 	if err != nil {
 		return nil, err
@@ -801,6 +813,7 @@ type ToStackOptions struct {
 	OnlyServices []string
 	Reverse      bool
 	Full         bool
+	NoImages     bool
 	Scale        map[string]int // service name -> replica count override
 }
 
@@ -828,6 +841,13 @@ func ToStackReverse() ToStackOption {
 func ToStackFull() ToStackOption {
 	return func(o *ToStackOptions) {
 		o.Full = true
+	}
+}
+
+// ToStackNoImages doesn't add images to the stack.
+func ToStackNoImages() ToStackOption {
+	return func(o *ToStackOptions) {
+		o.NoImages = true
 	}
 }
 
@@ -936,7 +956,7 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 		resources = append(resources, networkProfile)
 	}
 
-	if len(options.OnlyServices) >= 1 {
+	if len(options.OnlyServices) > 0 {
 		services := types.Services{}
 		for n, svc := range p.Services {
 			for _, on := range options.OnlyServices {
@@ -982,7 +1002,7 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 		}
 
 		for i := 1; i <= scale; i++ {
-			instanceResources, err := serviceToInstance(c, p.Project, serviceName, options.Full, i, networkProfile)
+			instanceResources, err := serviceToInstance(c, p.Project, serviceName, options.Full, options.NoImages, i, networkProfile)
 			if err != nil {
 				errs = errors.Join(errs, err)
 				continue
