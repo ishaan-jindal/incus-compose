@@ -72,7 +72,7 @@ var psCommand = &cli.Command{
 
 		// Build stack for the services we're interested in (only services).
 		stack := client.NewStack(c)
-		if err := p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackFull()); err != nil {
+		if err := p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackFull(), project.ToStackNoImages()); err != nil {
 			c.LogError(err.Error())
 			return errLogged.Wrap(err)
 		}
@@ -145,10 +145,8 @@ var psCommand = &cli.Command{
 				}
 
 				entry.Status = full.State.Status
-				entry.Image = ""
-				if inst.IncusImageAlias != nil {
-					entry.Image = inst.IncusImageAlias.Name
-				}
+				entry.Image = inst.Config.Image
+
 				// collect addresses
 				for _, nw := range full.State.Network {
 					for _, a := range nw.Addresses {

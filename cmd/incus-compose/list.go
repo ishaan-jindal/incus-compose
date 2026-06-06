@@ -108,6 +108,10 @@ var listCommand = &cli.Command{
 				return nil
 			},
 		},
+		&cli.BoolFlag{
+			Name:  "healthd",
+			Usage: "List the healthd sidecar",
+		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
 		globalClient, err := clientFromContext(ctx)
@@ -134,22 +138,17 @@ var listCommand = &cli.Command{
 		defer func() { _ = c.Done() }()
 
 		stack := client.NewStack(c)
-		err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackFull())
+		err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackFull(), project.ToStackNoImages())
 		if err != nil {
 			c.LogError(err.Error())
 			return errLogged.Wrap(err)
 		}
 
-		if name, err := c.FindHealthdName(); err == nil && name != "" {
-			// Use CliConfig from globalClient for automatic image server resolution
-			imageConfig := &client.ImageConfig{CliConfig: globalClient.CliConfig()}
+		if cmd.Bool("healthd") {
+			if name, err := c.FindHealthdName(); err == nil && name != "" {
+				c.LogDebug("Found healthd name", "name", name)
 
-			healthdImage := resolveHealthdImage(cmd.Root().String("healthd-image"))
-			img, err := c.Resource(client.KindImage, healthdImage, imageConfig)
-			if err == nil {
-				stack.Add(img)
-
-				inst, err := c.Resource(client.KindInstance, name, &client.InstanceConfig{Image: healthdImage, Full: true})
+				inst, err := c.Resource(client.KindInstance, name, &client.InstanceConfig{Full: true})
 				if err != nil {
 					c.LogWarn(err.Error())
 					return errLogged.Wrap(err)
@@ -219,9 +218,7 @@ var listCommand = &cli.Command{
 			}
 
 			if r.Kind() == client.KindImage {
-				status.Name = ""
-				status.IncusName = ""
-				status.Image = r.Name()
+				continue
 			}
 
 			if r.Kind() == client.KindInstance {
@@ -250,7 +247,7 @@ var listCommand = &cli.Command{
 
 				status.Name = instance.ServiceName()
 				status.Status = instFull.State.Status
-				status.Image = instance.IncusImageAlias.Name
+				status.Image = instance.Config.Image
 				status.Description = instFull.Description
 
 				// Get IP addresses
