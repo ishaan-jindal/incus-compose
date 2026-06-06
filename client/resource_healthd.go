@@ -18,6 +18,12 @@ const PriorityHealthd = PriorityInstance + 1
 // DefaultHealthdImage is the default container image for healthd.
 const DefaultHealthdImage = "registry.gitlab.com/r3j0/incus-compose/ic-healthd:{version}"
 
+// DefaultHealthdCPULimit contains the default "limits.cpu" value.
+const DefaultHealthdCPULimit = "1"
+
+// DefaultHealthdMemoryLimit contains the default "limits.memory" value.
+const DefaultHealthdMemoryLimit = "50MB"
+
 // HealthdConfig configures the healthd sidecar instance.
 type HealthdConfig struct {
 	// IncusURL is the Incus API endpoint (network gateway IP).
@@ -507,6 +513,8 @@ func (r *Healthd) createInstance() error {
 		Image: r.image,
 		Type:  incusApi.InstanceTypeContainer,
 		Config: map[string]string{
+			"limits.cpu":              DefaultHealthdCPULimit,
+			"limits.memory":           DefaultHealthdMemoryLimit,
 			"user.internal":           "true",
 			"user.healthcheck.daemon": "true",
 			"oci.entrypoint":          "/usr/local/bin/ic-healthd run" + strings.Join(flags, " "),
