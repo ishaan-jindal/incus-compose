@@ -1,5 +1,4 @@
 KIND      NAME     INCUSNAME      IMAGE                           STATUS   ADDRESSES
-image                             docker.io/nginx:alpine          Cached   
-network   default  ic-                                  Exists   
+network   default  ic-ynmt73wxwq                                  Exists   
 instance  web      web-1          docker.io/library/nginx:alpine  Running  
 

@@ -785,10 +785,6 @@ func normalizeListOutput(output string) string {
 	ipRegex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
 	output = ipRegex.ReplaceAllString(output, "")
 
-	// Remove network hash suffix (ic-XXXXXXXXXX -> ic-)
-	hashRegex := regexp.MustCompile(`ic-[a-z0-9]{10}`)
-	output = hashRegex.ReplaceAllString(output, "ic-")
-
 	return output
 }
 

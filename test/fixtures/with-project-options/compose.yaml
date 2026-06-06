@@ -1,6 +1,7 @@
 x-incus:
-  limits.cpu: "4"
-  limits.memory: 2049MB # +1 MiB
+  # https://linuxcontainers.org/incus/docs/main/reference/instance_options/#instance-options-limits-cpu-container
+  limits.cpu: "5" # +1 for healthd
+  limits.memory: 2149MB # +100 for healthd, +1 MiB for calc.
   limits.virtual-machines: 0
 
 services:

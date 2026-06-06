@@ -164,8 +164,8 @@ func (s *ProjectInternalSuite) TestProjectConfigExtractsXIncus() {
 	s.Require().NoError(err)
 
 	s.Equal(map[string]string{
-		"limits.cpu":              "4",
-		"limits.memory":           "2049MB",
+		"limits.cpu":              "5",
+		"limits.memory":           "2149MB",
 		"limits.virtual-machines": "0",
 	}, proj.ProjectConfig())
 }

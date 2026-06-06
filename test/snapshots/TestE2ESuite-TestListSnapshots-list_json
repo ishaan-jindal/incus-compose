@@ -1,18 +1,9 @@
 [
   {
-    "kind": "image",
-    "name": "",
-    "description": "",
-    "incus_name": "",
-    "image": "docker.io/nginx:alpine",
-    "status": "Cached",
-    "addresses": []
-  },
-  {
     "kind": "network",
     "name": "default",
     "description": "",
-    "incus_name": "ic-",
+    "incus_name": "ic-ynmt73wxwq",
     "image": "",
     "status": "Exists",
     "addresses": []

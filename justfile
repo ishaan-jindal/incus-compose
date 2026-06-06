@@ -30,7 +30,6 @@ lint folder="./...":
 
 # Update snapshot test files
 update-snapshots folder="./...":
-    go clean -testcache
     CI=1 UPDATE_SNAPSHOTS=true go test {{ folder }} || true
 
 # Dev install creates your dev environment: `just dev-install [container] [listen] [project] [image]`
