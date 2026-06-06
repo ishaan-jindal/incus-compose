@@ -53,19 +53,21 @@ var downCommand = &cli.Command{
 		if deleteProject {
 			networks, err := projectNetworks(c, p)
 			if err != nil {
-				globalClient.LogError("Getting project networks", "project", p.Name, "error", err)
-				return errLogged.Wrap(err)
+				c.LogWarn("Getting project networks", "project", p.Name, "error", err)
 			}
 
+			c.LogDebug("Deleting the project")
 			err = globalClient.DeleteProject(c.Project(), true)
 			if err != nil {
 				globalClient.LogError("Deleting the project", "project", p.Name, "error", err)
 				return errLogged
 			}
 
-			if err := deleteProjectNetworks(c, networks); err != nil {
-				globalClient.LogError("Deleting project networks", "project", p.Name, "error", err)
-				return errLogged.Wrap(err)
+			if networks != nil {
+				if err := deleteProjectNetworks(c, networks); err != nil {
+					globalClient.LogError("Deleting project networks", "project", p.Name, "error", err)
+					return errLogged.Wrap(err)
+				}
 			}
 
 			return nil
