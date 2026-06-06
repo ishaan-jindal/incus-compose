@@ -122,26 +122,15 @@ func (s *Stack) runBatch(batch []Resource, kind Kind, action Action, opts ...Opt
 	// Execute batches in order
 	var errs error
 
-	// Images and logs run in parallel - they have no dependencies
-	runParallel := (kind == KindImage || action == ActionLog) && len(batch) > 1
-	if runParallel {
-		pool := NewWorkerPool(s.workers)
-		for _, r := range batch {
-			task := r // capture for closure
-			pool.Submit(func() error {
-				return RunAction(task, action, opts...)
-			})
-		}
-		if err := pool.Run(PoolRunArgs{FailFast: false}); err != nil {
-			errs = errors.Join(errs, err)
-		}
-	} else {
-		// All other resources run sequentially
-		for _, r := range batch {
-			if err := RunAction(r, action, opts...); err != nil {
-				errs = errors.Join(errs, err)
-			}
-		}
+	pool := NewWorkerPool(s.workers)
+	for _, r := range batch {
+		task := r // capture for closure
+		pool.Submit(func() error {
+			return RunAction(task, action, opts...)
+		})
+	}
+	if err := pool.Run(PoolRunArgs{FailFast: false}); err != nil {
+		errs = errors.Join(errs, err)
 	}
 
 	return errs
@@ -179,7 +168,7 @@ func (s *Stack) ForAction(action Action) *Stack {
 	// is preserved — use ToStackReverse() on ToStack to reverse dependency-graph
 	// order for services of the same kind (e.g. stop dependants before dependencies).
 	switch action {
-	case ActionStop, ActionDelete:
+	case ActionStop, ActionDelete, ActionPostEnsure:
 		sortDescending = true
 	case ActionEnsure, ActionStart:
 		sortDescending = false

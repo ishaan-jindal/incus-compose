@@ -40,6 +40,7 @@ type StorageVolume struct {
 	client    *Client
 	incusName string
 	created   bool
+	ensured   bool
 	Config    StorageVolumeConfig
 
 	// State - nil means not ensured.
@@ -90,7 +91,7 @@ func (r *StorageVolume) IncusName() string {
 
 // IsEnsured returns true if the volume has been fetched/created.
 func (r *StorageVolume) IsEnsured() bool {
-	return r.IncusVolume != nil
+	return r.ensured
 }
 
 // Created returns true if the volume was created during the last Ensure call.
@@ -98,12 +99,8 @@ func (r *StorageVolume) Created() bool {
 	return r.created
 }
 
-// Ensure retrieves an existing storage volume or creates a new one if Create option is set.
+// Ensure does get only, PostEnsure does create.
 func (r *StorageVolume) Ensure(opts ...Option) error {
-	if r.IsEnsured() {
-		return nil
-	}
-
 	args := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
@@ -114,17 +111,37 @@ func (r *StorageVolume) Ensure(opts ...Option) error {
 
 	// Try to get existing
 	err := r.get()
-	if err == nil {
+	if err != nil && !args.Create {
 		if r.client.hookAfter != nil {
 			err = r.client.hookAfter(ActionEnsure, r, args, err)
 		}
 
+		r.ensured = true
 		return err
 	}
 
+	r.ensured = true
+	return nil
+}
+
+// PostEnsure retrieves an existing storage volume or creates a new one if Create option is set.
+func (r *StorageVolume) PostEnsure(opts ...Option) error {
+	if r.IncusVolume != nil {
+		return nil
+	}
+
+	args := NewOptions(opts...)
+
+	if r.client.hookBefore != nil {
+		if err := r.client.hookBefore(ActionPostEnsure, r, args, nil); err != nil {
+			return err
+		}
+	}
+
+	var err error
 	if !args.Create {
 		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ActionEnsure, r, args, err)
+			err = r.client.hookAfter(ActionPostEnsure, r, args, err)
 		}
 
 		return err
@@ -133,17 +150,19 @@ func (r *StorageVolume) Ensure(opts ...Option) error {
 	err = r.create()
 
 	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ActionEnsure, r, args, err)
+		err = r.client.hookAfter(ActionPostEnsure, r, args, err)
 	}
 
 	return err
 }
 
 func (r *StorageVolume) get() error {
+	// r.client.LogDebug("getting volume", "pool", r.Config.Pool, "volume", r.incusName)
+
 	// Try to get existing volume
 	volume, eTag, err := r.client.incus.GetStoragePoolVolume(r.Config.Pool, "custom", r.incusName)
 	if err != nil {
-		return ErrNotFound.WithResource(r).Wrap(err)
+		return ErrNotFound.Wrap(err)
 	}
 
 	// Validate configuration matches
@@ -253,7 +272,8 @@ func (r *StorageVolume) Delete(opts ...Option) error {
 }
 
 var (
-	_ Resource   = (*StorageVolume)(nil)
-	_ EnsureAble = (*StorageVolume)(nil)
-	_ DeleteAble = (*StorageVolume)(nil)
+	_ Resource       = (*StorageVolume)(nil)
+	_ EnsureAble     = (*StorageVolume)(nil)
+	_ PostEnsureAble = (*StorageVolume)(nil)
+	_ DeleteAble     = (*StorageVolume)(nil)
 )
