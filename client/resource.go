@@ -146,7 +146,11 @@ func RunAction(r Resource, action Action, opts ...Option) error {
 			return e.Ensure(opts...)
 		}
 		return ErrUnsupportedAction.WithAction(ActionEnsure).WithResource(r)
-
+	case ActionPostEnsure:
+		if e, ok := r.(PostEnsureAble); ok {
+			return e.PostEnsure(opts...)
+		}
+		return ErrUnsupportedAction.WithAction(ActionPostEnsure).WithResource(r)
 	case ActionDelete:
 		if e, ok := r.(DeleteAble); ok {
 			return e.Delete(opts...)
@@ -225,10 +229,10 @@ func (s *ResourceStore) Remove(r Resource) {
 	})
 }
 
-// Get retrieves a resource by kind and name. Returns nil if not found.
-func (s *ResourceStore) Get(kind Kind, name string) Resource {
+// Get retrieves a resource by kind and its Incus-normalized name. Returns nil if not found.
+func (s *ResourceStore) Get(kind Kind, incusName string) Resource {
 	idx := slices.IndexFunc(s.resources, func(r Resource) bool {
-		return r.Kind() == kind && r.Name() == name
+		return r.Kind() == kind && r.IncusName() == incusName
 	})
 	if idx == -1 {
 		return nil

@@ -4,8 +4,6 @@ import (
 	"context"
 	"testing"
 
-	incusClient "github.com/lxc/incus/v6/client"
-	incusApi "github.com/lxc/incus/v6/shared/api"
 	"github.com/lxc/incus/v6/shared/cliconfig"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
@@ -89,7 +87,6 @@ func TestImageParsing(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a minimal client for parsing test
-			// We only need the imageCache field to be non-nil for newImage to work
 			c := &Client{}
 
 			config := &ImageConfig{
@@ -110,6 +107,44 @@ func TestImageParsing(t *testing.T) {
 			assert.Equal(t, tt.expectedIncusName, img.IncusName())
 		})
 	}
+}
+
+// ----------------------------------------------------------------------------
+// Unit Tests for Resource deduplication
+// ----------------------------------------------------------------------------
+
+// TestResource_SameIncusNameReturnsSameObject reproduces the bug where
+// up.go calls Resource with CliConfig set and serviceToInstance calls it
+// without CliConfig. Both resolve to the same IncusName but previously
+// returned different objects, causing the stack to hold duplicates and
+// parallel Ensure to race with "Alias already exists".
+func TestResource_SameIncusNameReturnsSameObject(t *testing.T) {
+	c := NewOfflineClient(context.Background(), "test")
+
+	// First call: with CliConfig (as up.go does)
+	r1, err := c.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
+	assert.NoError(t, err)
+
+	// Second call: empty config (as serviceToInstance does)
+	r2, err := c.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
+	assert.NoError(t, err)
+
+	assert.Same(t, r1, r2, "same image name must return the same object")
+}
+
+// TestResource_NormalizedFormReturnsSameObject checks that a short reference
+// ("docker.io/nginx:alpine") and its canonical form ("docker.io/library/nginx:alpine")
+// resolve to the same object because they share the same IncusName.
+func TestResource_NormalizedFormReturnsSameObject(t *testing.T) {
+	c := NewOfflineClient(context.Background(), "test")
+
+	r1, err := c.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
+	assert.NoError(t, err)
+
+	r2, err := c.Resource(KindImage, "docker.io/library/nginx:alpine", &ImageConfig{})
+	assert.NoError(t, err)
+
+	assert.Same(t, r1, r2, "short and canonical form must return the same object")
 }
 
 // ----------------------------------------------------------------------------
@@ -245,10 +280,8 @@ func (s *ImageSuite) TestEnsure_Idempotent() {
 }
 
 func (s *ImageSuite) TestEnsure_WithoutCreate_ThenWithCreate() {
-	// Use project-scoped cache to avoid finding images from default project
 	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{
-		CliConfig:   s.cliConfig,
-		CacheServer: s.client.Connection(),
+		CliConfig: s.cliConfig,
 	})
 	s.Require().NoError(err)
 
@@ -266,11 +299,7 @@ func (s *ImageSuite) TestEnsure_WithoutCreate_ThenWithCreate() {
 }
 
 func (s *ImageSuite) TestEnsure_WithoutCliConfig_Fails() {
-	// Use project-scoped cache to avoid finding images from default project
-	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{
-		// No CliConfig configured - but use project cache
-		CacheServer: s.client.Connection(),
-	})
+	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
 	s.Require().NoError(err)
 
 	err = RunAction(r, ActionEnsure, OptionCreate())
@@ -345,7 +374,7 @@ func (s *ImageSuite) TestResource_DifferentNamesAreDifferent() {
 // Delete Tests
 // ----------------------------------------------------------------------------
 
-func (s *ImageSuite) TestDelete_NoProjectCopy_LeavesCacheIntact() {
+func (s *ImageSuite) TestDelete_ImageExists_Removed() {
 	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{
 		CliConfig: s.cliConfig,
 	})
@@ -355,57 +384,22 @@ func (s *ImageSuite) TestDelete_NoProjectCopy_LeavesCacheIntact() {
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 
-	image, ok := r.(*Image)
-	s.Require().True(ok)
-
-	// No per-project copy exists (no instance was created), so Delete is a no-op
-	// and must not touch the cache.
 	err = RunAction(r, ActionDelete, OptionForce())
 	s.Require().NoError(err)
 
-	cacheAlias, _, err := image.Config.cache.GetImageAlias(image.IncusName())
-	s.Require().NoError(err)
-	s.NotNil(cacheAlias, "cache image must survive Delete")
+	alias, _, _ := s.client.Connection().GetImageAlias(r.(*Image).IncusName())
+	s.Nil(alias, "image should be gone after Delete")
 }
 
-func (s *ImageSuite) TestDelete_RemovesProjectCopy() {
+func (s *ImageSuite) TestDelete_NoImage_IsNoop() {
 	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{
 		CliConfig: s.cliConfig,
 	})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-
-	image, ok := r.(*Image)
-	s.Require().True(ok)
-
-	// Simulate the per-project copy that CreateInstanceFromImage leaves behind:
-	// copy the cached image into the active project under the same alias.
-	cacheImage, _, err := image.Config.cache.GetImage(image.IncusAlias.Target)
-	s.Require().NoError(err)
-
-	op, err := s.client.Connection().CopyImage(image.Config.cache, *cacheImage, &incusClient.ImageCopyArgs{
-		Aliases: []incusApi.ImageAlias{{Name: image.IncusName()}},
-		Mode:    "pull",
-	})
-	s.Require().NoError(err)
-	s.Require().NoError(op.Wait())
-
-	alias, _, err := s.client.Connection().GetImageAlias(image.IncusName())
-	s.Require().NoError(err)
-	s.Require().NotNil(alias, "per-project copy should exist before Delete")
-
-	// Delete removes the per-project copy but keeps the cache.
+	// Delete without prior Ensure — no image in project, must not error.
 	err = RunAction(r, ActionDelete, OptionForce())
 	s.Require().NoError(err)
-
-	alias, _, _ = s.client.Connection().GetImageAlias(image.IncusName())
-	s.Nil(alias, "per-project copy should be gone after Delete")
-
-	cacheAlias, _, err := image.Config.cache.GetImageAlias(image.IncusName())
-	s.Require().NoError(err)
-	s.NotNil(cacheAlias, "cache image must survive Delete")
 }
 
 func (s *ImageSuite) TestEnsure_Pull_SkipsWhenFingerprintUnchanged() {

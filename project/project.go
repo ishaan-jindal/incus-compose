@@ -132,7 +132,7 @@ func LoadModel(ctx context.Context, opts ...LoadOption) (map[string]any, error) 
 // serviceToInstance translates a compose service to an Incus instance.
 // Environment vars become instance config, labels become user metadata.
 // Volumes default to bind mounts for paths starting with / or ., otherwise named volumes.
-func serviceToInstance(c *client.Client, p *types.Project, serviceName string, full bool, noImages bool, index int, networkProfile client.Resource) ([]client.Resource, error) {
+func serviceToInstance(c *client.Client, p *types.Project, serviceName string, options *ToStackOptions, index int, networkProfile client.Resource) ([]client.Resource, error) {
 	service, ok := p.Services[serviceName]
 	if !ok {
 		return nil, fmt.Errorf("service %q not found", serviceName)
@@ -171,17 +171,14 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, f
 		image client.Resource
 		err   error
 	)
-	if !noImages {
+	if !options.NoImages {
 		// image, this will fail if the image hasn't been configured before.
 		image, err = c.Resource(client.KindImage, service.Image, &client.ImageConfig{})
 		if err != nil {
 			errs = errors.Join(errs, err)
 		}
-
-		if image != nil {
-			// Full needs images.
-			resources = append(resources, image)
-		}
+		// image is kept out of resources: callers pre-add images to the stack.
+		// It is included in instanceConfig.Resources below for dependency tracking.
 	}
 
 	// Networks
@@ -393,10 +390,14 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, f
 		case "volume":
 			volConfig := &client.StorageVolumeConfig{}
 
-			_, err := c.Resource(client.KindStorageVolume, cVol.Source, volConfig)
+			v, err := c.Resource(client.KindStorageVolume, cVol.Source, volConfig)
 			if err != nil {
 				errs = errors.Join(errs, err)
 				continue
+			}
+
+			if options.StorageVolumes {
+				resources = append(resources, v)
 			}
 
 			devName := fmt.Sprintf("vol-%s", cVol.Source)
@@ -537,9 +538,9 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, f
 
 	var instanceConfig *client.InstanceConfig
 	if image != nil {
-		instanceConfig = &client.InstanceConfig{Full: full, Resources: slices.Clone(resources), Image: image.Name(), Config: config, Devices: devices, PostDevices: postDevices, PostStartDevices: postStartDevices, Secrets: instanceSecrets}
+		instanceConfig = &client.InstanceConfig{Full: options.Full, Resources: append(slices.Clone(resources), image), Image: image.Name(), Config: config, Devices: devices, PostDevices: postDevices, PostStartDevices: postStartDevices, Secrets: instanceSecrets}
 	} else {
-		instanceConfig = &client.InstanceConfig{Full: full, Resources: slices.Clone(resources), Config: config, Devices: devices, PostDevices: postDevices, PostStartDevices: postStartDevices, Secrets: instanceSecrets}
+		instanceConfig = &client.InstanceConfig{Full: options.Full, Resources: slices.Clone(resources), Config: config, Devices: devices, PostDevices: postDevices, PostStartDevices: postStartDevices, Secrets: instanceSecrets}
 	}
 	instance, err := c.Resource(client.KindInstance, instanceName, instanceConfig)
 	if err != nil {
@@ -810,11 +811,12 @@ func (p *Project) Load(ctx context.Context, opts ...LoadOption) (*Project, error
 
 // ToStackOptions configures how services are converted to stack operations.
 type ToStackOptions struct {
-	OnlyServices []string
-	Reverse      bool
-	Full         bool
-	NoImages     bool
-	Scale        map[string]int // service name -> replica count override
+	OnlyServices   []string
+	Reverse        bool
+	Full           bool
+	NoImages       bool
+	StorageVolumes bool
+	Scale          map[string]int // service name -> replica count override
 }
 
 // ToStackOption is a functional option for ToStack.
@@ -848,6 +850,13 @@ func ToStackFull() ToStackOption {
 func ToStackNoImages() ToStackOption {
 	return func(o *ToStackOptions) {
 		o.NoImages = true
+	}
+}
+
+// ToStackStorageVolumes adds storage volumes to the stack.
+func ToStackStorageVolumes() ToStackOption {
+	return func(o *ToStackOptions) {
+		o.StorageVolumes = true
 	}
 }
 
@@ -1002,7 +1011,7 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 		}
 
 		for i := 1; i <= scale; i++ {
-			instanceResources, err := serviceToInstance(c, p.Project, serviceName, options.Full, options.NoImages, i, networkProfile)
+			instanceResources, err := serviceToInstance(c, p.Project, serviceName, options, i, networkProfile)
 			if err != nil {
 				errs = errors.Join(errs, err)
 				continue
