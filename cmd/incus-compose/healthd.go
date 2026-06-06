@@ -16,10 +16,11 @@ import (
 
 // healthdParams holds the image/binary options for healthd setup.
 type healthdParams struct {
-	binary   string
-	image    string // already resolved via resolveHealthdImage
-	reCreate bool
-	network  string // Incus bridge name; empty = auto-detect
+	projectName string
+	binary      string
+	image       string // already resolved via resolveHealthdImage
+	reCreate    bool
+	network     string // Incus bridge name; empty = auto-detect
 }
 
 // projectUsesHealthd reports whether any of the named services declares a healthcheck.
@@ -41,7 +42,7 @@ func projectUsesHealthd(p *project.Project) bool {
 // prepareHealthd resolves the sidecar image, builds HealthdConfig, and returns the
 // registered *client.Healthd plus its *client.Image. The caller adds them to a stack
 // or ensures them directly.
-func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params healthdParams) (client.Resource, *client.Image, error) {
+func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params healthdParams) ([]client.Resource, error) {
 	imageName := params.image
 	if params.binary != "" {
 		imageName = "images:alpine/edge"
@@ -52,16 +53,25 @@ func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params 
 	imageConfig := &client.ImageConfig{CliConfig: globalClient.CliConfig()}
 	r, err := c.Resource(client.KindImage, imageName, imageConfig)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting the healthd image '%v': %w", imageName, err)
+		return nil, fmt.Errorf("getting the healthd image '%v': %w", imageName, err)
+	}
+
+	volRes, err := c.Resource(client.KindStorageVolume, "ic-healthd", &client.StorageVolumeConfig{})
+	if err != nil {
+		return nil, client.ErrUnknown.WithKindName(client.KindStorageVolume, "ic-healthd").Wrap(err)
+	}
+	volume, ok := volRes.(*client.StorageVolume)
+	if !ok {
+		return nil, client.ErrUnknown.WithResource(volRes)
 	}
 
 	img, ok := r.(*client.Image)
 	if !ok {
-		return nil, nil, client.ErrUnknown.WithResource(r)
+		return nil, client.ErrUnknown.WithResource(r)
 	}
 
 	config := &client.HealthdConfig{
-		Image:         imageName,
+		StorageVolume: volume,
 		ImageResource: img,
 		Network:       params.network,
 	}
@@ -69,12 +79,12 @@ func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params 
 		config.Binary = params.binary
 	}
 
-	healthd, err := c.Resource(client.KindHealthd, "ic-healthd", config)
+	healthd, err := c.Resource(client.KindHealthd, fmt.Sprintf("%s-ic-healthd", params.projectName), config)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting the healthd resource: %w", err)
+		return nil, fmt.Errorf("getting the healthd resource: %w", err)
 	}
 
-	return healthd, img, nil
+	return []client.Resource{img, volume, healthd}, nil
 }
 
 // resolveHealthd returns the existing Healthd resource or errors if the sidecar
@@ -276,20 +286,20 @@ func mkHealthdStack(cmd *cli.Command, p *project.Project, globalClient *client.G
 	}
 
 	params := healthdParams{
-		binary:   cmd.String("binary"),
-		image:    resolveHealthdImage(cmd.String("image")),
-		reCreate: cmd.Bool("recreate"),
-		network:  cmd.String("network"),
+		projectName: p.Name,
+		binary:      cmd.String("binary"),
+		image:       resolveHealthdImage(cmd.String("image")),
+		reCreate:    cmd.Bool("recreate"),
+		network:     cmd.String("network"),
 	}
 
-	healthd, img, err := prepareHealthd(globalClient, c, params)
+	healthdRes, err := prepareHealthd(globalClient, c, params)
 	if err != nil {
 		return nil, err
 	}
 
 	stack := client.NewStack(c)
-	stack.Add(img)
-	stack.Add(healthd)
+	stack.Add(healthdRes...)
 
 	return stack, nil
 }
@@ -362,12 +372,13 @@ var healthdUpCommand = &cli.Command{
 				return errLogged.Wrap(err)
 			}
 
+			c.LogDebug("Ensure", "resources", stack.All())
+
 			if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure); err != nil {
 				c.LogWarn("Ensuring healthd in recreate", "error", err)
-			} else {
-				if err := stack.ForAction(client.ActionDelete).Run(client.ActionDelete, client.OptionForce()); err != nil {
-					c.LogDebug("Deleting healthd", "error", err)
-				}
+			}
+			if err := stack.ForAction(client.ActionDelete).Run(client.ActionDelete, client.OptionForce()); err != nil {
+				c.LogDebug("Deleting healthd", "error", err)
 			}
 		}
 
@@ -377,6 +388,8 @@ var healthdUpCommand = &cli.Command{
 			globalClient.LogError("Creating the stack", "error", err)
 			return errLogged.Wrap(err)
 		}
+
+		c.LogDebug("Ensure", "resources", stack.All())
 
 		// Ensure with create. --pull=always refreshes cached images from registry.
 		ensureOpts := []client.Option{client.OptionCreate()}
@@ -407,6 +420,12 @@ var healthdDownCommand = &cli.Command{
 			Usage: "Timeout in seconds for stopping",
 			Value: 10,
 		},
+		&cli.StringFlag{
+			Name:    "image",
+			Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
+			Value:   client.DefaultHealthdImage,
+			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
+		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
 		globalClient, err := clientFromContext(ctx)
@@ -431,16 +450,21 @@ var healthdDownCommand = &cli.Command{
 		}
 		defer func() { _ = c.Done() }()
 
-		h, err := resolveHealthd(c)
+		stack, err := mkHealthdStack(cmd, p, globalClient, c)
 		if err != nil {
-			c.LogError(err.Error())
+			globalClient.LogError("Creating the stack", "error", err)
 			return errLogged.Wrap(err)
 		}
 
+		c.LogDebug("Ensure", "resources", stack.All())
+
+		if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure); err != nil {
+			c.LogWarn("Ensuring healthd in recreate", "error", err)
+		}
+
 		timeout := int(cmd.Int("timeout"))
-		if err := h.Delete(client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
-			c.LogError("Removing healthd", "error", err)
-			return errLogged.Wrap(err)
+		if err := stack.ForAction(client.ActionDelete).Run(client.ActionDelete, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
+			c.LogDebug("Deleting healthd", "error", err)
 		}
 
 		return nil

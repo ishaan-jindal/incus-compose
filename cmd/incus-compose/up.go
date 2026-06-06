@@ -191,21 +191,24 @@ func mkUpStack(params upParams, p *project.Project, globalClient *client.GlobalC
 
 	if !params.noHealthd && params.start && projectUsesHealthd(p) {
 		c.LogDebug("Found healthchecks")
-		healthd, img, err := prepareHealthd(globalClient, c, healthdParams{
-			binary:   params.healthdBinary,
-			image:    params.healthdImage,
-			reCreate: params.reCreate,
-			network:  params.healthdNetwork,
+		healthdRes, err := prepareHealthd(globalClient, c, healthdParams{
+			projectName: p.Name,
+			binary:      params.healthdBinary,
+			image:       params.healthdImage,
+			reCreate:    params.reCreate,
+			network:     params.healthdNetwork,
 		})
 		if err != nil {
 			c.LogError("Preparing healthd", "error", err)
 			return nil, errLogged.Wrap(err)
 		}
-		stack.Add(img)
-		stack.Add(healthd)
+		stack.Add(healthdRes...)
 	}
 
 	toStackOpts := []project.ToStackOption{}
+	if !params.reCreate {
+		toStackOpts = append(toStackOpts, project.ToStackStorageVolumes())
+	}
 	if len(params.services) > 0 {
 		toStackOpts = append(toStackOpts, project.ToStackOnlyServices(params.services))
 	}
@@ -257,11 +260,15 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 	// }()
 
 	if reCreate {
+		params.reCreate = false
 		stack, err := mkUpStack(params, p, globalClient, c)
 		if err != nil {
 			c.LogError("Creating the stack in reCreate", "error", err)
 			return errLogged.Wrap(err)
 		}
+		params.reCreate = true
+
+		c.LogDebug("Ensure", "resources", stack.All())
 
 		// Ensure without create for "recreate"
 		if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure); err != nil {

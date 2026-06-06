@@ -33,8 +33,8 @@ type HealthdConfig struct {
 	// the Incus API. When empty, resolveNetwork() auto-detects the bridge.
 	Network string `json:"network,omitempty"`
 
-	// Image overrides the default healthd container image name.
-	Image string `json:"-"`
+	// StorageVolume is the ensured Storage Volume for healthd.
+	StorageVolume *StorageVolume
 
 	// ImageResource is the ensured Image resource for the healthd container.
 	// This is set by cmd/incus-compose after resolving the image server.
@@ -57,14 +57,15 @@ type Healthd struct {
 	client    *Client
 	incusName string
 	config    *HealthdConfig
-	image     string
+
+	image string
 
 	ensured  bool
 	created  bool
 	instance *Instance // backing Instance; set on creation or lazily by getInstance()
 }
 
-type healthdWatcherState struct {
+type healthdReloaderState struct {
 	existed bool
 	changed bool
 }
@@ -79,14 +80,14 @@ func newHealthd(c *Client, name string, configGetter Config) (*Healthd, error) {
 		return nil, ErrUnknownConfig.WithKindName(KindHealthd, name)
 	}
 
-	image := config.Image
-	if image == "" {
-		if config.Binary != "" {
-			// Use system container when pushing local binary
-			image = "images:alpine/edge"
-		} else {
-			image = DefaultHealthdImage
-		}
+	image := ""
+	if config.Binary != "" {
+		// Use system container when pushing local binary
+		image = "images:alpine/edge"
+	} else if config.ImageResource != nil {
+		image = config.ImageResource.incusName
+	} else {
+		image = DefaultHealthdImage
 	}
 
 	h := &Healthd{
@@ -97,48 +98,48 @@ func newHealthd(c *Client, name string, configGetter Config) (*Healthd, error) {
 		image:        image,
 	}
 
-	if err := c.registerHealthdWatcher(h); err != nil {
+	if err := c.registerHealthdReloader(h); err != nil {
 		return nil, err
 	}
 
 	return h, nil
 }
 
-func (c *Client) registerHealthdWatcher(h *Healthd) error {
-	st := &healthdWatcherState{}
-	c.snapshotHealthdWatcher(h, st)
+func (c *Client) registerHealthdReloader(h *Healthd) error {
+	st := &healthdReloaderState{}
+	c.snapshotHealthdReloader(h, st)
 
 	c.AddHookConnected(func(err error) error {
-		c.snapshotHealthdWatcher(h, st)
+		c.snapshotHealthdReloader(h, st)
 		return err
 	})
 
 	c.AddHookAfter(func(action Action, r Resource, _ Options, err error) error {
 		if healthdInstanceChanged(h, action, r, err) {
 			st.changed = true
-			c.LogDebug("HealthdWatcher instance changed", "action", action, "instance", r.IncusName())
+			c.LogDebug("HealthdReloader instance changed", "action", action, "instance", r.IncusName())
 		}
 		return err
 	})
 
 	c.AddHookDone(func(err error) error {
-		c.LogDebug("HealthdWatcher disconnecting", "healthd", h.IncusName(), "existed", st.existed, "changed", st.changed)
+		c.LogDebug("HealthdReloader disconnecting", "healthd", h.IncusName(), "existed", st.existed, "changed", st.changed)
 		if !st.existed || !st.changed {
 			return err
 		}
 
 		state, _, e := c.incus.GetInstanceState(h.IncusName())
 		if e != nil {
-			c.LogDebug("HealthdWatcher healthd missing, skipping reload", "healthd", h.IncusName(), "error", e)
+			c.LogDebug("HealthdReloader healthd missing, skipping reload", "healthd", h.IncusName(), "error", e)
 			return err
 		}
 		if state.StatusCode != incusApi.Running {
-			c.LogDebug("HealthdWatcher healthd not running, skipping reload", "healthd", h.IncusName(), "status", state.Status)
+			c.LogDebug("HealthdReloader healthd not running, skipping reload", "healthd", h.IncusName(), "status", state.Status)
 			return err
 		}
 
 		if e := h.Reload(); e == nil {
-			c.LogDebug("HealthdWatcher reloaded healthd", "healthd", h.IncusName())
+			c.LogDebug("HealthdReloader reloaded healthd", "healthd", h.IncusName())
 			return err
 		}
 
@@ -149,7 +150,7 @@ func (c *Client) registerHealthdWatcher(h *Healthd) error {
 	return nil
 }
 
-func (c *Client) snapshotHealthdWatcher(h *Healthd, st *healthdWatcherState) {
+func (c *Client) snapshotHealthdReloader(h *Healthd, st *healthdReloaderState) {
 	if c.incus == nil {
 		st.existed = false
 		return
@@ -157,7 +158,7 @@ func (c *Client) snapshotHealthdWatcher(h *Healthd, st *healthdWatcherState) {
 
 	_, _, err := c.incus.GetInstance(h.IncusName())
 	st.existed = err == nil
-	c.LogDebug("HealthdWatcher snapshot", "healthd", h.IncusName(), "existed", st.existed)
+	c.LogDebug("HealthdReloader snapshot", "healthd", h.IncusName(), "existed", st.existed)
 }
 
 func healthdInstanceChanged(h *Healthd, action Action, r Resource, err error) bool {
@@ -543,8 +544,8 @@ func (r *Healthd) createInstance() error {
 			Config: InstanceDeviceConfig{
 				DeviceType: InstanceDeviceTypeDisk,
 				Disk: InstanceDeviceDiskConfig{
-					StorageVolumeConfig: &StorageVolumeConfig{Pool: r.client.config.DefaultStoragePool},
-					Source:              r.incusName,
+					StorageVolumeConfig: &r.config.StorageVolume.Config,
+					Source:              "ic-healthd",
 					Path:                "/var/lib/ic-healthd",
 					Shift:               true,
 				},
