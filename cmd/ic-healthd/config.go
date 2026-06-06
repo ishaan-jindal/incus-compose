@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strconv"
 	"time"
 
@@ -87,7 +88,7 @@ func (c *Config) Discover(client incus.InstanceServer) error {
 		log.Printf("%s, %v, %v", inst.Name, inst.Config["user.restart"], inst.Config["user.healthcheck.test"])
 
 		restart := false
-		if inst.Config["user.restart"] == "on-failure" || inst.Config["user.restart"] == "always" {
+		if slices.Contains([]string{"always", "on-failure", "on-failure:3", "unless-stopped"}, inst.Config["user-restart"]) {
 			restart = true
 			if inst.Config["user.healthcheck.test"] == "" {
 				inst.Config["user.healthcheck.test"] = "[\"NONE\"]"

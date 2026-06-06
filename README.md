@@ -54,7 +54,7 @@ incus-compose uses a **resource-first design**, see [Architecture Documentation]
 Switch to a https remote (required for healthchecking).
 
 ```bash
-incus config set core.https_address=127.0.0.1:8443
+incus config set core.https_address=:8443 # This will listen on all interfaces
 incus remote generate-certificate
 incus config trust add-certificate ~/.config/incus/client.crt
 incus remote add local-https 127.0.0.1
