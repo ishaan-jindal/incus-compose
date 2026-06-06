@@ -104,7 +104,6 @@ type Instance struct {
 	GID uint32
 
 	IncusInstanceFull *incusApi.InstanceFull
-	IncusImageAlias   *incusApi.ImageAliasesEntry
 }
 
 func newInstance(c *Client, name string, configGetter Config) (*Instance, error) {
@@ -158,16 +157,6 @@ func (c *Client) Instance(name string, config InstanceConfig) (*Instance, error)
 	return inst, nil
 }
 
-// InstanceExists reports whether an instance with the given name exists in Incus.
-func (c *Client) InstanceExists(name string) (bool, error) {
-	if c.incus == nil {
-		return false, nil
-	}
-
-	_, _, err := c.incus.GetInstance(sanitizeInstanceName(name))
-	return err == nil, nil
-}
-
 // String is for debugging.
 func (r *Instance) String() string {
 	return fmt.Sprintf("%v(%v)", r.kind, r.incusName)
@@ -219,7 +208,7 @@ func (r *Instance) WaitIPs(timeout time.Duration) (network string, ipv4 []string
 
 // HasFull returns true if the instance has a full instance.
 func (r *Instance) HasFull() bool {
-	return r.IncusImageAlias != nil && r.IncusInstanceFull != nil
+	return r.IncusInstanceFull != nil
 }
 
 // Ensure retrieves an existing instance or creates a new one if args.Create is true.
@@ -271,19 +260,15 @@ func (r *Instance) ensured(instance *incusApi.Instance, eTag string) error {
 		return ErrInvalidFormat.WithText("extracting uid/gid").Wrap(err)
 	}
 
+	if r.Config.Image == "" {
+		if alias, ok := r.IncusInstance.Config["user.image_alias"]; ok {
+			r.Config.Image = alias
+		} else {
+			r.Config.Image = r.client.ResolveImageFingerprint(r.IncusInstance.Config["volatile.base_image"])
+		}
+	}
+
 	if r.Config.Full {
-		imageResource, err := r.client.Resource(KindImage, r.Config.Image, &ImageConfig{})
-		if err != nil {
-			return err
-		}
-
-		image, ok := imageResource.(*Image)
-		if !ok {
-			return ErrUnknown.WithResource(imageResource)
-		}
-
-		r.IncusImageAlias = image.IncusAlias
-
 		full, _, err := r.client.incus.GetInstanceFull(r.IncusInstance.Name)
 		if err != nil {
 			return err
@@ -296,6 +281,11 @@ func (r *Instance) ensured(instance *incusApi.Instance, eTag string) error {
 }
 
 func (r *Instance) create(opts ...Option) error {
+	// Can't create an instance without an image
+	if r.Config.Image == "" {
+		return ErrImageRequired
+	}
+
 	// Validate bind mounts (reject if remote)
 	if err := r.validateBindMounts(); err != nil {
 		return err
@@ -336,6 +326,9 @@ func (r *Instance) create(opts ...Option) error {
 	if err != nil {
 		return ErrNotFound.WithText("getting image").Wrap(err)
 	}
+
+	// Store the image name
+	r.Config.Config["user.image_alias"] = image.IncusName()
 
 	// Create instance request
 	req := incusApi.InstancesPost{

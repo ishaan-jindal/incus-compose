@@ -306,6 +306,16 @@ func (c *Client) FindHealthdName() (string, error) {
 	return "", nil
 }
 
+// InstanceExists reports whether an instance with the given name exists in Incus.
+func (c *Client) InstanceExists(name string) (bool, error) {
+	if c.incus == nil {
+		return false, nil
+	}
+
+	_, _, err := c.incus.GetInstance(sanitizeInstanceName(name))
+	return err == nil, nil
+}
+
 // InstanceIPs fetches the global IPv4 and IPv6 addresses of a named
 // instance directly from Incus, without going through an Instance resource.
 func (c *Client) InstanceIPs(incusName string) (network string, ipv4 []string, ipv6 []string, err error) {
@@ -351,6 +361,21 @@ func (c *Client) InstanceIPs(incusName string) (network string, ipv4 []string, i
 	}
 
 	return network, ipv4, ipv6, nil
+}
+
+// ResolveImageFingerprint returns the first alias name for the given fingerprint,
+// or the fingerprint itself if no alias is found or the lookup fails.
+func (c *Client) ResolveImageFingerprint(fingerprint string) string {
+	if fingerprint == "" {
+		return ""
+	}
+	img, _, err := c.globalClient.incus.GetImage(fingerprint)
+	if err == nil && img != nil && len(img.Aliases) > 0 {
+		return img.Aliases[0].Name
+	}
+
+	c.LogWarn("failed to resolve image", "fingerprint", fingerprint)
+	return fingerprint
 }
 
 // AddDebuggerHook adds a debugging hook for client resources.
