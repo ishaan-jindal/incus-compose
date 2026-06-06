@@ -72,11 +72,11 @@ build:
 
 # Build ic-healthd binary
 build-healthd:
-    CGO_ENABLED=0 go build -tags=netgo -ldflags="-w -s -X gitlab.com/r3j0/incus-compose/cmd/ic-healthd/version.Version=`git describe --tags --always`" -trimpath -o bin/ic-healthd ./cmd/ic-healthd
+    CGO_ENABLED=0 go build -tags=netgo -ldflags="-w -s -X gitlab.com/r3j0/incus-compose/cmd/ic-healthd/version.Version=`git describe --tags --always --long --dirty="-dirty"`" -trimpath -o bin/ic-healthd ./cmd/ic-healthd
 
 # Build ic-healthd container image
 build-healthd-image tag="registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest":
-    VERSION=`git describe --tags --always`; \
+    VERSION=`git describe --tags --always --long --dirty="-dirty"`; \
         echo ${VERSION}; \
         podman build --build-arg VERSION=${VERSION} -t {{ tag }} -f cmd/ic-healthd/Dockerfile .
 
