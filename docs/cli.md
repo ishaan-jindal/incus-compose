@@ -207,6 +207,9 @@ List project resources.
 incus-compose list [SERVICE...]
 ```
 
-| Option     | Description                 |
-| ---------- | --------------------------- |
-| `--format` | table (default), yaml, json |
+| Option      | Description                              |
+| ----------- | ---------------------------------------- |
+| `--format`  | table (default), yaml, json              |
+| `--healthd` | Include the ic-healthd sidecar in output |
+
+The `IMAGE` column shows the compose image for each service. When `--healthd` is set, the sidecar image is resolved from the instance's stored metadata.
