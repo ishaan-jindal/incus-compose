@@ -10,24 +10,31 @@ import (
 	"github.com/lxc/incus/v6/shared/api"
 )
 
+const (
+	defaultRestartDelay = 5 * time.Second
+	maxRestartDelay     = 60 * time.Second
+)
+
 // Checker monitors a single service and restarts it when unhealthy.
 type Checker struct {
-	client   incus.InstanceServer
-	name     string
-	config   ServiceConfig
-	debug    bool
-	failures int
-
-	status string
+	client       incus.InstanceServer
+	name         string
+	config       ServiceConfig
+	debug        bool
+	failures     int
+	status       string
+	restartDelay time.Duration
+	nextRestart  time.Time
 }
 
 // NewChecker creates a new checker for the named service.
 func NewChecker(client incus.InstanceServer, name string, cfg ServiceConfig, debug bool) *Checker {
 	return &Checker{
-		client: client,
-		name:   name,
-		config: cfg,
-		debug:  debug,
+		client:       client,
+		name:         name,
+		config:       cfg,
+		debug:        debug,
+		restartDelay: defaultRestartDelay,
 	}
 }
 
@@ -43,6 +50,7 @@ func (c *Checker) Run(ctx context.Context) {
 
 			if c.check(ctx) {
 				c.failures = 0
+				c.restartDelay = defaultRestartDelay
 				if c.status != "healthy" {
 					c.status = "healthy"
 				}
@@ -62,15 +70,23 @@ func (c *Checker) Run(ctx context.Context) {
 						return
 					}
 
-					log.Printf("%s: restarting instance", c.name)
-					if err := c.restart(ctx); err != nil {
-						log.Printf("%s: restart failed: %v", c.name, err)
-						c.failures = 0
+					c.failures = 0
+
+					if time.Now().Before(c.nextRestart) {
+						if c.debug {
+							log.Printf("%s: backing off, next restart at %s", c.name, c.nextRestart.Format(time.TimeOnly))
+						}
 					} else {
-						log.Printf("%s: restarted successfully", c.name)
-						c.failures = 0
-						if c.status != "healthy" {
-							c.status = "healthy"
+						log.Printf("%s: restarting instance (delay=%s)", c.name, c.restartDelay)
+						c.nextRestart = time.Now().Add(c.restartDelay)
+						c.restartDelay = min(c.restartDelay*2, maxRestartDelay)
+						if err := c.restart(ctx); err != nil {
+							log.Printf("%s: restart failed: %v", c.name, err)
+						} else {
+							log.Printf("%s: restarted successfully", c.name)
+							if c.status != "healthy" {
+								c.status = "healthy"
+							}
 						}
 					}
 				}
