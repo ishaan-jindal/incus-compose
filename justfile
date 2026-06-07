@@ -67,7 +67,11 @@ clean:
 
     echo "Cleanup complete"
 
-# Build the binary
+# Build a release binary
+build-release:
+    go build -ldflags="-w -s -X gitlab.com/r3j0/incus-compose/cmd/incus-compose/version.Version=`git describe --tags --always --long --dirty="-dirty"`" -o bin/incus-compose ./cmd/incus-compose
+
+# Build a dev binary
 build:
     go build -o bin/incus-compose ./cmd/incus-compose
 
