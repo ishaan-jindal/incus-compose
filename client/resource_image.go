@@ -2,20 +2,17 @@ package client
 
 import (
 	"fmt"
+	"maps"
+	"strconv"
 	"strings"
 
 	"github.com/distribution/reference"
 	incusClient "github.com/lxc/incus/v6/client"
 	incusApi "github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/cliconfig"
 )
 
 // ImageConfig contains the source and cache configuration for an image.
 type ImageConfig struct {
-	// CliConfig is the Incus CLI config used to resolve image servers.
-	// If set, the source is resolved automatically from the remote name.
-	CliConfig *cliconfig.Config
-
 	// CacheServer is an image server to use as cache (for library users).
 	// Takes precedence over CacheProject.
 	CacheServer incusClient.InstanceServer
@@ -24,15 +21,6 @@ type ImageConfig struct {
 	// The project will be created if it doesn't exist.
 	// Ignored if CacheServer is set.
 	CacheProject string
-
-	// cache is the resolved instance server for caching (internal use).
-	cache incusClient.InstanceServer
-
-	// Remote is the domain part of the image reference (set automatically if not provided).
-	Remote string
-
-	// Image is the image reference without the remote prefix (set automatically if not provided).
-	Image string
 }
 
 // GetConfig returns the configuration.
@@ -51,6 +39,15 @@ type Image struct {
 	incusName string
 	created   bool
 
+	// remote is the domain part of the image reference
+	remote string
+
+	// image is the image reference without the remote prefix
+	image string
+
+	// cache is the resolved instance server for caching
+	cache incusClient.InstanceServer
+
 	// source is the resolved image server for this image.
 	source incusClient.ImageServer
 
@@ -61,6 +58,12 @@ type Image struct {
 	// State - nil means not ensured.
 	IncusAlias *incusApi.ImageAliasesEntry
 	ETag       string
+
+	// OCI metadata extracted from the image (empty/0 for native Incus images).
+	UID        uint64
+	GID        uint64
+	Entrypoint string
+	Cwd        string
 }
 
 // newImage returns an existing Image resource or creates a new one.
@@ -77,18 +80,25 @@ func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 	configCopy := *cConfig
 	config := &configCopy
 
+	var cache incusClient.InstanceServer
+
+	var remote, image string
+
 	// Resolve cache: CacheServer > CacheProject > default imageCache
 	if config.CacheServer != nil {
-		config.cache = config.CacheServer
+		// c.LogDebug("Using the provided CacheServer")
+		cache = config.CacheServer
 	} else if config.CacheProject != "" {
 		// Ensure cache project exists
+		// c.LogDebug("Using a project to cache images")
 		cacheClient, err := c.globalClient.EnsureProject(config.CacheProject, EnsureProjectWithCreate())
 		if err != nil {
 			return nil, fmt.Errorf("ensuring cache project %s: %w", config.CacheProject, err)
 		}
-		config.cache = cacheClient.incus
+		cache = cacheClient.incus
 	} else {
-		config.cache = c.imageCache
+		// c.LogDebug("Using the clients default cache (default project)")
+		cache = c.imageCache
 	}
 
 	// Try to parse as native Incus format first: "remote:image/path"
@@ -97,20 +107,20 @@ func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 	var nativeIncus bool
 	var incusName string
 
-	if config.CliConfig != nil && strings.Contains(name, ":") {
+	if c.globalClient.cliConfig != nil && strings.Contains(name, ":") {
 		parts := strings.SplitN(name, ":", 2)
 		remoteName := parts[0]
 
 		// Check if this remote exists in CLI config
-		if _, ok := config.CliConfig.Remotes[remoteName]; ok {
-			is, err := config.CliConfig.GetImageServer(remoteName)
+		if _, ok := c.globalClient.cliConfig.Remotes[remoteName]; ok {
+			is, err := c.globalClient.cliConfig.GetImageServer(remoteName)
 			if err != nil {
 				return nil, ErrImageSource.WithText("getting image server for " + remoteName).Wrap(err)
 			}
 
 			source = is
-			config.Remote = remoteName
-			config.Image = parts[1]
+			remote = remoteName
+			image = parts[1]
 
 			// Detect protocol from connection info
 			connInfo, err := is.GetConnectionInfo()
@@ -124,34 +134,35 @@ func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 
 	// If not resolved as native, try Docker/OCI reference
 	if source == nil {
-		if config.Remote == "" || config.Image == "" {
-			ref, err := reference.ParseDockerRef(name)
-			if err != nil {
-				return nil, ErrInvalidFormat.WithKindName(KindImage, name).Wrap(err)
-			}
-
-			originalDomain := reference.Domain(ref)
-			config.Remote = originalDomain
-			if config.Remote == "localhost" {
-				// Handle podman style "localhost" images.
-				config.Remote = "local"
-			}
-
-			image, _ := strings.CutPrefix(ref.String(), originalDomain+"/")
-			config.Image = image
+		ref, err := reference.ParseDockerRef(name)
+		if err != nil {
+			return nil, ErrInvalidFormat.WithKindName(KindImage, name).Wrap(err)
 		}
 
+		originalDomain := reference.Domain(ref)
+		remote = originalDomain
+		if remote == "localhost" {
+			// Handle podman style "localhost" images.
+			remote = "local"
+		}
+
+		image, _ = strings.CutPrefix(ref.String(), originalDomain+"/")
+
 		// Build incusName from parsed/converted values
-		incusName = config.Remote + "/" + config.Image
+		incusName = remote + "/" + image
 
 		// Resolve source from CLI config if available
-		if config.CliConfig != nil {
-			is, err := config.CliConfig.GetImageServer(config.Remote)
+		if c.globalClient.cliConfig != nil {
+			is, err := c.globalClient.cliConfig.GetImageServer(remote)
 			if err != nil {
-				return nil, ErrImageSource.WithText("getting image server for " + config.Remote).Wrap(err)
+				return nil, ErrImageSource.WithText("getting image server for " + remote).Wrap(err)
 			}
 			source = is
 		}
+	}
+
+	if source == nil {
+		return nil, ErrImageSource.WithText("couldn't find an image server")
 	}
 
 	img := &Image{
@@ -160,6 +171,9 @@ func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 		incusName:    incusName,
 		Config:       *config,
 		source:       source,
+		remote:       remote,
+		image:        image,
+		cache:        cache,
 		nativeIncus:  nativeIncus,
 	}
 
@@ -196,7 +210,7 @@ func (r *Image) Status() string {
 
 // Remote returns the image remote.
 func (r *Image) Remote() string {
-	return r.Config.Remote
+	return r.remote
 }
 
 // NativeIncus returns true if this is a native Incus image.
@@ -251,17 +265,18 @@ func (r *Image) Ensure(opts ...Option) error {
 
 func (r *Image) get() error {
 	// Check if image alias exists in cache
-	alias, eTag, err := r.Config.cache.GetImageAlias(r.incusName)
+	alias, eTag, err := r.client.incus.GetImageAlias(r.incusName)
 	if err != nil {
 		return ErrNotFound.Wrap(err)
 	}
 
-	if alias == nil {
-		return ErrNilPointer
-	}
-
 	r.IncusAlias = alias
 	r.ETag = eTag
+
+	if img, _, err := r.client.incus.GetImage(alias.Target); err == nil {
+		r.readOCIConfigFromProperties(img.Properties)
+	}
+
 	return nil
 }
 
@@ -279,17 +294,17 @@ func (r *Image) get() error {
 // On query failure the refresh proceeds to be safe.
 func (r *Image) refresh(args Options) error {
 	// No source || no cache || no alias, no download.
-	if r.source == nil || r.Config.cache == nil || r.IncusAlias == nil {
+	if r.source == nil || r.cache == nil || r.IncusAlias == nil {
 		return nil
 	}
 
 	// Check if the remote image has the same fingerprint
-	remoteAlias, _, err := r.source.GetImageAlias(r.Config.Image)
+	remoteAlias, _, err := r.source.GetImageAlias(r.image)
 	if err == nil && remoteAlias != nil && remoteAlias.Target == r.IncusAlias.Target {
 		return nil
 	}
 
-	op, err := r.Config.cache.DeleteImage(r.IncusAlias.Target)
+	op, err := r.client.incus.DeleteImage(r.IncusAlias.Target)
 	if err = r.client.hookOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
 		r.client.LogDebug("deleting stale cached image for refresh", "error", err)
 		return nil
@@ -305,12 +320,6 @@ func (r *Image) create(args Options) error {
 		return ErrImageSource.WithText("not configured")
 	}
 
-	// Build image info for copy
-	imgInfo := &incusApi.Image{
-		Fingerprint: r.Config.Image,
-	}
-	imgInfo.Public = true // Needed to copy from public image servers.
-
 	copyArgs := &incusClient.ImageCopyArgs{
 		Aliases:    []incusApi.ImageAlias{{Name: r.incusName}},
 		AutoUpdate: true,
@@ -318,24 +327,166 @@ func (r *Image) create(args Options) error {
 		Mode:       "pull",
 	}
 
-	// Start the copy operation
-	op, err := r.Config.cache.CopyImage(r.source, *imgInfo, copyArgs)
+	// Check if the cache has the alias
+	_, _, err := r.cache.GetImageAlias(r.incusName)
+	if err != nil {
+		// Build image info for copy
+		sourceImgInfo := &incusApi.Image{
+			Fingerprint: r.image,
+			ImagePut: incusApi.ImagePut{
+				Public: true,
+			},
+		}
 
-	// Wait for copy to complete
-	if err = r.client.hookRemoteOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
-		return err
+		// Copy from source to cache
+		op, err := r.cache.CopyImage(r.source, *sourceImgInfo, copyArgs)
+
+		// Wait for copy to complete
+		if err = r.client.hookRemoteOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
+			return ErrCreate.WithText("caching image").Wrap(err)
+		}
+	}
+
+	_, _, err = r.client.incus.GetImageAlias(r.incusName)
+	if err != nil {
+		cacheAlias, _, err := r.cache.GetImageAlias(r.incusName)
+		if err != nil {
+			return ErrCreate.WithText("cache alias after copy").Wrap(err)
+		}
+
+		// Build image info for copy
+		cacheImgInfo := &incusApi.Image{
+			Fingerprint: cacheAlias.Target,
+		}
+
+		// Copy from cache to project
+		op, err := r.client.incus.CopyImage(r.cache, *cacheImgInfo, copyArgs)
+
+		// Wait for copy to complete
+		if err = r.client.hookRemoteOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
+			return ErrCreate.WithText("project image").Wrap(err)
+		}
 	}
 
 	// Fetch the created alias
-	alias, eTag, err := r.Config.cache.GetImageAlias(r.incusName)
+	alias, eTag, err := r.client.incus.GetImageAlias(r.incusName)
 	if err != nil {
 		return ErrCreate.WithText("fetching image alias after copy").Wrap(err)
 	}
 
+	// r.client.LogDebug("create setting the alias")
 	r.IncusAlias = alias
 	r.ETag = eTag
 	r.created = true
+
+	if err := r.extractAndStoreOCIConfig(); err != nil {
+		r.client.LogDebug("extracting OCI config from image", "image", r.incusName, "error", err)
+	}
+
 	return nil
+}
+
+// extractAndStoreOCIConfig creates a temporary stopped container from this image,
+// reads oci.uid/oci.gid/oci.entrypoint/oci.cwd from its config, stores them as
+// image properties, then deletes the container.
+// Non-fatal: callers should log and continue on error.
+func (r *Image) extractAndStoreOCIConfig() error {
+	tempName := sanitizeInstanceName("ic-uid-" + r.IncusAlias.Target)
+
+	req := incusApi.InstancesPost{
+		Name: tempName,
+		Type: incusApi.InstanceTypeContainer,
+		Source: incusApi.InstanceSource{
+			Type:        "image",
+			Fingerprint: r.IncusAlias.Target,
+		},
+		InstancePut: incusApi.InstancePut{
+			Devices: map[string]map[string]string{
+				"root": {
+					"type": "disk",
+					"path": "/",
+					"pool": r.client.Config().DefaultStoragePool,
+				},
+			},
+		},
+	}
+
+	createOp, err := r.client.incus.CreateInstance(req)
+	if err != nil {
+		return fmt.Errorf("creating temp instance: %w", err)
+	}
+	if err = createOp.Wait(); err != nil {
+		return fmt.Errorf("waiting for temp instance: %w", err)
+	}
+
+	defer func() {
+		if deleteOp, err := r.client.incus.DeleteInstance(tempName); err == nil {
+			_ = deleteOp.Wait()
+		}
+	}()
+
+	instance, _, err := r.client.incus.GetInstance(tempName)
+	if err != nil {
+		return fmt.Errorf("getting temp instance: %w", err)
+	}
+
+	uid, gid, err := extractUIDGID(instance)
+	if err != nil {
+		return fmt.Errorf("extracting uid/gid: %w", err)
+	}
+
+	entrypoint := instance.Config["oci.entrypoint"]
+	cwd := instance.Config["oci.cwd"]
+
+	if uid == 0 && gid == 0 && entrypoint == "" && cwd == "" {
+		return nil
+	}
+
+	img, eTag, err := r.cache.GetImage(r.IncusAlias.Target)
+	if err != nil {
+		return fmt.Errorf("getting image for property update: %w", err)
+	}
+
+	props := maps.Clone(img.Properties)
+	if props == nil {
+		props = make(map[string]string)
+	}
+	props["oci.uid"] = strconv.FormatUint(uint64(uid), 10)
+	props["oci.gid"] = strconv.FormatUint(uint64(gid), 10)
+	props["oci.entrypoint"] = entrypoint
+	props["oci.cwd"] = cwd
+
+	if err := r.cache.UpdateImage(r.IncusAlias.Target, incusApi.ImagePut{
+		AutoUpdate: img.AutoUpdate,
+		Properties: props,
+		Public:     img.Public,
+		ExpiresAt:  img.ExpiresAt,
+		Profiles:   img.Profiles,
+	}, eTag); err != nil {
+		return fmt.Errorf("storing OCI config as image properties: %w", err)
+	}
+
+	r.UID = uid
+	r.GID = gid
+	r.Entrypoint = entrypoint
+	r.Cwd = cwd
+	return nil
+}
+
+// readOCIConfigFromProperties reads oci.* values from image properties.
+func (r *Image) readOCIConfigFromProperties(props map[string]string) {
+	if uidStr, ok := props["oci.uid"]; ok {
+		if uid64, err := strconv.ParseUint(uidStr, 10, 32); err == nil {
+			r.UID = uid64
+		}
+	}
+	if gidStr, ok := props["oci.gid"]; ok {
+		if gid64, err := strconv.ParseUint(gidStr, 10, 32); err == nil {
+			r.GID = gid64
+		}
+	}
+	r.Entrypoint = props["oci.entrypoint"]
+	r.Cwd = props["oci.cwd"]
 }
 
 // Delete removes the per-project copy of the image from the active project.

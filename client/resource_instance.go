@@ -9,7 +9,7 @@ import (
 	"maps"
 	"net"
 	"os"
-	"path/filepath"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -37,10 +37,15 @@ type InstanceSecret struct {
 
 // InstanceFile represents a file to push to an instance after creation.
 type InstanceFile struct {
-	Content io.ReadSeeker
+	// Give either "File" or "Content"
+	File    string
+	Content io.ReadSeekCloser
+
 	UID     int64
 	GID     int64
 	Mode    int
+	NoMKDir bool
+	DirMode int
 }
 
 // InstanceConfig configures instance creation.
@@ -59,9 +64,6 @@ type InstanceConfig struct {
 
 	// Devices are devices attached before instance creation (networks, proxies).
 	Devices []InstanceDevice
-
-	// PostDevices are devices attached after instance creation (volumes needing UID/GID).
-	PostDevices []InstanceDevice
 
 	// PostStartDevices are devices attached after the instance is started.
 	// Use for devices that require a running instance, e.g. NAT proxy (needs container IP).
@@ -95,13 +97,16 @@ type Instance struct {
 	created   bool
 	Config    InstanceConfig
 
+	// image is for internal use in create operations.
+	image *Image
+
 	// State - nil means not ensured.
 	IncusInstance *incusApi.Instance
 	ETag          string
 
 	// UID/GID extracted from container (for volume shifting).
-	UID uint32
-	GID uint32
+	UID uint64
+	GID uint64
 
 	IncusInstanceFull *incusApi.InstanceFull
 }
@@ -133,27 +138,6 @@ func newInstance(c *Client, name string, configGetter Config) (*Instance, error)
 		Config:       *config,
 	}
 
-	return inst, nil
-}
-
-// Instance returns an existing Instance resource or creates a new one.
-func (c *Client) Instance(name string, config InstanceConfig) (*Instance, error) {
-	// Check if already in store
-	if existing := c.resources.Get(KindInstance, name); existing != nil {
-		res, ok := existing.(*Instance)
-		if !ok {
-			return nil, ErrUnknownConfig.WithKindName(KindInstance, name)
-		}
-
-		return res, nil
-	}
-
-	inst, err := newInstance(c, name, &config)
-	if err != nil {
-		return nil, err
-	}
-
-	c.resources.Add(inst)
 	return inst, nil
 }
 
@@ -286,11 +270,6 @@ func (r *Instance) create(opts ...Option) error {
 		return ErrImageRequired
 	}
 
-	// Validate bind mounts (reject if remote)
-	if err := r.validateBindMounts(); err != nil {
-		return err
-	}
-
 	if r.Config.Resources != nil {
 		for _, rDep := range r.Config.Resources {
 			if !rDep.IsEnsured() {
@@ -318,11 +297,27 @@ func (r *Instance) create(opts ...Option) error {
 	// The image must have been ensured first. If its Ensure failed (e.g. the
 	// pull errored), IncusAlias is nil; fail cleanly instead of dereferencing it.
 	if !image.IsEnsured() {
+		r.client.LogDebug("Dependency", "image", image)
 		return ErrDependencyNotEnsured.WithResource(image)
 	}
 
-	// Get image info from cache
-	incusImage, _, err := image.Config.cache.GetImage(image.IncusAlias.Target)
+	r.image = image
+
+	// Use UID/GID from image properties when available so volumes are created
+	// with the correct shifted config before the instance is created.
+	if image.UID > 0 || image.GID > 0 {
+		r.UID = image.UID
+		r.GID = image.GID
+	}
+
+	// Create any storage volumes listed in Devices before the instance so they
+	// can be attached as regular devices in the CreateInstanceFromImage call.
+	if err := r.ensureVolumes(); err != nil {
+		return err
+	}
+
+	// Get image info from project
+	incusImage, _, err := r.client.incus.GetImage(image.IncusAlias.Target)
 	if err != nil {
 		return ErrNotFound.WithText("getting image").Wrap(err)
 	}
@@ -347,8 +342,8 @@ func (r *Instance) create(opts ...Option) error {
 
 	options := NewOptions(opts...)
 
-	// Create instance from cache image
-	op, err := r.client.incus.CreateInstanceFromImage(image.Config.cache, *incusImage, req)
+	// Create instance from project image
+	op, err := r.client.incus.CreateInstanceFromImage(r.client.incus, *incusImage, req)
 	if err = r.client.hookRemoteOperation(r.client.globalClient.Ctx, ActionEnsure, r, options, op, err); err != nil {
 		return err
 	}
@@ -363,33 +358,7 @@ func (r *Instance) create(opts ...Option) error {
 		return err
 	}
 
-	// Process post-devices (volumes needing UID/GID)
-	if len(r.Config.PostDevices) > 0 {
-		if err := r.attachPostDevices(); err != nil {
-			return err
-		}
-	}
-
-	// Push files before marking as created
-	if len(r.Config.Files) > 0 {
-		if err := r.PushFiles(); err != nil {
-			return err
-		}
-	}
-
 	r.created = true
-	return nil
-}
-
-func (r *Instance) validateBindMounts() error {
-	for _, dev := range r.Config.PostDevices {
-		if dev.Config.DeviceType == InstanceDeviceTypeDisk {
-			// Bind mount = no StorageVolumeConfig
-			if dev.Config.Disk.StorageVolumeConfig == nil && r.client.IsRemote() {
-				return ErrBindMountRemote
-			}
-		}
-	}
 	return nil
 }
 
@@ -450,68 +419,37 @@ func (r *Instance) buildDevices() (map[string]map[string]string, error) {
 	return devices, nil
 }
 
-func (r *Instance) attachPostDevices() error {
-	instance := r.IncusInstance
-
-	for _, dev := range r.Config.PostDevices {
-		// Ensure volume if needed
-		if dev.Config.DeviceType == InstanceDeviceTypeDisk && dev.Config.Disk.StorageVolumeConfig != nil {
-			volConfig := *dev.Config.Disk.StorageVolumeConfig
-			volConfig.Shifted = true
-			volConfig.UID = r.UID
-			volConfig.GID = r.GID
-
-			volI, err := r.client.Resource(KindStorageVolume, dev.Config.Disk.Source, &volConfig)
-			if err != nil {
-				return ErrCreate.WithText("creating volume resource").Wrap(err)
-			}
-
-			vol, ok := volI.(*StorageVolume)
-			if !ok {
-				return ErrUnsupportedAction.WithResource(volI)
-			}
-
-			// Override cached config — the resource may have been registered earlier with
-			// empty UID/GID before oci.uid/oci.gid were known.
-			vol.Config.Shifted = true
-			vol.Config.UID = r.UID
-			vol.Config.GID = r.GID
-
-			if err := RunAction(volI, ActionEnsure, OptionCreate()); err != nil {
-				return ErrCreate.WithText("ensuring volume").Wrap(err)
-			}
-
-			// Update disk config with volume details
-			dev.Config.Disk.Source = vol.IncusName()
-			dev.Config.Disk.StorageVolumeConfig.Pool = vol.Config.Pool
+// ensureVolumes creates storage volumes referenced in Devices before the instance
+// is created, and updates each device's Source and Pool with the resolved values.
+func (r *Instance) ensureVolumes() error {
+	for i := range r.Config.Devices {
+		dev := &r.Config.Devices[i]
+		if dev.Config.DeviceType != InstanceDeviceTypeDisk {
+			continue
 		}
 
-		devName, devConfig, err := dev.ToIncusDevice()
+		svc := dev.Config.Disk.StorageVolumeConfig
+		if svc == nil {
+			continue
+		}
+
+		volConfig := *svc
+		volConfig.Shifted = true
+		volConfig.ImageResource = r.image
+
+		volI, err := r.client.Resource(KindStorageVolume, dev.Config.Disk.Source, &volConfig)
 		if err != nil {
-			return err
+			return ErrBadDeviceConfig.WithText("getting storage-volume resource").Wrap(err)
 		}
 
-		instance.Devices[devName] = devConfig
-	}
+		vol, ok := volI.(*StorageVolume)
+		if !ok {
+			return ErrUnsupportedAction.WithResource(volI)
+		}
 
-	// Update instance with post-devices
-	op, err := r.client.incus.UpdateInstance(instance.Name, instance.Writable(), r.ETag)
-	if err != nil {
-		return ErrCreate.WithText("updating with devices").Wrap(err)
+		dev.Config.Disk.Source = vol.IncusName()
+		dev.Config.Disk.StorageVolumeConfig.Pool = vol.Config.Pool
 	}
-
-	if err := op.Wait(); err != nil {
-		return ErrOperation.WithText("waiting for update").Wrap(err)
-	}
-
-	// Refresh instance state
-	instance, eTag, err := r.client.incus.GetInstance(r.incusName)
-	if err != nil {
-		return ErrNotFound.WithText("refreshing instance").Wrap(err)
-	}
-
-	r.IncusInstance = instance
-	r.ETag = eTag
 
 	return nil
 }
@@ -627,10 +565,16 @@ func (r *Instance) start() error {
 		r.IncusInstance = instance
 		r.ETag = eTag
 
-		// Push secrets after instance is running
-		if len(r.Config.Secrets) > 0 {
-			if err := r.PushSecrets(); err != nil {
+		if r.created {
+			if err := r.PushFiles(); err != nil {
 				return err
+			}
+
+			// Push secrets after instance is running
+			if len(r.Config.Secrets) > 0 {
+				if err := r.PushSecrets(); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -668,7 +612,7 @@ func (r *Instance) PushSecrets() error {
 		}
 
 		// Create parent directories recursively
-		if err := r.mkdirP(target[:strings.LastIndex(target, "/")]); err != nil {
+		if err := r.mkdirP(path.Dir(target), 0o700); err != nil {
 			return ErrCreate.WithText("creating secret directory").Wrap(err)
 		}
 
@@ -695,16 +639,39 @@ func (r *Instance) PushFiles() error {
 
 	for target, file := range r.Config.Files {
 		// Create parent directories recursively
-		if idx := strings.LastIndex(target, "/"); idx > 0 {
-			if err := r.mkdirP(target[:idx]); err != nil {
+		if !file.NoMKDir {
+			if err := r.mkdirP(path.Dir(target), file.DirMode); err != nil {
 				return ErrCreate.WithText("creating directory for " + target).Wrap(err)
 			}
 		}
 
+		uid, gid := file.UID, file.GID
+
+		// Use the instances oci.UID/oci.GID (which comes the from image)
+		if uid == -1 {
+			uid = int64(r.UID)
+		}
+		if gid == -1 {
+			uid = int64(r.GID)
+		}
+
+		if file.File != "" && file.Content != nil {
+			return ErrCreate.WithText(fmt.Sprintf("cannot have both 'File' and 'Content' for a instance file %q", target))
+		}
+
+		if file.File != "" {
+			f, err := os.Open(file.File)
+			if err != nil {
+				return ErrCreate.WithText(fmt.Sprintf("opening instance file %q", file.File)).Wrap(err)
+			}
+
+			file.Content = f
+		}
+
 		err := r.client.incus.CreateInstanceFile(r.incusName, target, incusClient.InstanceFileArgs{
 			Content: file.Content,
-			UID:     file.UID,
-			GID:     file.GID,
+			UID:     uid,
+			GID:     gid,
 			Mode:    file.Mode,
 			Type:    "file",
 		})
@@ -716,20 +683,21 @@ func (r *Instance) PushFiles() error {
 	return nil
 }
 
-// mkdirP creates a directory and all parent directories.
+// mkdirP creates a directory and all parent directories inside the container.
 // Directories are owned by oci.UID/oci.GID to match the container user.
-// TODO: This wont work for windows containers or incus-compose running on windows?
-func (r *Instance) mkdirP(path string) error {
-	r.client.LogDebug("Creating directories", "dir", path)
+// Uses slash-separated paths so it works regardless of host OS.
+func (r *Instance) mkdirP(dirPath string, mode int) error {
+	r.client.LogDebug("Creating directories", "dir", dirPath)
 
 	dirs := []string{}
-	p := filepath.Clean(path)
+	p := path.Clean(dirPath)
 	for {
-		dirs = append(dirs, p)
-		parent := filepath.Dir(p)
+		parent := path.Dir(p)
 		if parent == p {
 			break // reached root (e.g., "/" or ".")
 		}
+
+		dirs = append(dirs, p)
 		p = parent
 	}
 
@@ -738,7 +706,7 @@ func (r *Instance) mkdirP(path string) error {
 	for _, dir := range dirs {
 		err := r.client.incus.CreateInstanceFile(r.incusName, dir, incusClient.InstanceFileArgs{
 			Type: "directory",
-			Mode: 0o755,
+			Mode: mode,
 			UID:  int64(r.UID),
 			GID:  int64(r.GID),
 		})
@@ -746,43 +714,16 @@ func (r *Instance) mkdirP(path string) error {
 			if os.IsExist(err) {
 				continue
 			}
-			return fmt.Errorf("mkdirP failed on %s: %w", dir, err)
+			return fmt.Errorf("mkdirP failed on %q for %q: %w", dir, dirPath, err)
 		}
-	}
-
-	return nil
-}
-
-// pushFile writes content to a file in the instance.
-// Files are owned by nobody (65534) to match the container user.
-func (r *Instance) pushFile(path string, content []byte, mode int, mkdir bool) error {
-	// Clean the path to handle redundant separators and dots
-	path = filepath.Clean(path)
-
-	if mkdir {
-		// Create the directory first.
-		err := r.mkdirP(filepath.Dir(path))
-		if err != nil {
-			return fmt.Errorf("creating secrets dir '%v': %w", filepath.Dir(path), err)
-		}
-	}
-
-	err := r.client.incus.CreateInstanceFile(r.incusName, path, incusClient.InstanceFileArgs{
-		Content: bytes.NewReader(content),
-		Mode:    mode,
-		UID:     int64(r.UID),
-		GID:     int64(r.GID),
-	})
-	if err != nil {
-		return fmt.Errorf("while pushing file '%v' (%d:%d - %d), %w", path, r.UID, r.GID, mode, err)
 	}
 
 	return nil
 }
 
 // secretExists checks if a file exists in the instance with the same content.
-func (r *Instance) secretExists(path string, content []byte) bool {
-	reader, _, err := r.client.incus.GetInstanceFile(r.incusName, path)
+func (r *Instance) secretExists(sPath string, content []byte) bool {
+	reader, _, err := r.client.incus.GetInstanceFile(r.incusName, sPath)
 	if err != nil {
 		return false // doesn't exist
 	}
@@ -1010,7 +951,7 @@ var (
 )
 
 // extractUIDGID extracts UID and GID from a container instance.
-func extractUIDGID(instance *incusApi.Instance) (uint32, uint32, error) {
+func extractUIDGID(instance *incusApi.Instance) (uint64, uint64, error) {
 	if incusApi.InstanceType(instance.Type) != incusApi.InstanceTypeContainer {
 		return 0, 0, nil
 	}
@@ -1022,17 +963,17 @@ func extractUIDGID(instance *incusApi.Instance) (uint32, uint32, error) {
 		return 0, 0, nil
 	}
 
-	uid64, err := strconv.ParseUint(uidStr, 10, 32)
+	uid, err := strconv.ParseUint(uidStr, 10, 32)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	gid64, err := strconv.ParseUint(gidStr, 10, 32)
+	gid, err := strconv.ParseUint(gidStr, 10, 32)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	return uint32(uid64), uint32(gid64), nil
+	return uid, gid, nil
 }
 
 // sanitizeInstanceName converts a string to a valid Incus instance name.

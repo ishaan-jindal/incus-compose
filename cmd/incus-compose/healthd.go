@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
+	incusApi "github.com/lxc/incus/v6/shared/api"
 	"github.com/mattn/go-colorable"
 	"github.com/urfave/cli/v3"
 
@@ -39,18 +41,17 @@ func projectUsesHealthd(p *project.Project) bool {
 	return false
 }
 
-// prepareHealthd resolves the sidecar image, builds HealthdConfig, and returns the
-// registered *client.Healthd plus its *client.Image. The caller adds them to a stack
-// or ensures them directly.
-func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params healthdParams) ([]client.Resource, error) {
+// mkHealthdStack resolves the sidecar image, builds HealthdConfig, and returns a stack containing all required resources.
+func mkHealthdStack(globalClient *client.GlobalClient, c *client.Client, params healthdParams) (*client.Stack, error) {
 	imageName := params.image
 	if params.binary != "" {
+		// Use system container when pushing local binary
 		imageName = "images:alpine/edge"
 	}
 
-	c.LogDebug("Using healthd image", "image", imageName)
+	c.LogDebug("Using healthd", "params", params)
 
-	imageConfig := &client.ImageConfig{CliConfig: globalClient.CliConfig()}
+	imageConfig := &client.ImageConfig{}
 	imgRes, err := c.Resource(client.KindImage, imageName, imageConfig)
 	if err != nil {
 		return nil, fmt.Errorf("getting the healthd image '%v': %w", imageName, err)
@@ -64,6 +65,7 @@ func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params 
 	if err != nil {
 		return nil, client.ErrUnknown.WithKindName(client.KindStorageVolume, "ic-healthd").Wrap(err)
 	}
+
 	volume, ok := volRes.(*client.StorageVolume)
 	if !ok {
 		return nil, client.ErrUnknown.WithResource(volRes)
@@ -75,12 +77,10 @@ func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params 
 	}
 
 	config := &client.HealthdConfig{
+		Binary:        params.binary,
 		StorageVolume: volume,
 		ImageResource: img,
 		Network:       params.network,
-	}
-	if params.binary != "" {
-		config.Binary = params.binary
 	}
 
 	healthd, err := c.Resource(client.KindHealthd, fmt.Sprintf("%s-ic-healthd", params.projectName), config)
@@ -88,7 +88,10 @@ func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params 
 		return nil, fmt.Errorf("getting the healthd resource: %w", err)
 	}
 
-	return []client.Resource{img, volume, healthd}, nil
+	stack := client.NewStack(c)
+	stack.Add(img, volume, healthd)
+
+	return stack, nil
 }
 
 // resolveHealthd returns the existing Healthd resource or errors if the sidecar
@@ -111,6 +114,138 @@ func resolveHealthd(c *client.Client) (*client.Healthd, error) {
 		return nil, errors.New("unexpected resource type for healthd")
 	}
 	return h, nil
+}
+
+func startHealthd(c *client.Client, h *client.Healthd, params healthdParams) error {
+	if err := h.Start(); err != nil {
+		return err
+	}
+
+	if params.binary != "" {
+		flags := []string{fmt.Sprintf(" --incus=%s --project=%s", c.Config().URL, c.IncusProject())}
+
+		// Passthrough debugging.
+		if c.IsDebugging() {
+			flags = append(flags, " --debug")
+		}
+
+		// Wait for network to be ready, then run healthd in background.
+		// The network device might not be fully configured when the container starts.
+		cmd := []string{
+			"sh", "-c",
+			`nohup /usr/local/bin/ic-healthd run` + strings.Join(flags, " ") + `> /var/log/ic-healthd.log 2>&1 &`,
+		}
+
+		execReq := incusApi.InstanceExecPost{
+			Command:     cmd,
+			WaitForWS:   false,
+			Interactive: false,
+		}
+
+		op, err := c.Connection().ExecInstance(h.IncusName(), execReq, nil)
+		if err != nil {
+			return err
+		}
+
+		if err := op.Wait(); err != nil {
+			return err
+		}
+
+		return registerHealthdReloader(c, h)
+	}
+
+	return registerHealthdReloader(c, h)
+}
+
+type healthdReloaderState struct {
+	existed bool
+	changed bool
+}
+
+func snapshotHealthdReloader(c *client.Client, h *client.Healthd, st *healthdReloaderState) {
+	_, _, err := c.Connection().GetInstance(h.IncusName())
+	st.existed = err == nil
+	c.LogDebug("HealthdReloader snapshot", "healthd", h.IncusName(), "existed", st.existed)
+}
+
+func healthdInstanceChanged(h *client.Healthd, action client.Action, r client.Resource, err error) bool {
+	if err != nil || r.Kind() != client.KindInstance {
+		return false
+	}
+
+	inst, ok := r.(*client.Instance)
+	if !ok || inst.IncusName() == h.IncusName() {
+		return false
+	}
+
+	switch action {
+	case client.ActionEnsure:
+		return inst.Created()
+	case client.ActionStart, client.ActionStop, client.ActionDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+func registerHealthdReloader(c *client.Client, h *client.Healthd) error {
+	st := &healthdReloaderState{}
+	snapshotHealthdReloader(c, h, st)
+
+	c.AddHookConnected(func(err error) error {
+		snapshotHealthdReloader(c, h, st)
+		return err
+	})
+
+	c.AddHookAfter(func(action client.Action, r client.Resource, _ client.Options, err error) error {
+		if healthdInstanceChanged(h, action, r, err) {
+			st.changed = true
+			c.LogDebug("HealthdReloader instance changed", "action", action, "instance", r.IncusName())
+		}
+		return err
+	})
+
+	c.AddHookDone(func(err error) error {
+		c.LogDebug("HealthdReloader disconnecting", "healthd", h.IncusName(), "existed", st.existed, "changed", st.changed)
+		if !st.existed || !st.changed {
+			return err
+		}
+
+		state, _, e := c.Connection().GetInstanceState(h.IncusName())
+		if e != nil {
+			c.LogDebug("HealthdReloader healthd missing, skipping reload", "healthd", h.IncusName(), "error", e)
+			return err
+		}
+		if state.StatusCode != incusApi.Running {
+			c.LogDebug("HealthdReloader healthd not running, skipping reload", "healthd", h.IncusName(), "status", state.Status)
+			return err
+		}
+
+		if e := reloadHealthd(c, h); e == nil {
+			c.LogDebug("HealthdReloader reloaded healthd", "healthd", h.IncusName())
+			return err
+		}
+
+		c.LogWarn("Reloading healthd failed, restarting", "healthd", h.IncusName(), "error", e)
+		return errors.Join(err, e, h.Stop(client.OptionForce()), h.Start())
+	})
+
+	return nil
+}
+
+func reloadHealthd(c *client.Client, h *client.Healthd) error {
+	req := incusApi.InstanceExecPost{
+		Command:     []string{"sh", "-c", "pids=\"$(pidof ic-healthd)\" && for pid in $pids; do kill -HUP \"$pid\"; done"},
+		WaitForWS:   false,
+		Interactive: false,
+	}
+
+	op, err := c.Connection().ExecInstance(h.IncusName(), req, nil)
+	if err != nil {
+		return err
+	}
+
+	return op.Wait()
 }
 
 var healthdCommand = &cli.Command{
@@ -222,7 +357,7 @@ var healthdReloadCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		if err := h.Reload(); err != nil {
+		if err := reloadHealthd(c, h); err != nil {
 			c.LogError("Reloading healthd", "error", err)
 			return errLogged.Wrap(err)
 		}
@@ -274,7 +409,15 @@ var healthdRestartCommand = &cli.Command{
 		if err := h.Stop(client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
 			c.LogWarn("Stopping healthd", "error", err)
 		}
-		if err := h.Start(); err != nil {
+
+		params := healthdParams{
+			projectName: p.Name,
+			binary:      "",
+			image:       resolveHealthdImage(cmd.String("image")),
+			reCreate:    false,
+			network:     "auto",
+		}
+		if err := startHealthd(c, h, params); err != nil {
 			c.LogError("Starting healthd", "error", err)
 			return errLogged.Wrap(err)
 		}
@@ -283,39 +426,10 @@ var healthdRestartCommand = &cli.Command{
 	},
 }
 
-func mkHealthdStack(cmd *cli.Command, p *project.Project, globalClient *client.GlobalClient, c *client.Client) (*client.Stack, error) {
-	// Register project resources so resolveIncusURL can find a network.
-	if err := p.ToStack(c, client.NewStack(c)); err != nil {
-		return nil, err
-	}
-
-	params := healthdParams{
-		projectName: p.Name,
-		binary:      cmd.String("binary"),
-		image:       resolveHealthdImage(cmd.String("image")),
-		reCreate:    cmd.Bool("recreate"),
-		network:     cmd.String("network"),
-	}
-
-	healthdRes, err := prepareHealthd(globalClient, c, params)
-	if err != nil {
-		return nil, err
-	}
-
-	stack := client.NewStack(c)
-	stack.Add(healthdRes...)
-
-	return stack, nil
-}
-
 var healthdUpCommand = &cli.Command{
 	Name:  "up",
 	Usage: "Create or recreate the ic-healthd sidecar",
 	Flags: []cli.Flag{
-		&cli.BoolFlag{
-			Name:  "recreate",
-			Usage: "Recreate the sidecar even if it already exists",
-		},
 		&cli.StringFlag{
 			Name:    "image",
 			Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
@@ -332,10 +446,19 @@ var healthdUpCommand = &cli.Command{
 			Usage:   "Incus bridge for healthd to use (default: auto-detect)",
 			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_NETWORK"),
 		},
+		&cli.BoolFlag{
+			Name:  "recreate",
+			Usage: "Recreate the sidecar even if it already exists",
+		},
 		&cli.StringFlag{
 			Name:  "pull",
 			Usage: `Pull image before running ("always"|"missing"|"never"|"policy")`,
 			Value: "policy",
+		},
+		&cli.IntFlag{
+			Name:  "timeout",
+			Usage: "Timeout in seconds for stopping",
+			Value: 10,
 		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -354,9 +477,16 @@ var healthdUpCommand = &cli.Command{
 			return fmt.Errorf("no service in this project declares a healthcheck")
 		}
 
+		params := healthdParams{
+			projectName: p.Name,
+			binary:      cmd.String("binary"),
+			image:       resolveHealthdImage(cmd.String("image")),
+			reCreate:    cmd.Bool("recreate"),
+			network:     cmd.String("network"),
+		}
+
 		c, err := globalClient.EnsureProject(
 			p.Name,
-			client.EnsureProjectWithCreate(),
 			client.EnsureProjectWithConfig(p.ProjectConfig()),
 		)
 		if err != nil {
@@ -369,25 +499,52 @@ var healthdUpCommand = &cli.Command{
 		}
 		defer func() { _ = c.Done() }()
 
-		if cmd.Bool("recreate") {
-			stack, err := mkHealthdStack(cmd, p, globalClient, c)
+		if params.network == "" {
+			if _, _, err := c.Connection().GetNetwork("incusbr0"); err == nil {
+				params.network = "incusbr0"
+			} else {
+				ip, err := c.ConnectionIP()
+				if err != nil {
+					globalClient.LogError("Getting the connection IP", "error", err)
+					return errLogged.Wrap(err)
+				}
+
+				network, err := c.NetworkForIP(ip)
+				if err != nil {
+					globalClient.LogError("Getting the connection network", "error", err)
+					return errLogged.Wrap(err)
+				}
+
+				params.network = network
+			}
+		}
+
+		if params.reCreate {
+			stack, err := mkHealthdStack(globalClient, c, params)
 			if err != nil {
 				globalClient.LogError("Creating the stack", "error", err)
 				return errLogged.Wrap(err)
 			}
 
+			timeout := int(cmd.Int("timeout"))
+
 			c.LogDebug("Ensure", "resources", stack.All())
 
 			if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure); err != nil {
-				c.LogWarn("Ensuring healthd in recreate", "error", err)
-			}
-			if err := stack.ForAction(client.ActionDelete).Run(client.ActionDelete, client.OptionForce()); err != nil {
-				c.LogDebug("Deleting healthd", "error", err)
+				c.LogDebug("Ensuring healthd in recreate", "error", err)
+			} else {
+				if err := stack.ForAction(client.ActionStop).Run(client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
+					c.LogDebug("Stopping healthd in recreate", "error", err)
+				} else {
+					if err := stack.ForAction(client.ActionDelete).Run(client.ActionDelete, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
+						c.LogDebug("Deleting healthd in recreate", "error", err)
+					}
+				}
 			}
 		}
 
 		// Create a new stack after Delete as stack entries are now invalid.
-		stack, err := mkHealthdStack(cmd, p, globalClient, c)
+		stack, err := mkHealthdStack(globalClient, c, params)
 		if err != nil {
 			globalClient.LogError("Creating the stack", "error", err)
 			return errLogged.Wrap(err)
@@ -406,6 +563,17 @@ var healthdUpCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
+		h, err := resolveHealthd(c)
+		if err != nil {
+			c.LogError("Getting healthd after ensure", "error", err)
+			return errLogged.Wrap(err)
+		}
+
+		if err := startHealthd(c, h, params); err != nil {
+			c.LogError("Starting healthd", "error", err)
+			return errLogged.Wrap(err)
+		}
+
 		if err := stack.ForAction(client.ActionStart).Run(client.ActionStart); err != nil {
 			c.LogError("Starting healthd", "error", err)
 			return errLogged.Wrap(err)
@@ -419,16 +587,16 @@ var healthdDownCommand = &cli.Command{
 	Name:  "down",
 	Usage: "Stop and remove the ic-healthd sidecar",
 	Flags: []cli.Flag{
-		&cli.IntFlag{
-			Name:  "timeout",
-			Usage: "Timeout in seconds for stopping",
-			Value: 10,
-		},
 		&cli.StringFlag{
 			Name:    "image",
 			Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
 			Value:   client.DefaultHealthdImage,
 			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
+		},
+		&cli.IntFlag{
+			Name:  "timeout",
+			Usage: "Timeout in seconds for stopping",
+			Value: 10,
 		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -443,6 +611,14 @@ var healthdDownCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
+		params := healthdParams{
+			projectName: p.Name,
+			binary:      "",
+			image:       resolveHealthdImage(cmd.String("image")),
+			reCreate:    false,
+			network:     "auto",
+		}
+
 		c, err := globalClient.EnsureProject(p.Name)
 		if err != nil {
 			globalClient.LogError("Getting the incus project", "error", err)
@@ -454,7 +630,7 @@ var healthdDownCommand = &cli.Command{
 		}
 		defer func() { _ = c.Done() }()
 
-		stack, err := mkHealthdStack(cmd, p, globalClient, c)
+		stack, err := mkHealthdStack(globalClient, c, params)
 		if err != nil {
 			globalClient.LogError("Creating the stack", "error", err)
 			return errLogged.Wrap(err)
@@ -463,12 +639,20 @@ var healthdDownCommand = &cli.Command{
 		c.LogDebug("Ensure", "resources", stack.All())
 
 		if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure); err != nil {
-			c.LogWarn("Ensuring healthd in recreate", "error", err)
+			c.LogError("Ensuring healthd", "error", err)
+			return errLogged.Wrap(err)
 		}
 
 		timeout := int(cmd.Int("timeout"))
+
+		if err := stack.ForAction(client.ActionStop).Run(client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
+			c.LogError("Stopping healthd", "error", err)
+			return errLogged.Wrap(err)
+		}
+
 		if err := stack.ForAction(client.ActionDelete).Run(client.ActionDelete, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
-			c.LogDebug("Deleting healthd", "error", err)
+			c.LogError("Deleting healthd", "error", err)
+			return errLogged.Wrap(err)
 		}
 
 		return nil

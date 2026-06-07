@@ -87,6 +87,19 @@ func TestGroupByKind(t *testing.T) {
 	}
 }
 
+// TestAddDeduplicatesSamePointer is a regression test for the "Alias already exists"
+// race: two services sharing the same image resolve to the same Resource pointer via
+// Client.Resource(), but Stack.Add used to append it twice, causing parallel Ensure
+// calls on the same object.
+func TestAddDeduplicatesSamePointer(t *testing.T) {
+	r := newMockResource("nginx", KindImage, PriorityImage, false)
+
+	stack := NewStack(nil)
+	stack.Add(r, r) // same pointer twice, as mkUpStack does for shared images
+
+	assert.Len(t, stack.resources, 1, "same resource added twice must appear only once")
+}
+
 // TestParallelImageDownload verifies multiple images download in parallel.
 // Uses tiny busybox variants to minimize bandwidth.
 func TestParallelImageDownload(t *testing.T) {
@@ -125,7 +138,7 @@ func TestParallelImageDownload(t *testing.T) {
 
 	stack := NewStack(c, StackWorkers(3))
 	for _, name := range imageNames {
-		img, err := c.Resource(KindImage, name, &ImageConfig{CliConfig: conf})
+		img, err := c.Resource(KindImage, name, &ImageConfig{})
 		require.NoError(t, err)
 
 		stack.Add(img)
@@ -171,9 +184,7 @@ var stackTests = []*stackTest{
 			network, err := client.Resource(KindNetwork, "default", &NetworkConfig{})
 			s.Require().NoError(err)
 
-			imageResource, err := client.Resource(KindImage, "docker.io/alpine:latest", &ImageConfig{
-				CliConfig: s.incusConfig,
-			})
+			imageResource, err := client.Resource(KindImage, "docker.io/alpine:latest", &ImageConfig{})
 			s.Require().NoError(err)
 
 			image, ok := imageResource.(*Image)
@@ -266,9 +277,7 @@ var stackTests = []*stackTest{
 			network, err := client.Resource(KindNetwork, "default", &NetworkConfig{})
 			s.Require().NoError(err)
 
-			imageResource, err := client.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{
-				CliConfig: s.incusConfig,
-			})
+			imageResource, err := client.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
 			s.Require().NoError(err)
 
 			image, ok := imageResource.(*Image)
@@ -304,9 +313,7 @@ var stackTests = []*stackTest{
 			network, err := client.Resource(KindNetwork, "default", &NetworkConfig{})
 			s.Require().NoError(err)
 
-			imageResource, err := client.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{
-				CliConfig: s.incusConfig,
-			})
+			imageResource, err := client.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
 			s.Require().NoError(err)
 
 			image, ok := imageResource.(*Image)

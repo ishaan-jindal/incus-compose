@@ -227,7 +227,7 @@ var psCommand = &cli.Command{
 		}()
 
 		// Handle quiet and services flags
-		w := cmd.Writer
+		w := cmd.Root().Writer
 		if w == nil {
 			w = os.Stdout
 		}

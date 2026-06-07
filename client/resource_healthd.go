@@ -1,9 +1,10 @@
 package client
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
-	"os"
+	"path/filepath"
 	"strings"
 
 	incusApi "github.com/lxc/incus/v6/shared/api"
@@ -24,13 +25,20 @@ const DefaultHealthdCPULimit = "1"
 // DefaultHealthdMemoryLimit contains the default "limits.memory" value.
 const DefaultHealthdMemoryLimit = "50MB"
 
+// ReadSeekClosingBuffer wraps bytes.Reader to add a no-op Close.
+type ReadSeekClosingBuffer struct {
+	*bytes.Reader
+}
+
+// Close is a noop.
+func (cb *ReadSeekClosingBuffer) Close() error {
+	return nil
+}
+
 // HealthdConfig configures the healthd sidecar instance.
 type HealthdConfig struct {
-	// IncusURL is the Incus API endpoint (network gateway IP).
-	IncusURL string `json:"incus_url"`
-
 	// Network is the Incus bridge name healthd should attach to and use to reach
-	// the Incus API. When empty, resolveNetwork() auto-detects the bridge.
+	// the Incus API.
 	Network string `json:"network,omitempty"`
 
 	// StorageVolume is the ensured Storage Volume for healthd.
@@ -65,11 +73,6 @@ type Healthd struct {
 	instance *Instance // backing Instance; set on creation or lazily by getInstance()
 }
 
-type healthdReloaderState struct {
-	existed bool
-	changed bool
-}
-
 func newHealthd(c *Client, name string, configGetter Config) (*Healthd, error) {
 	if configGetter == nil {
 		return nil, ErrUnknownConfig.WithKindName(KindHealthd, name)
@@ -81,10 +84,7 @@ func newHealthd(c *Client, name string, configGetter Config) (*Healthd, error) {
 	}
 
 	image := ""
-	if config.Binary != "" {
-		// Use system container when pushing local binary
-		image = "images:alpine/edge"
-	} else if config.ImageResource != nil {
+	if config.ImageResource != nil {
 		image = config.ImageResource.incusName
 	} else {
 		image = DefaultHealthdImage
@@ -98,87 +98,7 @@ func newHealthd(c *Client, name string, configGetter Config) (*Healthd, error) {
 		image:        image,
 	}
 
-	if err := c.registerHealthdReloader(h); err != nil {
-		return nil, err
-	}
-
 	return h, nil
-}
-
-func (c *Client) registerHealthdReloader(h *Healthd) error {
-	st := &healthdReloaderState{}
-	c.snapshotHealthdReloader(h, st)
-
-	c.AddHookConnected(func(err error) error {
-		c.snapshotHealthdReloader(h, st)
-		return err
-	})
-
-	c.AddHookAfter(func(action Action, r Resource, _ Options, err error) error {
-		if healthdInstanceChanged(h, action, r, err) {
-			st.changed = true
-			c.LogDebug("HealthdReloader instance changed", "action", action, "instance", r.IncusName())
-		}
-		return err
-	})
-
-	c.AddHookDone(func(err error) error {
-		c.LogDebug("HealthdReloader disconnecting", "healthd", h.IncusName(), "existed", st.existed, "changed", st.changed)
-		if !st.existed || !st.changed {
-			return err
-		}
-
-		state, _, e := c.incus.GetInstanceState(h.IncusName())
-		if e != nil {
-			c.LogDebug("HealthdReloader healthd missing, skipping reload", "healthd", h.IncusName(), "error", e)
-			return err
-		}
-		if state.StatusCode != incusApi.Running {
-			c.LogDebug("HealthdReloader healthd not running, skipping reload", "healthd", h.IncusName(), "status", state.Status)
-			return err
-		}
-
-		if e := h.Reload(); e == nil {
-			c.LogDebug("HealthdReloader reloaded healthd", "healthd", h.IncusName())
-			return err
-		}
-
-		c.LogWarn("Reloading healthd failed, restarting", "healthd", h.IncusName(), "error", e)
-		return errors.Join(err, e, h.Stop(OptionForce()), h.Start())
-	})
-
-	return nil
-}
-
-func (c *Client) snapshotHealthdReloader(h *Healthd, st *healthdReloaderState) {
-	if c.incus == nil {
-		st.existed = false
-		return
-	}
-
-	_, _, err := c.incus.GetInstance(h.IncusName())
-	st.existed = err == nil
-	c.LogDebug("HealthdReloader snapshot", "healthd", h.IncusName(), "existed", st.existed)
-}
-
-func healthdInstanceChanged(h *Healthd, action Action, r Resource, err error) bool {
-	if err != nil || r.Kind() != KindInstance {
-		return false
-	}
-
-	inst, ok := r.(*Instance)
-	if !ok || inst.IncusName() == h.IncusName() {
-		return false
-	}
-
-	switch action {
-	case ActionEnsure:
-		return inst.Created()
-	case ActionStart, ActionStop, ActionDelete:
-		return true
-	default:
-		return false
-	}
 }
 
 // String is for debugging.
@@ -242,43 +162,10 @@ func (r *Healthd) Ensure(opts ...Option) error {
 		return ErrNotFound.WithKindName(KindHealthd, r.name)
 	}
 
-	// Create restricted token for this project
-	// Token creation requires server to be listening on network - skip for MVP if unavailable
-	token, err := r.createToken()
-	if err != nil {
-		// Log but continue - ic-healthd will need to handle the missing token
-		r.client.LogWarn("Failed to get a token", "error", err)
-		token = ""
-	}
-
 	// Create the healthd instance (stopped)
 	err = r.createInstance()
 	if err != nil {
 		return fmt.Errorf("creating instance: %w", err)
-	}
-
-	// Start instance first (/run is tmpfs, only exists when running)
-	if err := r.instance.Start(); err != nil {
-		return fmt.Errorf("starting instance: %w", err)
-	}
-
-	if err := r.instance.mkdirP("/var/lib/ic-healthd"); err != nil {
-		return fmt.Errorf("creating data-dir '/var/lib/ic-healthd': %w", err)
-	}
-
-	if token != "" {
-		err = r.instance.pushFile("/run/secrets/ic-healthd/token", []byte(token), 0o400, true)
-		if err != nil {
-			return fmt.Errorf("pushing token to '/run/secrets/ic-healthd/token': %w", err)
-		}
-	}
-
-	// For native images with binary, exec the healthd process
-	// (oci.entrypoint only works for OCI images)
-	if r.config.Binary != "" {
-		if err := r.execHealthd(); err != nil {
-			return fmt.Errorf("exec healthd: %w", err)
-		}
 	}
 
 	r.ensured = true
@@ -313,9 +200,7 @@ func (r *Healthd) Delete(opts ...Option) error {
 		}
 		return err
 	}
-	if err := inst.Stop(OptionForce()); err != nil {
-		r.client.LogDebug("Stopping healthd before delete", "error", err)
-	}
+
 	if err := inst.Delete(opts...); err != nil {
 		return err
 	}
@@ -335,22 +220,6 @@ func (r *Healthd) Log(opts ...Option) error {
 	return inst.Log(opts...)
 }
 
-// Reload sends SIGHUP to the ic-healthd process.
-func (r *Healthd) Reload() error {
-	req := incusApi.InstanceExecPost{
-		Command:     []string{"sh", "-c", "pids=\"$(pidof ic-healthd)\" && for pid in $pids; do kill -HUP \"$pid\"; done"},
-		WaitForWS:   false,
-		Interactive: false,
-	}
-
-	op, err := r.client.incus.ExecInstance(r.incusName, req, nil)
-	if err != nil {
-		return err
-	}
-
-	return op.Wait()
-}
-
 // revokeCert removes the healthd's trust-store certificate, if any.
 // Looks up by the name set in createToken; tolerates missing entries.
 func (r *Healthd) revokeCert() error {
@@ -368,98 +237,6 @@ func (r *Healthd) revokeCert() error {
 			return fmt.Errorf("deleting certificate %s: %w", cert.Fingerprint, err)
 		}
 	}
-	return nil
-}
-
-// findNetwork looks for a network resource in the client's resource store.
-// Returns the first network resource if found, nil otherwise.
-func (r *Healthd) findNetwork() *Network {
-	for _, res := range r.client.resources.All() {
-		if res.Kind() == KindNetwork {
-			if net, ok := res.(*Network); ok {
-				return net
-			}
-		}
-	}
-	return nil
-}
-
-// resolveNetwork resolves and caches the Incus bridge name healthd should attach to.
-// When r.config.Network is already set it is verified to exist and an error is returned
-// if not found. Otherwise the bridge is auto-detected in order:
-//  1. incusbr0
-//  2. eth0 device in the Incus default profile
-//  3. first compose-managed network in the resource store
-func (r *Healthd) resolveNetwork() error {
-	if r.config.Network != "" {
-		if _, _, err := r.client.incus.GetNetwork(r.config.Network); err != nil {
-			return fmt.Errorf("healthd network %q not found: %w", r.config.Network, err)
-		}
-		return nil
-	}
-
-	// 1. incusbr0
-	if _, _, err := r.client.incus.GetNetwork("incusbr0"); err == nil {
-		r.config.Network = "incusbr0"
-		return nil
-	}
-
-	// 2. eth0 of the default profile
-	if profile, _, err := r.client.globalClient.incus.GetProfile("default"); err == nil {
-		if eth0, ok := profile.Devices["eth0"]; ok {
-			if name := eth0["network"]; name != "" {
-				if _, _, err := r.client.incus.GetNetwork(name); err == nil {
-					r.config.Network = name
-					return nil
-				}
-			}
-		}
-	}
-
-	// 3. first compose-managed network
-	if network := r.findNetwork(); network != nil {
-		r.config.Network = network.IncusName()
-		return nil
-	}
-
-	return fmt.Errorf("no network found for healthd: set --healthd-network or x-incus-compose.healthd-network")
-}
-
-// resolveIncusURL gets the Incus API URL via the resolved bridge's gateway IP.
-func (r *Healthd) resolveIncusURL() error {
-	if r.config.IncusURL != "" {
-		return nil
-	}
-
-	if err := r.resolveNetwork(); err != nil {
-		return err
-	}
-
-	netInfo, _, err := r.client.incus.GetNetwork(r.config.Network)
-	if err != nil {
-		return fmt.Errorf("getting network info for %s: %w", r.config.Network, err)
-	}
-
-	ipv4 := netInfo.Config["ipv4.address"]
-	if ipv4 == "" {
-		return fmt.Errorf("network %s has no ipv4.address", r.config.Network)
-	}
-
-	ip := strings.Split(ipv4, "/")[0]
-
-	server, _, err := r.client.globalClient.incus.GetServer()
-	if err != nil {
-		return fmt.Errorf("getting server info: %w", err)
-	}
-
-	port := "8443"
-	if addr := server.Config["core.https_address"]; addr != "" {
-		if idx := strings.LastIndex(addr, ":"); idx != -1 {
-			port = addr[idx+1:]
-		}
-	}
-
-	r.config.IncusURL = fmt.Sprintf("https://%s:%s", ip, port)
 	return nil
 }
 
@@ -497,12 +274,16 @@ func (r *Healthd) createToken() (string, error) {
 // createInstance creates the healthd container using an Instance resource.
 // Sets r.instance on success; the caller is responsible for starting it.
 func (r *Healthd) createInstance() error {
-	// Get Incus URL from network's gateway IP
-	if err := r.resolveIncusURL(); err != nil {
-		return fmt.Errorf("resolving incus URL: %w", err)
+	// Create restricted token for this project
+	// Token creation requires server to be listening on network - skip for MVP if unavailable
+	token, err := r.createToken()
+	if err != nil {
+		// Log but continue - ic-healthd will need to handle the missing token
+		r.client.LogWarn("Failed to get a token", "error", err)
+		token = ""
 	}
 
-	flags := []string{fmt.Sprintf(" --incus=%s --project=%s", r.config.IncusURL, r.client.IncusProject())}
+	flags := []string{fmt.Sprintf(" --incus=%s --project=%s", r.client.Config().URL, r.client.IncusProject())}
 
 	// Passthrough debugging.
 	if r.client.globalClient.IsDebugging() {
@@ -520,7 +301,15 @@ func (r *Healthd) createInstance() error {
 			"user.healthcheck.daemon": "true",
 			"oci.entrypoint":          "/usr/local/bin/ic-healthd run" + strings.Join(flags, " "),
 		},
-		Files: map[string]InstanceFile{},
+		Files: map[string]InstanceFile{
+			"/etc/ic-healthd/token": {
+				Content: &ReadSeekClosingBuffer{bytes.NewReader([]byte(token))},
+				UID:     -1,
+				GID:     -1,
+				Mode:    0o400,
+				DirMode: 0o700,
+			},
+		},
 	}
 
 	// Add network device — r.config.Network is already set by resolveIncusURL above.
@@ -556,17 +345,19 @@ func (r *Healthd) createInstance() error {
 		instanceConfig.Resources = []Resource{r.config.ImageResource}
 	}
 
+	f, err := filepath.Abs(r.config.Binary)
+	if err != nil {
+		return err
+	}
+
 	// Add binary file if specified
 	if r.config.Binary != "" {
-		f, err := os.Open(r.config.Binary)
-		if err != nil {
-			return fmt.Errorf("opening binary %s: %w", r.config.Binary, err)
-		}
-		// File will be closed after instance.Ensure() pushes files
-
 		instanceConfig.Files["/usr/local/bin/ic-healthd"] = InstanceFile{
-			Content: f,
-			Mode:    0o755,
+			File:    f,
+			UID:     -1,
+			GID:     -1,
+			Mode:    0o700,
+			DirMode: 0o700,
 		}
 	}
 
@@ -589,50 +380,8 @@ func (r *Healthd) createInstance() error {
 		return fmt.Errorf("ensuring instance: %w", err)
 	}
 
-	// Close binary file if opened
-	if r.config.Binary != "" {
-		if f, ok := instanceConfig.Files["/usr/local/bin/ic-healthd"].Content.(*os.File); ok {
-			f.Close()
-		}
-	}
-
 	r.instance = instance
 	return nil
-}
-
-// execHealthd runs the healthd binary in the background (for native images).
-func (r *Healthd) execHealthd() error {
-	// Get Incus URL from network's gateway IP
-	if err := r.resolveIncusURL(); err != nil {
-		return fmt.Errorf("resolving incus URL: %w", err)
-	}
-
-	flags := []string{fmt.Sprintf(" --incus=%s --project=%s", r.config.IncusURL, r.client.IncusProject())}
-
-	// Passthrough debugging.
-	if r.client.globalClient.IsDebugging() {
-		flags = append(flags, " --debug")
-	}
-
-	// Wait for network to be ready, then run healthd in background.
-	// The network device might not be fully configured when the container starts.
-	cmd := []string{
-		"sh", "-c",
-		`nohup /usr/local/bin/ic-healthd run` + strings.Join(flags, " ") + `> /var/log/ic-healthd.log 2>&1 &`,
-	}
-
-	execReq := incusApi.InstanceExecPost{
-		Command:     cmd,
-		WaitForWS:   false,
-		Interactive: false,
-	}
-
-	op, err := r.client.incus.ExecInstance(r.incusName, execReq, nil)
-	if err != nil {
-		return err
-	}
-
-	return op.Wait()
 }
 
 // compile-time interface checks.

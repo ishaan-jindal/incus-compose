@@ -125,7 +125,10 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 
 	switch logFormat {
 	case "json":
-		logger = slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug - 4}))
+		logger = slog.New(slog.NewJSONHandler(
+			os.Stderr,
+			&slog.HandlerOptions{Level: slog.LevelDebug - 4}),
+		)
 	case "colortext":
 		logger = slog.New(tint.NewHandler(
 			colorable.NewColorable(os.Stderr),
@@ -135,8 +138,13 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 			},
 		))
 	default:
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug - 4}))
+		logger = slog.New(slog.NewTextHandler(
+			os.Stderr,
+			&slog.HandlerOptions{Level: slog.LevelDebug - 4}),
+		)
 	}
+
+	slog.SetDefault(logger)
 
 	// Priority: INCUS_REMOTE -> INCUS_COMPOSE_URL -> "local" remote
 	var opts []ClientOption
@@ -219,16 +227,6 @@ func createProjectClient(gc *GlobalClient, name string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	c.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
-		if err != nil {
-			c.logger.Log(gc.Ctx, slog.LevelDebug-4, "Result with error", "name", r.Name(), "kind", r.Kind(), "action", action, "error", err)
-			return err
-		}
-
-		c.logger.Log(gc.Ctx, slog.LevelDebug-4, "Done", "name", r.Name(), "kind", r.Kind(), "action", action)
-		return nil
-	})
 
 	return c, nil
 }

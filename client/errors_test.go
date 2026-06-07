@@ -315,7 +315,6 @@ func TestSentinelErrors_AreDistinct(t *testing.T) {
 		ErrDeviceConflict,
 		ErrVolumeMismatch,
 		ErrBadDeviceConfig,
-		ErrBindMountRemote,
 		ErrDependencyNotEnsured,
 		ErrNilPointer,
 		ErrUnknown,

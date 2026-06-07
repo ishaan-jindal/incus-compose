@@ -98,14 +98,16 @@ var configCommand = &cli.Command{
 		}
 
 		// Determine output writer
-		writer := os.Stdout
+		writer := cmd.Root().Writer
 		if cmd.String("output") != "" {
-			writer, err = os.OpenFile(cmd.String("output"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+			fp, err := os.OpenFile(cmd.String("output"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 			if err != nil {
 				return err
 			}
 
-			defer writer.Close()
+			writer = fp
+
+			defer fp.Close()
 		}
 
 		// Handle filter-only options

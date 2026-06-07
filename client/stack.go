@@ -41,6 +41,7 @@ type Stack struct {
 	sortDescending bool
 
 	resources []Resource
+	seen      map[Resource]struct{}
 }
 
 // NewStack creates a new Stack for the given project.
@@ -57,15 +58,23 @@ func NewStack(p *Client, opts ...StackOption) *Stack {
 		client:         p,
 		workers:        options.Workers,
 		sortDescending: options.SortDescending,
+		seen:           make(map[Resource]struct{}),
 	}
 }
 
-// Add appends a resource operation to the stack.
+// Add appends resources to the stack, skipping nil and already-added pointers.
+// Since Client.Resource() deduplicates by IncusName, pointer identity is the
+// right key: the same resource object must not run twice in parallel.
 func (s *Stack) Add(resources ...Resource) *Stack {
 	for _, r := range resources {
-		if r != nil {
-			s.resources = append(s.resources, r)
+		if r == nil {
+			continue
 		}
+		if _, ok := s.seen[r]; ok {
+			continue
+		}
+		s.seen[r] = struct{}{}
+		s.resources = append(s.resources, r)
 	}
 
 	return s
@@ -180,6 +189,7 @@ func (s *Stack) ForAction(action Action) *Stack {
 		client:         s.client,
 		workers:        s.workers,
 		sortDescending: sortDescending,
+		seen:           make(map[Resource]struct{}),
 	}
 
 	for _, r := range s.All() {

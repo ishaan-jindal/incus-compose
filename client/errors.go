@@ -48,7 +48,7 @@ func (e *Error) WithAction(action Action) *Error {
 func (e *Error) WithResource(resource Resource) *Error {
 	return &Error{
 		sentinel: e.sentinel,
-		text:     fmt.Sprintf("%v: %v(%v)", e.text, resource.Kind(), resource.IncusName()),
+		text:     fmt.Sprintf("%v: %v", e.text, resource),
 		wrapped:  e.wrapped,
 	}
 }
@@ -127,9 +127,6 @@ var (
 
 	// ErrImageRequired indicates an instance requires an image.
 	ErrImageRequired = NewError("instances without an image are not yet supported")
-
-	// ErrBindMountRemote indicates bind mounts are not supported over network connections.
-	ErrBindMountRemote = NewError("bind mounts not supported over network connection")
 
 	// ErrUnknownResource indicates an unknown resource kind.
 	ErrUnknownResource = NewError("unknown resource kind")

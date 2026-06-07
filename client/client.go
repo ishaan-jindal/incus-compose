@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -28,6 +29,9 @@ type Client struct {
 
 	// Resource storage
 	resources ResourceStore
+
+	// Cache for ConnectionIP()
+	connectionIP string
 
 	// hookBefore is called before any action
 	hookBefore func(action Action, r Resource, args Options, err error) error
@@ -122,6 +126,11 @@ func (c *Client) NetworkBridgeIPs(networkName string) (ipv4 []string, ipv6 []str
 	return ipv4, ipv6, nil
 }
 
+// IsDebugging returns if debugging is enabled.
+func (c *Client) IsDebugging() bool {
+	return c.globalClient.IsDebugging()
+}
+
 // LogDebug logs an debug message.
 // The `any` here is ok.
 func (c *Client) LogDebug(msg string, args ...any) {
@@ -182,8 +191,10 @@ func NewOfflineClient(ctx context.Context, name string) *Client {
 }
 
 // Resource returns an existing resource or creates a new one.
+// Deduplication uses IncusName so differently-formatted inputs that resolve
+// to the same Incus resource (e.g. "nginx:alpine" vs "docker.io/library/nginx:alpine") return the same object.
 func (c *Client) Resource(kind Kind, name string, config Config) (Resource, error) {
-	// Check if already in store
+	// Fast path: check by raw name before constructing the resource.
 	if res := c.resources.Get(kind, name); res != nil {
 		return res, nil
 	}
@@ -213,6 +224,11 @@ func (c *Client) Resource(kind Kind, name string, config Config) (Resource, erro
 
 	if err != nil {
 		return nil, err
+	}
+
+	// Deduplicate by IncusName().
+	if existing := c.resources.Get(kind, res.IncusName()); existing != nil {
+		return existing, nil
 	}
 
 	c.resources.Add(res)
@@ -376,6 +392,58 @@ func (c *Client) ResolveImageFingerprint(fingerprint string) string {
 
 	c.LogWarn("failed to resolve image", "fingerprint", fingerprint)
 	return fingerprint
+}
+
+// ConnectionIP returns the IP of the current connection,
+// this function is cached by Client.connectionIP.
+func (c *Client) ConnectionIP() (string, error) {
+	if !c.IsRemote() {
+		return "", errors.New("Client.ConnectionIP needs a non unix connection")
+	}
+
+	if c.connectionIP != "" {
+		return c.connectionIP, nil
+	}
+
+	u, err := url.Parse(c.config.URL)
+	if err != nil {
+		return "", fmt.Errorf("while parsing url %q: %w", c.config.URL, err)
+	}
+
+	if net.ParseIP(u.Hostname()) != nil {
+		c.connectionIP = u.Hostname()
+		return c.connectionIP, nil
+	}
+
+	ip, err := net.LookupIP(u.Hostname())
+	if err != nil {
+		return "", fmt.Errorf("while looking up the IP for %q: %w", c.config.URL, err)
+	}
+
+	c.connectionIP = ip[0].String()
+	return c.connectionIP, nil
+}
+
+// NetworkForIP lookups the incus network for the given ip.
+func (c *Client) NetworkForIP(ip string) (string, error) {
+	isV4 := net.ParseIP(ip).To4() != nil
+
+	networks, err := c.incus.GetNetworks()
+	if err != nil {
+		return "", fmt.Errorf("GetNetworks: %w", err)
+	}
+
+	for _, network := range networks {
+		if isV4 && network.Config["ipv4.address"] == ip {
+			return network.Name, nil
+		}
+
+		if !isV4 && network.Config["ipv6.address"] == ip {
+			return network.Name, nil
+		}
+	}
+
+	return "", fmt.Errorf("network with ip %q not found", ip)
 }
 
 // AddDebuggerHook adds a debugging hook for client resources.

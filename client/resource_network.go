@@ -321,7 +321,7 @@ func (r *Network) Delete(opts ...Option) error {
 		}
 	}
 
-	err := r.client.incus.DeleteNetwork(r.incusName)
+	err := r.client.globalClient.incus.DeleteNetwork(r.incusName)
 
 	if r.client.hookAfter != nil {
 		err = r.client.hookAfter(ActionDelete, r, options, err)

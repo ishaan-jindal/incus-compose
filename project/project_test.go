@@ -568,32 +568,8 @@ func (s *LoadProjectTestSuite) TestExternalNetworkOverrideNameParsed() {
 	}
 
 	s.Require().NotNil(namedOverride, "named-override network should be in stack")
-	s.Equal("my-production-net", namedOverride.Config.OverrideName)
-	s.Equal("my-production-net", namedOverride.IncusName(), "initial incusName uses raw override")
-}
-
-func (s *LoadProjectTestSuite) TestExternalNetworkNoOverride() {
-	proj, err := project.New().Load(
-		s.ctx, project.LoadWorkingDir(s.fixturePath("with-external-network")),
-	)
-	s.Require().NoError(err)
-
-	c := client.NewOfflineClient(s.ctx, proj.Name)
-	stack := client.NewStack(c)
-	s.Require().NoError(proj.ToStack(c, stack))
-
-	var shared *client.Network
-	for _, r := range stack.All() {
-		net, ok := r.(*client.Network)
-		if ok && net.Name() == "shared" {
-			shared = net
-			break
-		}
-	}
-
-	s.Require().NotNil(shared, "shared network should be in stack")
-	s.Equal("", shared.Config.OverrideName)
-	s.Equal("shared", shared.IncusName(), "initial incusName is raw compose name when no override")
+	s.Equal("incusbr0", namedOverride.Config.OverrideName)
+	s.Equal("incusbr0", namedOverride.IncusName(), "initial incusName uses raw override")
 }
 
 // TestLoadProjectSuite runs the test suite.

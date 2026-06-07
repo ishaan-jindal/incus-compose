@@ -178,7 +178,7 @@ func (s *E2ESuite) TestDownProjectDeletesNetworks() {
 		}
 	}()
 
-	s.Require().NoError(s.run("-f", compose, "up", "--detach", "--pull=missing"))
+	s.Require().NoError(s.run("-f", compose, "up", "--detach"))
 
 	c := s.defaultProjectClient()
 	for _, name := range networks {
@@ -205,11 +205,57 @@ func (s *E2ESuite) TestUpDown() {
 	}{
 		{
 			name:    "up simple-nginx",
-			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "up", "--detach", "--pull=missing"},
+			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "up", "--detach"},
 			wantErr: false,
 		},
 		{
 			name:    "list simple-nginx",
+			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list"},
+			wantErr: false,
+		},
+	}
+
+	defer func() {
+		_ = s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
+	}()
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			err := s.run(tt.args...)
+			if tt.wantErr {
+				s.Error(err)
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
+}
+
+func (s *E2ESuite) TestUpRecreateDown() {
+	s.skipIfLocal()
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{
+			name:    "up simple-nginx",
+			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "up", "--detach"},
+			wantErr: false,
+		},
+		{
+			name:    "list simple-nginx",
+			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list"},
+			wantErr: false,
+		},
+		{
+			name:    "recreate simple-nginx",
+			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "up", "--detach", "--recreate"},
+			wantErr: false,
+		},
+		{
+			name:    "list recreated simple-nginx",
 			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list"},
 			wantErr: false,
 		},
@@ -246,7 +292,7 @@ func (s *E2ESuite) TestLifecycleSimpleNginx() {
 	}{
 		{
 			name: "up",
-			args: []string{"-f", compose, "up", "--detach", "--pull=missing"},
+			args: []string{"-f", compose, "up", "--detach"},
 		},
 		{
 			name: "ps table",
@@ -311,7 +357,7 @@ func (s *E2ESuite) TestExternalNetwork() {
 	}{
 		{
 			name:    "up test-external-network",
-			args:    []string{"-f", "../../test/fixtures/test-external-network/compose.yaml", "up", "--detach", "--pull=missing"},
+			args:    []string{"-f", "../../test/fixtures/test-external-network/compose.yaml", "up", "--detach"},
 			wantErr: false,
 		},
 		{
@@ -347,7 +393,7 @@ func (s *E2ESuite) TestUpDownGrafana() {
 	}{
 		{
 			name:    "up grafana",
-			args:    []string{"-f", "../../test/fixtures/grafana/compose.yaml", "up", "--detach", "--pull=missing"},
+			args:    []string{"-f", "../../test/fixtures/grafana/compose.yaml", "up", "--detach"},
 			wantErr: false,
 		},
 		{
@@ -383,12 +429,12 @@ func (s *E2ESuite) TestUpDownScale() {
 	}{
 		{
 			name:    "up nginx-scale",
-			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "up", "--detach", "--pull=missing"},
+			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "up", "--detach"},
 			wantErr: false,
 		},
 		{
 			name:    "scale nginx-scale",
-			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "up", "--detach", "--pull=missing", "--scale=web=3"},
+			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "up", "--detach", "--scale=web=3"},
 			wantErr: false,
 		},
 	}
@@ -419,12 +465,12 @@ func (s *E2ESuite) TestUpDownDownscale() {
 	}{
 		{
 			name:    "up nginx-scale",
-			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "up", "--detach", "--pull=missing"},
+			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "up", "--detach"},
 			wantErr: false,
 		},
 		{
 			name:    "downscale nginx-scale",
-			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "up", "--detach", "--pull=missing", "--scale=web=6"},
+			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "up", "--detach", "--scale=web=6"},
 			wantErr: false,
 		},
 	}
@@ -455,7 +501,7 @@ func (s *E2ESuite) TestUpDownImmich() {
 	}{
 		{
 			name:    "up immich",
-			args:    []string{"-f", "../../test/fixtures/immich/compose.yaml", "up", "--detach", "--pull=missing"},
+			args:    []string{"-f", "../../test/fixtures/immich/compose.yaml", "up", "--detach"},
 			wantErr: false,
 		},
 		{
@@ -491,7 +537,7 @@ func (s *E2ESuite) TestUpDownWithScale() {
 	}{
 		{
 			name:    "up nginx-scale",
-			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "up", "--detach", "--pull=missing"},
+			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "up", "--detach"},
 			wantErr: false,
 		},
 		{
@@ -527,7 +573,7 @@ func (s *E2ESuite) TestUpDownWithIncusOptions() {
 	}{
 		{
 			name:    "up with-incus-options",
-			args:    []string{"-f", "../../test/fixtures/with-incus-options/compose.yaml", "up", "--detach", "--pull=missing"},
+			args:    []string{"-f", "../../test/fixtures/with-incus-options/compose.yaml", "up", "--detach"},
 			wantErr: false,
 		},
 		{
@@ -563,7 +609,7 @@ func (s *E2ESuite) TestUpDownWithProjectOptions() {
 	}{
 		{
 			name:    "up with-project-options",
-			args:    []string{"-f", "../../test/fixtures/with-project-options/compose.yaml", "up", "--detach", "--pull=missing"},
+			args:    []string{"-f", "../../test/fixtures/with-project-options/compose.yaml", "up", "--detach"},
 			wantErr: false,
 		},
 		{
@@ -599,7 +645,7 @@ func (s *E2ESuite) TestUpDownWithProjectOptions() {
 // 	}{
 // 		{
 // 			name:    "up with-nat-proxy",
-// 			args:    []string{"-f", "../../test/fixtures/with-nat-proxy/compose.yaml", "up", "--detach", "--pull=missing"},
+// 			args:    []string{"-f", "../../test/fixtures/with-nat-proxy/compose.yaml", "up", "--detach"},
 // 			wantErr: false,
 // 		},
 // 		{
@@ -635,7 +681,7 @@ func (s *E2ESuite) TestUpDownWithSecrets() {
 	}{
 		{
 			name:    "up with-secrets",
-			args:    []string{"-f", "../../test/fixtures/with-secrets/compose.yaml", "up", "--detach", "--pull=missing"},
+			args:    []string{"-f", "../../test/fixtures/with-secrets/compose.yaml", "up", "--detach"},
 			wantErr: false,
 		},
 		{
@@ -671,7 +717,7 @@ func (s *E2ESuite) TestUpDownWithSecrets() {
 // 	}{
 // 		{
 // 			name:    "up with-tmpfs",
-// 			args:    []string{"-f", "../../test/fixtures/with-tmpfs/compose.yaml", "up", "--detach", "--pull=missing"},
+// 			args:    []string{"-f", "../../test/fixtures/with-tmpfs/compose.yaml", "up", "--detach"},
 // 			wantErr: false,
 // 		},
 // 		{
@@ -708,7 +754,7 @@ func (s *E2ESuite) TestUpDownWithVolume() {
 	}{
 		{
 			name:    "up with-volume",
-			args:    []string{"-f", "../../test/fixtures/with-volume/compose.yaml", "up", "--detach", "--pull=missing"},
+			args:    []string{"-f", "../../test/fixtures/with-volume/compose.yaml", "up", "--detach"},
 			wantErr: false,
 		},
 		{
@@ -792,7 +838,7 @@ func (s *E2ESuite) TestListSnapshots() {
 	s.skipIfLocal()
 
 	// Setup: create resources
-	err := s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "up", "--detach", "--pull=missing")
+	err := s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "up", "--detach")
 	s.Require().NoError(err)
 
 	defer func() {

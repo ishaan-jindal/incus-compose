@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"io"
 	"os"
 	"strconv"
@@ -38,6 +37,16 @@ var upCommand = &cli.Command{
 			Name:  "scale",
 			Usage: "Scale SERVICE to NUM instances (service=num)",
 		},
+		&cli.StringFlag{
+			Name:  "pull",
+			Usage: `Pull image before running ("always"|"missing"|"never"|"policy")`,
+			Value: "policy",
+		},
+		&cli.BoolFlag{
+			Name:    "detach",
+			Aliases: []string{"d"},
+			Usage:   "Detached mode: run containers in the background",
+		},
 		&cli.BoolFlag{
 			Name:  "no-healthd",
 			Usage: "Don't create healthd sidecar for healthchecks",
@@ -54,19 +63,9 @@ var upCommand = &cli.Command{
 			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_BINARY"),
 		},
 		&cli.StringFlag{
-			Name:  "pull",
-			Usage: `Pull image before running ("always"|"missing"|"never"|"policy")`,
-			Value: "policy",
-		},
-		&cli.StringFlag{
 			Name:    "healthd-network",
 			Usage:   "Incus bridge for healthd to use (default: auto-detect)",
 			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_NETWORK"),
-		},
-		&cli.BoolFlag{
-			Name:    "detach",
-			Aliases: []string{"d"},
-			Usage:   "Detached mode: run containers in the background",
 		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -161,37 +160,12 @@ type upParams struct {
 }
 
 func mkUpStack(params upParams, p *project.Project, globalClient *client.GlobalClient, c *client.Client) (*client.Stack, error) {
-	var rErr error
 	stack := client.NewStack(c)
-
-	// Use CliConfig from globalClient for automatic image server resolution
-	imageConfig := &client.ImageConfig{CliConfig: globalClient.CliConfig()}
-
-	for _, cSv := range p.Services {
-		if cSv.Image == "" {
-			err := errors.New("Empty image, building is not yet supported")
-			c.LogError("Getting image", "service", cSv.Name, "error", err)
-			rErr = errors.Join(rErr, errLogged.Wrap(err))
-			continue
-		}
-
-		c.LogDebug("Getting image", "image", cSv.Image, "service", cSv.Name)
-		r, err := c.Resource(client.KindImage, cSv.Image, imageConfig)
-		if err != nil {
-			c.LogError("Getting image", "service", cSv.Name, "image", cSv.Image, "error", err)
-			rErr = errors.Join(rErr, errLogged.Wrap(err))
-			continue
-		}
-
-		stack.Add(r)
-	}
-	if rErr != nil {
-		return nil, rErr
-	}
 
 	if !params.noHealthd && params.start && projectUsesHealthd(p) {
 		c.LogDebug("Found healthchecks")
-		healthdRes, err := prepareHealthd(globalClient, c, healthdParams{
+
+		hStack, err := mkHealthdStack(globalClient, c, healthdParams{
 			projectName: p.Name,
 			binary:      params.healthdBinary,
 			image:       params.healthdImage,
@@ -202,7 +176,7 @@ func mkUpStack(params upParams, p *project.Project, globalClient *client.GlobalC
 			c.LogError("Preparing healthd", "error", err)
 			return nil, errLogged.Wrap(err)
 		}
-		stack.Add(healthdRes...)
+		stack.Add(hStack.All()...)
 	}
 
 	toStackOpts := []project.ToStackOption{}

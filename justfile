@@ -30,6 +30,7 @@ lint folder="./...":
 
 # Update snapshot test files
 update-snapshots folder="./...":
+    go clean -testcache
     CI=1 UPDATE_SNAPSHOTS=true go test {{ folder }} || true
 
 # Dev install creates your dev environment: `just dev-install [container] [listen] [project] [image]`
@@ -125,6 +126,7 @@ test-coverage folder="./..." *args:
 # Run this before you commit.
 pre-commit:
     go mod tidy
+    rg -q "// TODO" **/*.go || exit 0
     just lint
     just test-local
 

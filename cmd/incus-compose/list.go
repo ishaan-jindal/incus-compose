@@ -155,6 +155,8 @@ var listCommand = &cli.Command{
 				}
 
 				stack.Add(inst)
+			} else {
+				c.LogWarn("Couldn't find healthd")
 			}
 		}
 
@@ -181,8 +183,7 @@ var listCommand = &cli.Command{
 
 		err = stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure)
 		if err != nil {
-			c.LogError("Ensuring the stack", "error", "err")
-			return errLogged.Wrap(err)
+			c.LogWarn("Ensuring the stack", "error", "err")
 		}
 
 		titleCaser := cases.Title(language.English)

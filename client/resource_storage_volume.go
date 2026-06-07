@@ -2,9 +2,13 @@ package client
 
 import (
 	"fmt"
+	"io/fs"
 	"maps"
+	"os"
+	"path/filepath"
 	"strconv"
 
+	incusClient "github.com/lxc/incus/v6/client"
 	incusApi "github.com/lxc/incus/v6/shared/api"
 )
 
@@ -17,9 +21,16 @@ type StorageVolumeConfig struct {
 	// Shifted enables UID/GID shifting for the volume.
 	Shifted bool
 
+	// UID/GID for shifting ImageResource will overwrite this if given.
+	UID uint64
+	GID uint64
+
 	// ImageResource to take UID/GID from for shifting, only
 	// needed if shifting is true.
 	ImageResource Resource
+
+	// HostPath, when set, seeds the volume with the local directory contents on first creation.
+	HostPath string
 
 	// ExtraConfig contains additional volume configuration options.
 	ExtraConfig map[string]string
@@ -38,7 +49,6 @@ type StorageVolume struct {
 	client    *Client
 	incusName string
 	created   bool
-	ensured   bool
 	Config    StorageVolumeConfig
 
 	// State - nil means not ensured.
@@ -87,7 +97,7 @@ func (r *StorageVolume) IncusName() string {
 
 // IsEnsured returns true if the volume has been fetched/created.
 func (r *StorageVolume) IsEnsured() bool {
-	return r.ensured
+	return r.IncusVolume != nil
 }
 
 // Created returns true if the volume was created during the last Ensure call.
@@ -115,8 +125,6 @@ func (r *StorageVolume) Ensure(opts ...Option) error {
 			err = r.create()
 		}
 	}
-
-	r.ensured = true
 
 	if r.client.hookAfter != nil {
 		err = r.client.hookAfter(ActionEnsure, r, args, err)
@@ -188,18 +196,19 @@ func (r *StorageVolume) create() error {
 	}
 
 	if r.Config.Shifted {
-		if r.Config.ImageResource == nil {
-			return ErrVolumeMismatch.WithText("no image resource given")
-		}
+		if r.Config.ImageResource != nil {
+			img, ok := r.Config.ImageResource.(*Image)
+			if !ok {
+				return ErrUnknownResource.WithResource(r.Config.ImageResource)
+			}
 
-		img, ok := r.Config.ImageResource.(*Image)
-		if !ok {
-			return ErrUnknownResource.WithResource(r.Config.ImageResource)
+			r.Config.UID = img.UID
+			r.Config.GID = img.GID
 		}
 
 		config["security.shifted"] = "true"
-		config["initial.uid"] = strconv.FormatUint(uint64(img.UID), 10)
-		config["initial.gid"] = strconv.FormatUint(uint64(img.GID), 10)
+		config["initial.uid"] = strconv.FormatUint(r.Config.UID, 10)
+		config["initial.gid"] = strconv.FormatUint(r.Config.GID, 10)
 	}
 
 	volReq := incusApi.StorageVolumesPost{
@@ -224,7 +233,66 @@ func (r *StorageVolume) create() error {
 	r.IncusVolume = volume
 	r.ETag = eTag
 	r.created = true
+
+	if r.Config.HostPath != "" {
+		if err := r.pushDirectoryContent(); err != nil {
+			return ErrCreate.WithText("seeding volume from " + r.Config.HostPath).Wrap(err)
+		}
+	}
+
 	return nil
+}
+
+// pushDirectoryContent walks HostPath and copies every file and directory into
+// the volume via CreateStorageVolumeFile. Only called on first creation.
+func (r *StorageVolume) pushDirectoryContent() error {
+	var uid, gid int64
+
+	if r.Config.ImageResource != nil {
+		if img, ok := r.Config.ImageResource.(*Image); ok {
+			uid, gid = int64(img.UID), int64(img.GID)
+		}
+	}
+
+	return filepath.WalkDir(r.Config.HostPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		rel, err := filepath.Rel(r.Config.HostPath, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+
+		perm := 0o600
+		if d.IsDir() {
+			perm = 0o700
+		}
+
+		args := incusClient.InstanceFileArgs{
+			Mode: perm,
+			UID:  uid,
+			GID:  gid,
+		}
+
+		if d.IsDir() {
+			args.Type = "directory"
+			return r.client.incus.CreateStorageVolumeFile(r.Config.Pool, "custom", r.incusName, rel, args)
+		}
+
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		args.Type = "file"
+		args.Content = f
+		return r.client.incus.CreateStorageVolumeFile(r.Config.Pool, "custom", r.incusName, rel, args)
+	})
 }
 
 // Delete removes the storage volume from Incus.

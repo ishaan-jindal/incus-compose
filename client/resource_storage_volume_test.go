@@ -104,8 +104,9 @@ func (s *StorageVolumeSuite) TestEnsure_ShiftedVolume() {
 	s.Require().NoError(RunAction(ir, ActionEnsure, OptionCreate()))
 
 	r, err := s.client.Resource(KindStorageVolume, "test-shifted", &StorageVolumeConfig{
-		Shifted:       true,
-		ImageResource: ir,
+		Shifted: true,
+		UID:     1000,
+		GID:     1000,
 	})
 	s.Require().NoError(err)
 
@@ -326,7 +327,7 @@ func (s *StorageVolumeSuite) TestIncusName_PrefixedWithProject() {
 	vol, ok := r.(*StorageVolume)
 	s.Require().True(ok)
 	s.Equal("mydata", vol.Name())
-	s.Equal("volume-test-mydata", vol.IncusName())
+	s.Equal("mydata", vol.IncusName())
 }
 
 func (s *StorageVolumeSuite) TestConfig_DefaultPool() {

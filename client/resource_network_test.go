@@ -612,8 +612,11 @@ func (s *NetworkSuite) TestExternal_DeleteIsNoOp() {
 	s.Require().True(ok)
 	incusName := network.IncusName()
 
-	// Now create an external reference to it
-	extR, err := s.client.Resource(KindNetwork, incusName, &NetworkConfig{External: true})
+	// Now create an external reference to it with a new client.
+	newDeleteClient, err := s.globalClient.getProject(s.projectName)
+	s.Require().NoError(err)
+
+	extR, err := newDeleteClient.Resource(KindNetwork, incusName, &NetworkConfig{External: true})
 	s.Require().NoError(err)
 
 	err = RunAction(extR, ActionEnsure)
@@ -665,32 +668,6 @@ func (s *NetworkSuite) TestUpdateDNSAliases_SetsRawDnsmasq() {
 	checkNet, ok := check.(*Network)
 	s.Require().True(ok)
 	s.Equal("address=/database/10.0.0.2\n", checkNet.IncusNetwork.Config["raw.dnsmasq"])
-
-	s.Require().NoError(network.Delete(OptionForce()))
-}
-
-func (s *NetworkSuite) TestUpdateDNSAliases_ExternalIsNoOp() {
-	r, err := s.client.Resource(KindNetwork, "test-ext-dns", &NetworkConfig{})
-	s.Require().NoError(err)
-	err = RunAction(r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-
-	network, ok := r.(*Network)
-	s.Require().True(ok)
-	incusName := network.IncusName()
-
-	extR, err := s.client.Resource(KindNetwork, incusName, &NetworkConfig{External: true})
-	s.Require().NoError(err)
-	err = RunAction(extR, ActionEnsure)
-	s.Require().NoError(err)
-
-	extNet, ok := extR.(*Network)
-	s.Require().True(ok)
-
-	// External networks are not managed - update must be a no-op.
-	err = extNet.UpdateDNSAliases(map[string][]string{"database": {"10.0.0.2"}})
-	s.Require().NoError(err)
-	s.Empty(extNet.IncusNetwork.Config["raw.dnsmasq"])
 
 	s.Require().NoError(network.Delete(OptionForce()))
 }

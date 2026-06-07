@@ -1,8 +1,6 @@
 package client
 
 import (
-	"fmt"
-	"maps"
 	"slices"
 )
 
@@ -99,20 +97,6 @@ func ByKind[T Resource](resources []Resource, kind Kind) ([]T, error) {
 	}
 
 	return result, nil
-}
-
-// FilterDuplicates filters duplicates out of Resources.
-func FilterDuplicates(resources []Resource) []Resource {
-	known := make(map[string]Resource, len(resources))
-
-	for _, r := range resources {
-		key := fmt.Sprintf("%v:%v", r.Kind(), r.Name())
-		if _, ok := known[key]; !ok {
-			known[key] = r
-		}
-	}
-
-	return slices.Collect(maps.Values(known))
 }
 
 // SupportsAction returns if the Resource supports the action.
@@ -220,7 +204,7 @@ func (s *ResourceStore) Add(r Resource) {
 // Remove removes a resource from the store by kind and name.
 func (s *ResourceStore) Remove(r Resource) {
 	s.resources = slices.DeleteFunc(s.resources, func(res Resource) bool {
-		return res.Kind() == r.Kind() && res.Name() == r.Name()
+		return res.Kind() == r.Kind() && res.IncusName() == r.IncusName()
 	})
 }
 
