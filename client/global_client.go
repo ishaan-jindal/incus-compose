@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	incusClient "github.com/lxc/incus/v6/client"
-	incusApi "github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/cliconfig"
+	incusClient "github.com/lxc/incus/v7/client"
+	incusApi "github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/cliconfig"
 )
 
 // ClientConfig holds configuration options for the Client.

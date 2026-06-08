@@ -8,8 +8,8 @@ import (
 	"strings"
 	"syscall"
 
-	incusClient "github.com/lxc/incus/v6/client"
-	incusApi "github.com/lxc/incus/v6/shared/api"
+	incusClient "github.com/lxc/incus/v7/client"
+	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/mattn/go-isatty"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/term"

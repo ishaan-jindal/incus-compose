@@ -35,6 +35,7 @@ Status: **Beta** - testing the beta release of incus-compose.
 - Incus project isolation
 - Container image building via Podman/Docker [doc](docs/build.md)
 - Advanced compose features (healthchecks, resource limits, etc.)
+- Automatic `compose.incus.yaml` overrides for Incus-specific settings
 
 ## Architecture
 
@@ -108,9 +109,9 @@ go install gitlab.com/r3j0/incus-compose/cmd/incus-compose@latest
 
 ### Usage
 
-```bash
-# Create a compose.yaml
-cat > compose.yaml <<EOF
+#### Existing compose.yaml
+
+```yaml
 services:
   web:
     image: docker.io/nginx:alpine
@@ -121,8 +122,45 @@ services:
 
 volumes:
   web-data:
-EOF
+```
 
+#### compose.incus.yaml override
+
+`compose.incus.yaml` is loaded automatically when it exists next to the selected `compose.yaml`. This lets you keep an upstream or Docker-focused Compose file unchanged while adding Incus-specific settings in a separate file.
+
+Typical uses:
+
+- Remove Docker-only port publishing with `ports: !reset []`
+- Add explicit health checks for `ic-healthd`
+- Set static service IPs on Incus networks
+- Pass raw Incus network or instance options via `x-incus`
+
+Example `compose.incus.yaml`:
+
+```yaml
+services:
+  web:
+    ports: !reset []
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost"]
+    networks:
+      default:
+        ipv4_address: 10.131.32.17
+
+networks:
+  default:
+    x-incus:
+      ipv4.nat: "true"
+      ipv4.address: 10.131.32.1/24
+```
+
+The file follows normal [Compose merge rules](https://docs.docker.com/reference/compose-file/merge). For example, `!reset []` clears a list from the base file. See [Compose Compatibility](docs/compose-compatibility.md#incus-override-file) for details.
+
+#### Run
+
+Run the project normally; the override is applied automatically:
+
+```bash
 # Start services
 incus-compose up
 

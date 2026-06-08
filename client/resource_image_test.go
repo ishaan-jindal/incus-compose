@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lxc/incus/v6/shared/cliconfig"
+	"github.com/lxc/incus/v7/shared/cliconfig"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"

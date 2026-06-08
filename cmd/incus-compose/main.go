@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"github.com/lmittmann/tint"
-	"github.com/lxc/incus/v6/shared/cliconfig"
+	"github.com/lxc/incus/v7/shared/cliconfig"
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
 	"github.com/urfave/cli/v3"

@@ -18,8 +18,8 @@ import (
 	"sync"
 	"time"
 
-	incus "github.com/lxc/incus/v6/client"
-	incusApi "github.com/lxc/incus/v6/shared/api"
+	incus "github.com/lxc/incus/v7/client"
+	incusApi "github.com/lxc/incus/v7/shared/api"
 )
 
 const (

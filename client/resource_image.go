@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/distribution/reference"
-	incusClient "github.com/lxc/incus/v6/client"
-	incusApi "github.com/lxc/incus/v6/shared/api"
+	incusClient "github.com/lxc/incus/v7/client"
+	incusApi "github.com/lxc/incus/v7/shared/api"
 )
 
 // ImageConfig contains the source and cache configuration for an image.

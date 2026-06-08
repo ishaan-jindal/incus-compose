@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	incusApi "github.com/lxc/incus/v6/shared/api"
+	incusApi "github.com/lxc/incus/v7/shared/api"
 	ispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/opencontainers/umoci/oci/cas/dir"
 	"github.com/opencontainers/umoci/oci/casext"

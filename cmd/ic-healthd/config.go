@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	incus "github.com/lxc/incus/v6/client"
+	incus "github.com/lxc/incus/v7/client"
 )
 
 // Config holds the healthd configuration.

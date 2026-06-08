@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	incusApi "github.com/lxc/incus/v6/shared/api"
+	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/mattn/go-colorable"
 	"github.com/urfave/cli/v3"
 

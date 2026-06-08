@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	incusClient "github.com/lxc/incus/v6/client"
-	incusApi "github.com/lxc/incus/v6/shared/api"
+	incusClient "github.com/lxc/incus/v7/client"
+	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/stretchr/testify/require"
 
 	"gitlab.com/r3j0/incus-compose/client"

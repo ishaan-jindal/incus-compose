@@ -17,8 +17,8 @@ import (
 
 	"github.com/gosimple/slug"
 	"github.com/lmittmann/tint"
-	incusClient "github.com/lxc/incus/v6/client"
-	"github.com/lxc/incus/v6/shared/cliconfig"
+	incusClient "github.com/lxc/incus/v7/client"
+	"github.com/lxc/incus/v7/shared/cliconfig"
 	"github.com/mattn/go-colorable"
 )
 

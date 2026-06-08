@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	incusApi "github.com/lxc/incus/v6/shared/api"
+	incusApi "github.com/lxc/incus/v7/shared/api"
 )
 
 // dnsIPWaitTimeout bounds how long to wait for a freshly started instance to

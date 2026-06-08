@@ -61,6 +61,8 @@ This will:
 - Create networks and volumes
 - Start containers in dependency order
 
+If your compose file uses health checks, incus-compose manages the `ic-healthd` sidecar automatically. It is transparent during normal use, but if you need to inspect or manage it directly, see [Health Checking](healthd.md).
+
 ### 3. Check status
 
 ```bash
