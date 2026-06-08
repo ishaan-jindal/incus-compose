@@ -81,7 +81,7 @@ func newStorageVolume(c *Client, name string, configGetter Config) (*StorageVolu
 		Config:       *config,
 	}
 
-	vol.incusName = SanitizeIncusName(name, -1)
+	vol.incusName = "vol-" + SanitizeIncusName(name, MaxIncusNameLen-4)
 	return vol, nil
 }
 
