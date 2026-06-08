@@ -327,7 +327,7 @@ func (s *StorageVolumeSuite) TestIncusName_PrefixedWithProject() {
 	vol, ok := r.(*StorageVolume)
 	s.Require().True(ok)
 	s.Equal("mydata", vol.Name())
-	s.Equal("mydata", vol.IncusName())
+	s.Equal("vol-mydata", vol.IncusName())
 }
 
 func (s *StorageVolumeSuite) TestConfig_DefaultPool() {
