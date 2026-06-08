@@ -1,7 +1,13 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      target: runtime
 
   app2:
     image: localhost/app2:latest
-    build: .
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM docker.io/alpine:latest
+        RUN echo "built inline by incus-compose"

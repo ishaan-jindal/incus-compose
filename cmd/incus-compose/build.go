@@ -74,11 +74,23 @@ var buildCommand = &cli.Command{
 				imageName = "localhost/" + p.Name + "-" + name
 			}
 
+			platform := svc.Platform
+			if len(svc.Build.Platforms) > 1 {
+				c.LogError("Multiple build platforms are not supported", "service", name)
+				return errLogged.Wrap(fmt.Errorf("build.platforms with multiple platforms is not supported"))
+			}
+			if len(svc.Build.Platforms) == 1 {
+				platform = svc.Build.Platforms[0]
+			}
+
 			buildCfg := &client.BuildConfig{
-				Context:    svc.Build.Context,
-				Dockerfile: svc.Build.Dockerfile,
-				NoCache:    noCache || svc.Build.NoCache,
-				Pull:       pull || svc.Build.Pull,
+				Context:          svc.Build.Context,
+				Dockerfile:       svc.Build.Dockerfile,
+				DockerfileInline: svc.Build.DockerfileInline,
+				Target:           svc.Build.Target,
+				Platform:         platform,
+				NoCache:          noCache || svc.Build.NoCache,
+				Pull:             pull || svc.Build.Pull,
 			}
 			if len(svc.Build.Args) > 0 {
 				buildCfg.Args = make(map[string]string, len(svc.Build.Args))

@@ -1,4 +1,4 @@
-// Package client — container image building.
+// Package client - container image building.
 //
 // Build support intentionally shells out to podman or docker rather than using
 // the buildah Go library. The buildah library pulls in containers/storage,
@@ -16,12 +16,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"runtime"
 	"strings"
 	"time"
 
 	incusApi "github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/osarch"
 	ispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/opencontainers/umoci/oci/cas/dir"
 	"github.com/opencontainers/umoci/oci/casext"
@@ -36,6 +34,15 @@ type BuildConfig struct {
 	// Dockerfile is an optional path to the Containerfile/Dockerfile.
 	// Empty means the builder uses its default (Containerfile or Dockerfile in Context).
 	Dockerfile string
+
+	// DockerfileInline is inline Dockerfile content from compose build.dockerfile_inline.
+	DockerfileInline string
+
+	// Target is the Dockerfile stage to build.
+	Target string
+
+	// Platform is the OCI platform to build for, for example linux/amd64.
+	Platform string
 
 	// Args are build-time variables (--build-arg).
 	Args map[string]string
@@ -78,7 +85,14 @@ func buildRootfs(ctx context.Context, builder string, cfg *BuildConfig, logW io.
 	rootfsPath := rootfsTmp.Name()
 	rootfsTmp.Close()
 
-	args := buildArgs(builder, cfg, tmpTag, rootfsPath)
+	buildCfg, cleanup, err := buildConfigWithInlineDockerfile(cfg)
+	if err != nil {
+		_ = os.Remove(rootfsPath)
+		return nil, nil, err
+	}
+	defer cleanup()
+
+	args := buildArgs(builder, buildCfg, tmpTag, rootfsPath)
 	cmd := exec.CommandContext(ctx, builder, args...)
 	cmd.Stderr = logW
 	if err := cmd.Run(); err != nil {
@@ -160,6 +174,34 @@ func buildConfigJSON(ctx context.Context, builder, tmpTag string, logW io.Writer
 	return buf.Bytes(), nil
 }
 
+func buildConfigWithInlineDockerfile(cfg *BuildConfig) (*BuildConfig, func(), error) {
+	if cfg.DockerfileInline == "" {
+		return cfg, func() {}, nil
+	}
+	if cfg.Dockerfile != "" {
+		return nil, func() {}, fmt.Errorf("build.dockerfile and build.dockerfile_inline cannot both be set")
+	}
+
+	f, err := os.CreateTemp("", "incus-compose-Dockerfile-*")
+	if err != nil {
+		return nil, func() {}, fmt.Errorf("creating inline Dockerfile: %w", err)
+	}
+	path := f.Name()
+	if _, err := f.WriteString(cfg.DockerfileInline); err != nil {
+		_ = f.Close()
+		_ = os.Remove(path)
+		return nil, func() {}, fmt.Errorf("writing inline Dockerfile: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(path)
+		return nil, func() {}, fmt.Errorf("closing inline Dockerfile: %w", err)
+	}
+
+	buildCfg := *cfg
+	buildCfg.Dockerfile = path
+	return &buildCfg, func() { _ = os.Remove(path) }, nil
+}
+
 func buildArgs(builder string, cfg *BuildConfig, tmpTag, dest string) []string {
 	args := []string{}
 	if strings.HasSuffix(builder, "docker") {
@@ -168,6 +210,12 @@ func buildArgs(builder string, cfg *BuildConfig, tmpTag, dest string) []string {
 	args = append(args, "build", "-t", tmpTag, cfg.Context)
 	if cfg.Dockerfile != "" {
 		args = append(args, "-f", cfg.Dockerfile)
+	}
+	if cfg.Platform != "" {
+		args = append(args, "--platform", cfg.Platform)
+	}
+	if cfg.Target != "" {
+		args = append(args, "--target", cfg.Target)
 	}
 	for k, v := range cfg.Args {
 		args = append(args, "--build-arg", k+"="+v)
@@ -194,14 +242,42 @@ func (t *tempFile) Close() error {
 	return err
 }
 
+// incusArchToPlatform maps an Incus architecture name to an OCI platform.
+func incusArchToPlatform(arch string) (string, bool) {
+	switch arch {
+	case "x86_64":
+		return "linux/amd64", true
+	case "i686":
+		return "linux/386", true
+	case "aarch64":
+		return "linux/arm64", true
+	case "armv7", "armv7l":
+		return "linux/arm/v7", true
+	case "armv6", "armv6l":
+		return "linux/arm/v6", true
+	case "ppc64le":
+		return "linux/ppc64le", true
+	case "s390x":
+		return "linux/s390x", true
+	case "riscv64":
+		return "linux/riscv64", true
+	}
+	return "", false
+}
+
+func platformToIncusArch(platform string, arches []string) (string, bool) {
+	for _, arch := range arches {
+		candidate, ok := incusArchToPlatform(arch)
+		if ok && candidate == platform {
+			return arch, true
+		}
+	}
+	return "", false
+}
+
 // buildMetadataTar returns an in-memory tar containing metadata.yaml (JSON
 // content per Incus convention) and, when provided, an OCI config.json.
-func buildMetadataTar(name string, configJSON []byte) (io.Reader, error) {
-	arch, err := osarch.ArchitectureGetLocal()
-	if err != nil {
-		arch = runtime.GOARCH
-	}
-
+func buildMetadataTar(name, arch string, configJSON []byte) (io.Reader, error) {
 	metaJSON, err := json.Marshal(incusApi.ImageMetadata{
 		Architecture: arch,
 		CreationDate: time.Now().Unix(),

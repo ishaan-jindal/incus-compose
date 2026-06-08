@@ -19,28 +19,21 @@ Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` 
 - **[Compose Compatibility](docs/compose-compatibility.md)** - What works and what doesn't
 - **[Architecture](docs/architecture.md)** - How it works under the hood
 - **[Why Incus?](docs/why-incus.md)** - Benefits over Docker
+- **[Contributing](CONTRIBUTING.md)** - Contributing to incus-compose
 
-[Full Documentation](docs/architecture.md) | [Contributing](CONTRIBUTING.md)
+## Features
 
-## Status
-
-**Beta** - testing the beta1 release of incus-compose.
-
-**What works:**
+Status: **Beta** - testing the beta release of incus-compose.
 
 - `up`, `down`, `list` (and `ps`), `start`, `stop`, `restart`, `exec`, `config`, `logs` commands
 - Compose project parsing via compose-go
 - OCI image pulling from docker.io, ghcr.io, and other registries
 - Bridge networks with automatic name sanitization
 - Storage volumes with UID/GID shifting for proper permissions
-- Bind mounts (local connections only)
-- Port forwarding via proxy devices
+- Bind mounts (one-way copy to container/storage volume)
+- Port forwarding via proxy devices and kernel nat mode.
 - Incus project isolation
-
-**What's coming:**
-
-- VM instance support alongside containers
-- Container image building via Podman/Docker
+- Container image building via Podman/Docker [doc](docs/build.md)
 - Advanced compose features (healthchecks, resource limits, etc.)
 
 ## Architecture
@@ -90,6 +83,10 @@ incus remote add --protocol oci docker.io https://docker.io
 incus remote add --protocol oci ghcr.io https://ghcr.io
 incus remote add --protocol oci registry.gitlab.com https://registry.gitlab.com
 ```
+
+#### For image building
+
+You need either `podman` or `docker` configured and available in your path for image builds.
 
 ### Installation
 

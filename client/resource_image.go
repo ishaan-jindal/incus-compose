@@ -519,18 +519,42 @@ func (r *Image) ensureBuild(args Options) error {
 // buildImage shells out to the detected container builder, imports the rootfs
 // into Incus as a split (metadata + rootfs) image, and records the alias.
 func (r *Image) buildImage(args Options) error {
+	server, _, err := r.client.incus.GetServer()
+	if err != nil {
+		return ErrCreate.WithText("getting Incus server info").Wrap(err)
+	}
+	if len(server.Environment.Architectures) == 0 {
+		return ErrCreate.WithText("Incus server has no supported architectures")
+	}
+
+	buildCfg := *r.Config.Build
+	incusArch := server.Environment.Architectures[0]
+	if buildCfg.Platform != "" {
+		var ok bool
+		incusArch, ok = platformToIncusArch(buildCfg.Platform, server.Environment.Architectures)
+		if !ok {
+			return ErrCreate.WithText("unsupported build platform " + buildCfg.Platform)
+		}
+	} else {
+		platform, ok := incusArchToPlatform(incusArch)
+		if !ok {
+			return ErrCreate.WithText("unsupported Incus architecture " + incusArch)
+		}
+		buildCfg.Platform = platform
+	}
+
 	builder, err := detectBuilder()
 	if err != nil {
 		return ErrCreate.WithText("no container builder").Wrap(err)
 	}
 
-	rootfs, configJSON, err := buildRootfs(r.client.globalClient.Ctx, builder, r.Config.Build, os.Stderr)
+	rootfs, configJSON, err := buildRootfs(r.client.globalClient.Ctx, builder, &buildCfg, os.Stderr)
 	if err != nil {
 		return ErrCreate.WithText("building container image").Wrap(err)
 	}
 	defer rootfs.Close()
 
-	meta, err := buildMetadataTar(r.incusName, configJSON)
+	meta, err := buildMetadataTar(r.incusName, incusArch, configJSON)
 	if err != nil {
 		return ErrCreate.WithText("building image metadata").Wrap(err)
 	}

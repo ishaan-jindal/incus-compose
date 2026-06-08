@@ -130,6 +130,19 @@ func LoadModel(ctx context.Context, opts ...LoadOption) (map[string]any, error) 
 	return model, err
 }
 
+func buildPlatform(service types.ServiceConfig) (string, error) {
+	if service.Build == nil {
+		return "", nil
+	}
+	if len(service.Build.Platforms) > 1 {
+		return "", fmt.Errorf("build.platforms with multiple platforms is not supported")
+	}
+	if len(service.Build.Platforms) == 1 {
+		return service.Build.Platforms[0], nil
+	}
+	return service.Platform, nil
+}
+
 // serviceToInstance translates a compose service to an Incus instance.
 // Environment vars become instance config, labels become user metadata.
 // Volumes default to bind mounts for paths starting with / or ., otherwise named volumes.
@@ -178,11 +191,18 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 			if imageName == "" {
 				imageName = "localhost/" + p.Name + "-" + serviceName
 			}
+			platform, platformErr := buildPlatform(service)
+			if platformErr != nil {
+				errs = errors.Join(errs, platformErr)
+			}
 			buildCfg := &client.BuildConfig{
-				Context:    service.Build.Context,
-				Dockerfile: service.Build.Dockerfile,
-				NoCache:    service.Build.NoCache,
-				Pull:       service.Build.Pull,
+				Context:          service.Build.Context,
+				Dockerfile:       service.Build.Dockerfile,
+				DockerfileInline: service.Build.DockerfileInline,
+				Target:           service.Build.Target,
+				Platform:         platform,
+				NoCache:          service.Build.NoCache,
+				Pull:             service.Build.Pull,
 			}
 			if len(service.Build.Args) > 0 {
 				buildCfg.Args = make(map[string]string, len(service.Build.Args))

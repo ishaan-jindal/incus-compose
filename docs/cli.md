@@ -2,18 +2,18 @@
 
 ## Global Options
 
-| Option                 | Description                                            |
-| ---------------------- | ------------------------------------------------------ |
-| `-f`, `--file`         | Compose files (repeatable)                             |
-| `-p`, `--project-name` | Project name                                           |
-| `--project-directory`  | Working directory                                      |
-| `--profile`            | Compose profiles (repeatable)                          |
-| `--env-file`           | Environment files (repeatable)                         |
-| `-E`, `--os-env`       | Include OS env vars                                    |
-| `--remote`             | Incus remote (`INCUS_REMOTE`)                          |
-| `--ansi`               | Color output: never/always/auto (`INCUS_COMPOSE_ANSI`) |
-| `INCUS_COMPOSE_IMAGE_CACHE` | Incus project for image cache (default: `default`) |
-| `--debug`              | Debug logging                                          |
+| Option                      | Description                                            |
+| --------------------------- | ------------------------------------------------------ |
+| `-f`, `--file`              | Compose files (repeatable)                             |
+| `-p`, `--project-name`      | Project name                                           |
+| `--project-directory`       | Working directory                                      |
+| `--profile`                 | Compose profiles (repeatable)                          |
+| `--env-file`                | Environment files (repeatable)                         |
+| `-E`, `--os-env`            | Include OS env vars                                    |
+| `--remote`                  | Incus remote (`INCUS_REMOTE`)                          |
+| `--ansi`                    | Color output: never/always/auto (`INCUS_COMPOSE_ANSI`) |
+| `INCUS_COMPOSE_IMAGE_CACHE` | Incus project for image cache (default: `default`)     |
+| `--debug`                   | Debug logging                                          |
 
 Supports [no-color.org](https://no-color.org/) via `NO_COLOR` env var.
 
@@ -25,19 +25,40 @@ Create and start containers.
 incus-compose up [SERVICE...]
 ```
 
-| Option             | Description                                                             |
-| ------------------ | ----------------------------------------------------------------------- |
-| `-d`, `--detach`   | Detached mode: run containers in the background                         |
-| `--recreate`       | Recreate containers even if they exist                                  |
-| `--no-start`       | Don't start containers after creating                                   |
-| `--pull`           | Pull policy: `always` (refresh from registry), `missing`/`policy` (use cache if present), `never` (never pull); default: `policy` |
-| `--timeout`        | Stop/start timeout seconds (default: 10)                                |
-| `--scale`          | Scale service: `web=3` (repeatable)                                     |
-| `--no-healthd`      | Don't create healthd sidecar for healthchecks                           |
-| `--healthd-binary`  | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image) |
-| `--healthd-network` | Incus bridge for healthd (`INCUS_COMPOSE_HEALTHD_NETWORK`); overrides `x-incus-compose.healthd-network`; auto-detects if unset |
+| Option              | Description                                                                                                                       |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `-d`, `--detach`    | Detached mode: run containers in the background                                                                                   |
+| `--recreate`        | Recreate containers even if they exist                                                                                            |
+| `--no-start`        | Don't start containers after creating                                                                                             |
+| `--pull`            | Pull policy: `always` (refresh from registry), `missing`/`policy` (use cache if present), `never` (never pull); default: `policy` |
+| `--build`           | Rebuild build-configured service images before starting containers                                                                |
+| `--no-build`        | Do not build images; fail if a required built image is missing                                                                    |
+| `--timeout`         | Stop/start timeout seconds (default: 10)                                                                                          |
+| `--scale`           | Scale service: `web=3` (repeatable)                                                                                               |
+| `--no-healthd`      | Don't create healthd sidecar for healthchecks                                                                                     |
+| `--healthd-binary`  | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)                                                    |
+| `--healthd-network` | Incus bridge for healthd (`INCUS_COMPOSE_HEALTHD_NETWORK`); overrides `x-incus-compose.healthd-network`; auto-detects if unset    |
 
 Without `--detach`, `up` streams logs from all started services (equivalent to running `logs --follow` immediately after). Use `--detach` to return as soon as containers are started.
+
+For services with `build:`, `up` builds missing images by default. Use `--build` to force a rebuild or `--no-build` to require the image to already exist. See [Builds](build.md) for details.
+
+## build
+
+Build or rebuild service images for services that define `build:`.
+
+```
+incus-compose build [SERVICE...]
+```
+
+| Option       | Description                                           |
+| ------------ | ----------------------------------------------------- |
+| `--no-cache` | Do not use cache when building the image              |
+| `--pull`     | Always attempt to pull a newer version of base images |
+
+When service names are provided, only matching build-configured services are built. Services without `build:` are skipped. Built images are imported into the Incus project and used by `up`.
+
+See [Builds](build.md) for supported Compose build options and requirements.
 
 ## down
 
@@ -155,12 +176,12 @@ List containers (instances).
 incus-compose ps [SERVICE...]
 ```
 
-| Option          | Description                                          |
-| --------------- | ---------------------------------------------------- |
-| `-a`, `--all`   | Show all containers (including stopped ones)         |
-| `-q`, `--quiet` | Only display Incus instance names                    |
-| `--services`    | Display compose service names instead of instances   |
-| `--format`      | table (default) or json                              |
+| Option          | Description                                        |
+| --------------- | -------------------------------------------------- |
+| `-a`, `--all`   | Show all containers (including stopped ones)       |
+| `-q`, `--quiet` | Only display Incus instance names                  |
+| `--services`    | Display compose service names instead of instances |
+| `--format`      | table (default) or json                            |
 
 ## incus
 
@@ -189,13 +210,13 @@ Manage the ic-healthd sidecar. See [Health Checking](healthd.md) for full detail
 incus-compose healthd <subcommand>
 ```
 
-| Subcommand          | Description                                          |
-| ------------------- | ---------------------------------------------------- |
-| `logs [--follow]`   | Stream the ic-healthd container log                  |
-| `reload`            | Send SIGHUP to the ic-healthd process                |
-| `restart`           | Restart the ic-healthd container                     |
-| `up [--recreate]`   | Create or recreate the sidecar                       |
-| `down`              | Stop and remove the sidecar                          |
+| Subcommand        | Description                           |
+| ----------------- | ------------------------------------- |
+| `logs [--follow]` | Stream the ic-healthd container log   |
+| `reload`          | Send SIGHUP to the ic-healthd process |
+| `restart`         | Restart the ic-healthd container      |
+| `up [--recreate]` | Create or recreate the sidecar        |
+| `down`            | Stop and remove the sidecar           |
 
 `healthd up` also accepts `--image`, `--binary`, and `--network`.
 

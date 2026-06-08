@@ -21,7 +21,7 @@ func TestBuildSuite(t *testing.T) {
 }
 
 func (s *BuildSuite) TestBuildMetadataTar() {
-	r, err := buildMetadataTar("local/myproject-myservice:latest", nil)
+	r, err := buildMetadataTar("local/myproject-myservice:latest", "x86_64", nil)
 	s.Require().NoError(err)
 
 	tr := tar.NewReader(r)
@@ -41,13 +41,13 @@ func (s *BuildSuite) TestBuildMetadataTar() {
 	s.Require().NoError(yaml.Unmarshal(data, &meta))
 
 	s.Equal("oci", meta.Properties["type"])
-	s.NotEmpty(meta.Architecture)
+	s.Equal("x86_64", meta.Architecture)
 	s.Greater(meta.CreationDate, int64(0))
 	s.Equal(int64(0), meta.ExpiryDate)
 }
 
 func (s *BuildSuite) TestBuildMetadataTarWithoutConfigJSON() {
-	r, err := buildMetadataTar("test-image", nil)
+	r, err := buildMetadataTar("test-image", "x86_64", nil)
 	s.Require().NoError(err)
 
 	tr := tar.NewReader(r)
@@ -61,7 +61,7 @@ func (s *BuildSuite) TestBuildMetadataTarWithoutConfigJSON() {
 
 func (s *BuildSuite) TestBuildMetadataTarWithConfigJSON() {
 	configJSON := []byte(`{"ociVersion":"1.2.0","process":{"args":["/bin/sh"]}}`)
-	r, err := buildMetadataTar("test-image", configJSON)
+	r, err := buildMetadataTar("test-image", "x86_64", configJSON)
 	s.Require().NoError(err)
 
 	tr := tar.NewReader(r)
@@ -122,11 +122,43 @@ func TestOptionBuild(t *testing.T) {
 	}
 }
 
+func TestIncusArchToPlatform(t *testing.T) {
+	tests := []struct {
+		arch     string
+		platform string
+	}{
+		{"x86_64", "linux/amd64"},
+		{"i686", "linux/386"},
+		{"aarch64", "linux/arm64"},
+		{"armv7l", "linux/arm/v7"},
+		{"armv6l", "linux/arm/v6"},
+		{"ppc64le", "linux/ppc64le"},
+		{"s390x", "linux/s390x"},
+		{"riscv64", "linux/riscv64"},
+	}
+	for _, tt := range tests {
+		platform, ok := incusArchToPlatform(tt.arch)
+		require.True(t, ok)
+		assert.Equal(t, tt.platform, platform)
+	}
+}
+
+func TestPlatformToIncusArch(t *testing.T) {
+	arch, ok := platformToIncusArch("linux/amd64", []string{"x86_64", "i686"})
+	require.True(t, ok)
+	assert.Equal(t, "x86_64", arch)
+
+	_, ok = platformToIncusArch("linux/arm64", []string{"x86_64", "i686"})
+	assert.False(t, ok)
+}
+
 func TestBuildArgs_Podman(t *testing.T) {
 	cfg := &BuildConfig{
 		Context:    "/path/to/ctx",
 		Dockerfile: "Containerfile",
 		Args:       map[string]string{"FOO": "bar"},
+		Platform:   "linux/amd64",
+		Target:     "runtime",
 		NoCache:    true,
 		Pull:       false,
 	}
@@ -137,12 +169,38 @@ func TestBuildArgs_Podman(t *testing.T) {
 	require.Contains(t, args, "/path/to/ctx")
 	require.Contains(t, args, "-f")
 	require.Contains(t, args, "Containerfile")
+	require.Contains(t, args, "--platform")
+	require.Contains(t, args, "linux/amd64")
+	require.Contains(t, args, "--target")
+	require.Contains(t, args, "runtime")
 	require.Contains(t, args, "--build-arg")
 	require.Contains(t, args, "FOO=bar")
 	require.Contains(t, args, "--no-cache")
 	require.Contains(t, args, "type=tar,dest=/tmp/out.tar")
 	// podman must NOT include "buildx"
 	assert.NotContains(t, args, "buildx")
+}
+
+func TestBuildConfigWithInlineDockerfile(t *testing.T) {
+	cfg, cleanup, err := buildConfigWithInlineDockerfile(&BuildConfig{
+		Context:          "/path/to/ctx",
+		DockerfileInline: "FROM docker.io/alpine:latest\n",
+	})
+	require.NoError(t, err)
+	defer cleanup()
+
+	assert.NotEmpty(t, cfg.Dockerfile)
+	data, err := os.ReadFile(cfg.Dockerfile)
+	require.NoError(t, err)
+	assert.Equal(t, "FROM docker.io/alpine:latest\n", string(data))
+}
+
+func TestBuildConfigWithInlineDockerfileRejectsDockerfile(t *testing.T) {
+	_, _, err := buildConfigWithInlineDockerfile(&BuildConfig{
+		Dockerfile:       "Dockerfile",
+		DockerfileInline: "FROM docker.io/alpine:latest\n",
+	})
+	assert.Error(t, err)
 }
 
 func TestBuildArgs_Docker(t *testing.T) {

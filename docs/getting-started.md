@@ -227,12 +227,13 @@ Images are cached in either the `default` project or project you set via the `IN
 
 ```bash
 $ incus project list
-+----------------------+--------+----------+-----------------+-----------------+
-|         NAME         | IMAGES | PROFILES | STORAGE VOLUMES | STORAGE BUCKETS |
-+----------------------+--------+----------+-----------------+-----------------+
-| default              | YES    | YES      | YES             | YES             |
-| myapp                | YES    | YES      | YES             | YES             |
-+----------------------+--------+----------+-----------------+-----------------+
++---------------------------+--------+----------+-----------------+-----------------+----------+---------------+------------------------------------------+---------+
+|           NAME            | IMAGES | PROFILES | STORAGE VOLUMES | STORAGE BUCKETS | NETWORKS | NETWORK ZONES |               DESCRIPTION                | USED BY |
++---------------------------+--------+----------+-----------------+-----------------+----------+---------------+------------------------------------------+---------+
+| default (current)         | YES    | YES      | YES             | YES             | YES      | YES           | Default Incus project                    | 14      |
++---------------------------+--------+----------+-----------------+-----------------+----------+---------------+------------------------------------------+---------+
+| immich                    | YES    | YES      | YES             | YES             | NO       | NO            | incus-compose: immich                    | 7       |
++---------------------------+--------+----------+-----------------+-----------------+----------+---------------+------------------------------------------+---------+
 ```
 
 This means:
@@ -246,6 +247,8 @@ The cache project is created automatically on first use.
 
 ## Next Steps
 
+- [CLI Reference](cli.md)
+- [Builds](build.md)
 - [Compose Compatibility](compose-compatibility.md) - What features are supported
 - [Environment Variables](environment-variables.md) - How env vars work
 - [Why Incus?](why-incus.md) - Benefits over Docker
