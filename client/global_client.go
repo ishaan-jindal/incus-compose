@@ -133,7 +133,7 @@ type GlobalClient struct {
 	// hookAfter is called hookAfter any action.
 	hookAfter func(action Action, r Resource, args Options, err error) error
 
-	progressHandler func(action Action, r Resource, args Options, progress int)
+	progressHandler func(action Action, r Resource, args Options, p Progress)
 
 	// outputHandler is called when a resource produces output (e.g., logs).
 	outputHandler func(action Action, r Resource, data []byte)
@@ -540,42 +540,68 @@ func (c *GlobalClient) DeleteProject(name string, force bool) error {
 	return nil
 }
 
+// Progress describes the live state of a long-running resource operation.
+//
+// Native Incus images report a real percentage ("rootfs: 42% (3.10MB/s)"),
+// so Percent is set. OCI image pulls only emit status text ("Retrieving OCI
+// image from registry"); for those Percent is -1 and only Text is meaningful,
+// because the registry download runs as an opaque skopeo subprocess with no
+// byte or percentage feedback.
+type Progress struct {
+	// Percent is 0-100, or -1 when the operation reports no percentage.
+	Percent int
+
+	// Text is the raw status text from Incus, empty when none was reported.
+	Text string
+}
+
 func (c *GlobalClient) reportProgress(action Action, r Resource, args Options, opAPI incusApi.Operation) {
 	if c.progressHandler == nil {
 		return
 	}
 
-	// Extract progress from operation metadata
-	// Incus stores progress in Metadata with keys ending in "_progress"
-	percent := -1
+	// Incus stores progress in Metadata with keys ending in "_progress".
+	p := Progress{Percent: -1}
 
 	if opAPI.Metadata != nil {
 		for key, val := range opAPI.Metadata {
 			if strings.HasSuffix(key, "_progress") {
 				if s, ok := val.(string); ok {
-					// Native Incus images: "rootfs: 42% (3.10MB/s)" or "metadata: 100% (876B/s)"
-					// OCI images: "Retrieving OCI image from registry"
-					// Find percentage pattern anywhere in the string
-					if idx := strings.Index(s, "%"); idx > 0 {
-						// Walk backwards from % to find the start of the number
-						start := idx - 1
-						for start >= 0 && s[start] >= '0' && s[start] <= '9' {
-							start--
-						}
-						start++ // Move past the non-digit
-						if start < idx {
-							if _, err := fmt.Sscanf(s[start:], "%d%%", &percent); err != nil {
-								percent = -1
-							}
-						}
-					}
+					p.Text = s
+					p.Percent = parsePercent(s)
 				}
 				break
 			}
 		}
 	}
 
-	c.progressHandler(action, r, args, percent)
+	c.progressHandler(action, r, args, p)
+}
+
+// parsePercent extracts a "NN%" value from an Incus progress string, returning
+// -1 when none is present (as with OCI status text). It finds the percent sign
+// anywhere in the string, e.g. "rootfs: 42% (3.10MB/s)" -> 42.
+func parsePercent(s string) int {
+	idx := strings.Index(s, "%")
+	if idx <= 0 {
+		return -1
+	}
+
+	// Walk backwards from % to the start of the number.
+	start := idx - 1
+	for start >= 0 && s[start] >= '0' && s[start] <= '9' {
+		start--
+	}
+	start++ // Move past the non-digit.
+	if start >= idx {
+		return -1
+	}
+
+	percent := -1
+	if _, err := fmt.Sscanf(s[start:], "%d%%", &percent); err != nil {
+		return -1
+	}
+	return percent
 }
 
 // AddHookBefore adds a hook that will be executed before any action (FIFO order).
@@ -610,4 +636,11 @@ func (c *GlobalClient) AddHookAfter(hook func(action Action, r Resource, args Op
 // The handler receives raw bytes - formatting is the caller's responsibility.
 func (c *GlobalClient) SetOutputHandler(handler func(action Action, r Resource, data []byte)) {
 	c.outputHandler = handler
+}
+
+// SetProgressHandler sets the handler for live operation progress. Pass nil to
+// disable. Operations run in parallel, so the handler may be called
+// concurrently and must be safe for concurrent use.
+func (c *GlobalClient) SetProgressHandler(handler func(action Action, r Resource, args Options, p Progress)) {
+	c.progressHandler = handler
 }

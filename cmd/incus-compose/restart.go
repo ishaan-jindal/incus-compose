@@ -67,15 +67,21 @@ var restartCommand = &cli.Command{
 			errs = errors.Join(errs, err)
 		}
 
-		if err := stack.ForAction(client.ActionStop).Run(client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
-			c.LogWarn("Stopping resources", "error", err)
-			errs = errors.Join(errs, err)
+		finish := startProgress(globalClient, c, cmd.Root().ErrWriter)
+
+		errStop := stack.ForAction(client.ActionStop).Run(client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout))
+		if errStop != nil {
+			c.LogWarn("Stopping resources", "error", errStop)
+			errs = errors.Join(errs, errStop)
 		}
 
-		if err := stack.ForAction(client.ActionStart).Run(client.ActionStart, client.OptionTimeout(timeout)); err != nil {
-			c.LogError("Starting resources", "error", err)
-			errs = errors.Join(errs, err)
+		errStart := stack.ForAction(client.ActionStart).Run(client.ActionStart, client.OptionTimeout(timeout))
+		if errStart != nil {
+			c.LogError("Starting resources", "error", errStart)
+			errs = errors.Join(errs, errStart)
 		}
+
+		finish(errStop == nil && errStart == nil)
 
 		if errs != nil {
 			return errLogged.Wrap(errs)

@@ -144,11 +144,6 @@ func newRootCommand() *cli.Command {
 				Value:   "auto",
 				Sources: cli.EnvVars("INCUS_COMPOSE_ANSI"),
 				Action: func(ctx context.Context, cmd *cli.Command, v string) error {
-					// NO_COLOR takes precedence (https://no-color.org/)
-					if _, ok := os.LookupEnv("NO_COLOR"); ok {
-						noColor = true
-						return nil
-					}
 					switch v {
 					case "always":
 						noColor = false
@@ -218,6 +213,11 @@ func newRootCommand() *cli.Command {
 			versionCommand,
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+			// NO_COLOR takes precedence (https://no-color.org/)
+			if _, ok := os.LookupEnv("NO_COLOR"); ok {
+				noColor = true
+			}
+
 			initLogger(cmd.Bool("debug"))
 
 			// Commands that don't need an Incus client connection

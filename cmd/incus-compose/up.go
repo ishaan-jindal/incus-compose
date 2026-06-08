@@ -109,6 +109,9 @@ var upCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
+		// Render live progress for the ensure phase, where image downloads happen.
+		finish := startProgress(globalClient, c, cmd.Root().ErrWriter)
+
 		if !cmd.Bool("no-healthd") && healthdInUseByProject(p) {
 			hparams := healthdParams{
 				projectName: p.Name,
@@ -123,11 +126,15 @@ var upCommand = &cli.Command{
 			inst, resources, err := healthdGetResources(c, hparams)
 			if err != nil {
 				globalClient.LogError("Creating healthd resources", "error", err)
+
+				finish(err == nil)
 				return errLogged.Wrap(err)
 			}
 
 			if err := healthdUp(c, inst, resources, hparams); err != nil {
 				globalClient.LogError("Starting healthd", "error", err)
+
+				finish(err == nil)
 				return errLogged.Wrap(err)
 			}
 		}
@@ -149,18 +156,26 @@ var upCommand = &cli.Command{
 		}
 		if err := runUp(globalClient, c, p, params); err != nil {
 			_ = c.Done()
+
+			finish(err == nil)
 			return err
 		}
 		_ = c.Done()
-		if !cmd.Bool("detach") {
+		if params.start && !cmd.Bool("detach") {
 			var out io.Writer
 			if f, ok := cmd.Root().Writer.(*os.File); ok {
 				out = colorable.NewColorable(f)
 			} else {
 				out = cmd.Root().Writer
 			}
+
+			finish(err == nil)
 			return runLogs(globalClient, c, p, params.services, true, out)
 		}
+
+		finish(err == nil)
+
+		c.LogDebug("All done")
 		return nil
 	},
 }
@@ -244,20 +259,22 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 
 		c.LogDebug("Ensure", "resources", stack.All())
 
-		// Ensure without create for "recreate"
+		// Ensure without create for "recreate" (resolution only, no progress).
 		if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure); err != nil {
 			c.LogDebug("Ensuring for reCreate", "error", err)
 		} else {
 			// Stop
-			if err := stack.ForAction(client.ActionStop).Run(client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
-				c.LogDebug("Stopping resources", "error", err)
+			errStop := stack.ForAction(client.ActionStop).Run(client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout))
+			if errStop != nil {
+				c.LogDebug("Stopping resources", "error", errStop)
 			}
 
 			// Delete
 			deleteStack := stack.ForAction(client.ActionDelete)
 			c.LogDebug("Recreate delete", "resources", deleteStack.All())
-			if err := deleteStack.Run(client.ActionDelete, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
-				c.LogDebug("Deleting resources", "error", err)
+			errDel := deleteStack.Run(client.ActionDelete, client.OptionForce(), client.OptionTimeout(timeout))
+			if errDel != nil {
+				c.LogDebug("Deleting resources", "error", errDel)
 			}
 		}
 	}
@@ -278,8 +295,10 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 	if params.build != client.BuildAuto {
 		ensureOpts = append(ensureOpts, client.OptionBuild(params.build))
 	}
-	if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure, ensureOpts...); err != nil {
-		c.LogError("Creating resources", "error", err)
+
+	err = stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure, ensureOpts...)
+	if err != nil {
+		c.LogError("Ensuring resources", "error", err)
 		return errLogged.Wrap(err)
 	}
 
@@ -291,6 +310,5 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 		}
 	}
 
-	c.LogDebug("All done")
 	return nil
 }

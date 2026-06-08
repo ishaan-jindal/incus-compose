@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/urfave/cli/v3"
 
@@ -84,10 +85,16 @@ var downCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		return runDown(globalClient, c, p, downParams{
-			services: cmd.Args().Slice(),
-			timeout:  int(cmd.Int("timeout")),
+		finish := startProgress(globalClient, c, cmd.Root().ErrWriter)
+
+		err = runDown(globalClient, c, p, downParams{
+			services:  cmd.Args().Slice(),
+			timeout:   int(cmd.Int("timeout")),
+			errWriter: cmd.Root().ErrWriter,
 		})
+
+		finish(err == nil)
+		return nil
 	},
 }
 
@@ -132,9 +139,10 @@ func deleteProjectNetworks(c *client.Client, networks []*client.Network) error {
 // downParams holds the parsed arguments for a down run.
 // services is the raw service filter (empty means all services).
 type downParams struct {
-	services []string
-	images   bool
-	timeout  int
+	services  []string
+	images    bool
+	timeout   int
+	errWriter io.Writer
 }
 
 // runDown stops and removes the instances of a loaded project, along with their
@@ -152,10 +160,12 @@ func runDown(globalClient *client.GlobalClient, c *client.Client, p *project.Pro
 		return errLogged
 	}
 
+	var errs error
+
 	if healthdInUseByProject(p) {
 		if name, err := c.FindHealthdName(); err != nil {
 			c.LogError("Finding healthd", "error", err)
-			return errLogged.Wrap(err)
+			errs = errors.Join(errs, err)
 		} else if name != "" {
 			params := healthdParams{
 				projectName: p.Name,
@@ -169,37 +179,37 @@ func runDown(globalClient *client.GlobalClient, c *client.Client, p *project.Pro
 			inst, resources, err := healthdGetResources(c, params)
 			if err != nil {
 				globalClient.LogError("Getting healthd resources", "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			if err := healthdDown(c, inst, resources, params.timeout); err != nil {
-				c.LogWarn("Healthd down", "error", err)
+				errs = errors.Join(errs, err)
 			} else {
-				c.LogDebug("Stopped healthd sidecar")
+				if err := healthdDown(c, inst, resources, params.timeout); err != nil {
+					c.LogWarn("Healthd down", "error", err)
+				} else {
+					c.LogDebug("Stopped healthd sidecar")
+				}
 			}
 		}
 	}
 
-	var errs error
 	if err := stack.Run(client.ActionEnsure); err != nil {
 		c.LogError("Getting resources", "error", err)
 		errs = errors.Join(errs, err)
 	}
 
-	if err := stack.ForAction(client.ActionStop).Run(client.ActionStop, client.OptionForce(), client.OptionTimeout(params.timeout)); err != nil {
-		c.LogWarn("Stopping resources", "error", err)
-		errs = errors.Join(errs, err)
+	errStop := stack.ForAction(client.ActionStop).Run(client.ActionStop, client.OptionForce(), client.OptionTimeout(params.timeout))
+	if errStop != nil {
+		c.LogWarn("Stopping resources", "error", errStop)
+		errs = errors.Join(errs, errStop)
 	}
 
-	if err := stack.ForAction(client.ActionDelete).Run(client.ActionDelete, client.OptionForce(), client.OptionTimeout(params.timeout)); err != nil {
-		c.LogWarn("Deleting resources", "error", err)
-		errs = errors.Join(errs, err)
+	errDel := stack.ForAction(client.ActionDelete).Run(client.ActionDelete, client.OptionForce(), client.OptionTimeout(params.timeout))
+	if errDel != nil {
+		c.LogWarn("Deleting resources", "error", errDel)
+		errs = errors.Join(errs, errDel)
 	}
 
 	if errs != nil {
 		return errLogged.Wrap(errs)
 	}
 
-	c.LogDebug("All done")
 	return nil
 }

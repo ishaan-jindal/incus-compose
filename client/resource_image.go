@@ -70,6 +70,10 @@ type Image struct {
 	GID        uint64
 	Entrypoint string
 	Cwd        string
+
+	// size is the total image size in bytes as reported by the source server,
+	// resolved best-effort before a download. 0 when unknown.
+	size int64
 }
 
 // newImage returns an existing Image resource or creates a new one.
@@ -160,6 +164,12 @@ func (r *Image) Status() string {
 // Remote returns the image remote.
 func (r *Image) Remote() string {
 	return r.remote
+}
+
+// Size returns the total image size in bytes as reported by the source server,
+// or 0 when unknown. It is resolved best-effort before a download starts.
+func (r *Image) Size() int64 {
+	return r.size
 }
 
 // NativeIncus returns true if this is a native Incus image.
@@ -317,6 +327,15 @@ func (r *Image) create(args Options) error {
 	// Check if the cache has the alias
 	_, _, err := r.cache.GetImageAlias(r.incusName)
 	if err != nil {
+		// Resolve the total size up front so progress display can show scale
+		// even for OCI pulls, which report no percentage. Best-effort: the
+		// alias lookup is cached by the source server and reused by CopyImage.
+		if alias, _, aerr := r.source.GetImageAlias(r.image); aerr == nil && alias != nil {
+			if img, _, ierr := r.source.GetImage(alias.Target); ierr == nil && img != nil {
+				r.size = img.Size
+			}
+		}
+
 		// Build image info for copy
 		sourceImgInfo := &incusApi.Image{
 			Fingerprint: r.image,

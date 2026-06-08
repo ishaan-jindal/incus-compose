@@ -67,9 +67,12 @@ var startCommand = &cli.Command{
 			errs = errors.Join(errs, err)
 		}
 
-		if err := stack.ForAction(client.ActionStart).Run(client.ActionStart, client.OptionTimeout(timeout)); err != nil {
-			c.LogError("Starting resources", "error", err)
-			errs = errors.Join(errs, err)
+		finish := startProgress(globalClient, c, cmd.Root().ErrWriter)
+		errStart := stack.ForAction(client.ActionStart).Run(client.ActionStart, client.OptionTimeout(timeout))
+		finish(errStart == nil)
+		if errStart != nil {
+			c.LogError("Starting resources", "error", errStart)
+			errs = errors.Join(errs, errStart)
 		}
 
 		if errs != nil {
