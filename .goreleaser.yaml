@@ -5,18 +5,14 @@ version: 2
 builds:
   - id: "incus-compose"
     main: ./cmd/incus-compose
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
     ldflags:
       - -s -w -X gitlab.com/r3j0/incus-compose/cmd/incus-compose/version.Version={{ .Version }}
-
-# archives:
-#   - formats: [tar.gz]
-#     # this name template makes the OS and Arch compatible with the results of `uname`.
-#     name_template: >-
-#       {{ .ProjectName }}_
-#       {{- title .Os }}_
-#       {{- if eq .Arch "amd64" }}x86_64
-#       {{- else if eq .Arch "386" }}i386
-#       {{- else }}{{ .Arch }}{{ end }}
 
 changelog:
   sort: asc
@@ -27,6 +23,9 @@ changelog:
 
 nfpms:
   - maintainer: "Rene Jochum <rene@jochum.dev>"
+    description: Bring the familiar Docker Compose workflow to Incus containers.
+    homepage: https://gitlab.com/r3j0/incus-compose
+    license: APACHE-2.0
     # file_name_template: "{{ .ConventionalFileName }}" # optional, better file names
     formats:
       - deb
