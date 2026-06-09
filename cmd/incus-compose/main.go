@@ -58,7 +58,7 @@ func buildLoadOptions(cmd *cli.Command) []project.LoadOption {
 	}
 
 	if cfile != "" {
-		incusCFile := filepath.Join(filepath.Dir(cfile), "compose.incus.yaml")
+		incusCFile := filepath.Join(filepath.Dir(cfile), strings.TrimSuffix(filepath.Base(cfile), filepath.Ext(cfile))+".incus.yaml")
 		if _, err := os.Stat(incusCFile); err == nil {
 			files = append(files, incusCFile)
 		}
