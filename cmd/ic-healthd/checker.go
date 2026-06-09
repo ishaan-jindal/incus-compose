@@ -79,6 +79,15 @@ func (c *Checker) Run(ctx context.Context, inStart bool, startInstance bool) {
 				if c.status != client.HealthStatusHealthy {
 					c.status = client.HealthStatusHealthy
 				}
+
+				if inStart {
+					// Start the normal checker after the first instart checker succeeded.
+					cancel()
+					c.Run(origCtx, true, true)
+
+					// Do not start the checker again.
+					inStart = false
+				}
 			} else {
 				c.failures++
 				slog.Warn("check failed",
