@@ -47,6 +47,7 @@ OPTIONS:
 -i IMAGE        Base image (default: ${IMAGE})
 -r REPO         Incus repository: stable, lts-6.0, lts-7.0, daily (default: ${INCUS_REPO})
 -l ADDRESS      Add port proxy (example: 127.0.0.1:2443) (default: "")
+-p POOL         Storage pool to create (default: ${STORAGE_POOL})
 -f              Force delete any existing container (default: false)
 -h              Show this help message
 

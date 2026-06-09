@@ -4,6 +4,8 @@ To get an idea about the project read [README.md](README.md).
 
 This document contains **AI-specific and meta rules only**.
 
+Always ask before guessing.
+
 ## Claude Agents
 
 Use `.claude/settings*.json` and `.claude/commands/*`.

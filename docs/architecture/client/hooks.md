@@ -213,6 +213,27 @@ projectA, _ := globalClient.EnsureProject("projectA", true)
 projectA.AddHookBefore(projectALogger)  // Only projectA
 ```
 
+## Concurrency
+
+Hooks run inside the WorkerPool — multiple hooks may fire concurrently for
+different resources. Any state shared between hook invocations must be protected:
+
+```go
+var mu sync.Mutex
+counts := map[string]int{}
+
+client.AddHookAfter(func(action Action, r Resource, _ Options, err error) error {
+    mu.Lock()
+    defer mu.Unlock()
+
+    counts[r.Kind()]++
+    return err
+})
+```
+
+Read-only closures that capture only immutable values (string literals, slices
+built before registration) are safe without a mutex.
+
 ## Best Practices
 
 **Keep hooks simple** - Complex logic should be in separate functions.

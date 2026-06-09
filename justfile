@@ -34,7 +34,7 @@ update-snapshots folder="./...":
     CI=1 UPDATE_SNAPSHOTS=true go test {{ folder }} || true
 
 # Dev install creates your dev environment: `just dev-install [container] [listen] [project] [image]`
-dev-install container_name="local:incus-compose-test" listen='127.0.0.1:1443' project='default' image='images:debian/trixie' storagepool='detect':
+dev-install container_name="local:ict" listen='127.0.0.1:1443' project='default' image='images:debian/trixie' storagepool='default':
     @just make-nested "{{ container_name }}" "{{ image }}" "{{ listen }}" "{{ project }}" "{{ storagepool }}"
 
 # Run commands in the nested incus.
@@ -135,7 +135,7 @@ pre-commit:
     just test-local
 
 [private]
-make-nested container='local:incus-compose-test' image='images:debian/trixie' listen="" project="default" storagepool="detect":
+make-nested container='local:ict' image='images:debian/trixie' listen="127.0.0.1:1443" project="default" storagepool="default":
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -192,3 +192,6 @@ make-nested container='local:incus-compose-test' image='images:debian/trixie' li
     echo "${ENV_DATA}" >> ./.env
 
     echo -e "\nAdded the nested incus configuration to .env:\n${ENV_DATA}"
+
+    incus remote remove "${container##*:}" || exit 0
+    incus remote add "${container##*:}" "${url}" --accept-certificate

@@ -23,6 +23,8 @@ Health check config and runtime state live in the instance's `user.*` config key
 There is no separate config file. ic-healthd reads these keys at startup and on
 every check cycle via `GetInstancesFull`.
 
+Read the docker docs about healthchecks to understand these values: https://docs.docker.com/reference/dockerfile#healthcheck
+
 ```
 user.healthcheck.test      '["CMD","wget","-q","--spider","http://localhost"]'
 user.healthcheck.interval  10s
