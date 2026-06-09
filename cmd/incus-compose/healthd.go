@@ -560,22 +560,29 @@ var healthdReloadCommand = &cli.Command{
 		}
 		defer func() { _ = c.Done() }()
 
+		// Render live progress for the ensure phase, where image downloads happen.
+		finish := startProgress(globalClient, c, cmd.Root().ErrWriter)
+
 		h, err := healthdResolve(c)
 		if err != nil {
 			c.LogError(err.Error())
+			finish(false)
 			return errLogged.Wrap(err)
 		}
 
 		if err := h.Ensure(); err != nil {
 			c.LogError("Ensuring healthd", "error", err)
+			finish(false)
 			return errLogged.Wrap(err)
 		}
 
 		if err := healthdReload(c, h); err != nil {
 			c.LogError("Reloading healthd", "error", err)
+			finish(false)
 			return errLogged.Wrap(err)
 		}
 
+		finish(true)
 		return nil
 	},
 }
@@ -613,14 +620,19 @@ var healthdRestartCommand = &cli.Command{
 		}
 		defer func() { _ = c.Done() }()
 
+		// Render live progress for the ensure phase, where image downloads happen.
+		finish := startProgress(globalClient, c, cmd.Root().ErrWriter)
+
 		h, err := healthdResolve(c)
 		if err != nil {
 			c.LogError(err.Error())
+			finish(false)
 			return errLogged.Wrap(err)
 		}
 
 		if err := h.Ensure(); err != nil {
 			c.LogError("Ensuring healthd", "error", err)
+			finish(false)
 			return errLogged.Wrap(err)
 		}
 
@@ -631,14 +643,17 @@ var healthdRestartCommand = &cli.Command{
 
 		if err := h.Start(); err != nil {
 			c.LogError("Starting healthd", "error", err)
+			finish(false)
 			return errLogged.Wrap(err)
 		}
 
 		if err := healthdRegisterReloader(c, h); err != nil {
 			c.LogError("Registering healthd reloader", "error", err)
+			finish(false)
 			return errLogged.Wrap(err)
 		}
 
+		finish(true)
 		return nil
 	},
 }
@@ -718,6 +733,9 @@ var healthdUpCommand = &cli.Command{
 		}
 		defer func() { _ = c.Done() }()
 
+		// Render live progress for the ensure phase, where image downloads happen.
+		finish := startProgress(globalClient, c, cmd.Root().ErrWriter)
+
 		if params.reCreate {
 			if existing, resources, err := healthdGetResources(c, params); err == nil {
 				if e := healthdDown(c, existing, resources, params.timeout); e != nil {
@@ -729,14 +747,17 @@ var healthdUpCommand = &cli.Command{
 		inst, resources, err := healthdGetResources(c, params)
 		if err != nil {
 			globalClient.LogError("Creating healthd resources", "error", err)
+			finish(false)
 			return errLogged.Wrap(err)
 		}
 
 		if err := healthdUp(c, inst, resources, params); err != nil {
 			globalClient.LogError("Starting healthd", "error", err)
+			finish(false)
 			return errLogged.Wrap(err)
 		}
 
+		finish(true)
 		return nil
 	},
 }
@@ -789,12 +810,18 @@ var healthdDownCommand = &cli.Command{
 		}
 		defer func() { _ = c.Done() }()
 
+		// Render live progress for the ensure phase, where image downloads happen.
+		finish := startProgress(globalClient, c, cmd.Root().ErrWriter)
+
 		inst, resources, err := healthdGetResources(c, params)
 		if err != nil {
 			globalClient.LogError("Getting healthd resources", "error", err)
+			finish(false)
 			return errLogged.Wrap(err)
 		}
 
-		return healthdDown(c, inst, resources, params.timeout)
+		err = healthdDown(c, inst, resources, params.timeout)
+		finish(err == nil)
+		return err
 	},
 }

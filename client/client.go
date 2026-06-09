@@ -593,11 +593,11 @@ func (c *Client) NetworkForIP(ip string) (string, error) {
 func AddDebuggerHook(c *GlobalClient) {
 	c.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
 		if err != nil {
-			c.LogDebug("Result with error", "name", r.Name(), "kind", r.Kind(), "action", action, "error", err)
+			c.LogDebug("Result with error", "name", r.Name(), "kind", r.Kind(), "action", action, "created", r.Created(), "error", err)
 			return err
 		}
 
-		c.LogDebug("Done", "name", r.Name(), "kind", r.Kind(), "action", action)
+		c.LogDebug("Done", "name", r.Name(), "kind", r.Kind(), "action", action, "created", r.Created())
 		return nil
 	})
 }
