@@ -572,6 +572,28 @@ func (s *LoadProjectTestSuite) TestExternalNetworkOverrideNameParsed() {
 	s.Equal("incusbr0", namedOverride.IncusName(), "initial incusName uses raw override")
 }
 
+// TestContainerNameUsedAsInstanceName verifies that container_name overrides the default {service}-{index} naming.
+func (s *LoadProjectTestSuite) TestContainerNameUsedAsInstanceName() {
+	proj, err := project.New().Load(
+		s.ctx, project.LoadWorkingDir(s.fixturePath("with-container-name")),
+	)
+	s.Require().NoError(err)
+
+	c := client.NewOfflineClient(s.ctx, proj.Name)
+	stack := client.NewStack(c)
+	s.Require().NoError(proj.ToStack(c, stack))
+
+	var instanceName string
+	for _, r := range stack.All() {
+		if r.Kind() == client.KindInstance {
+			instanceName = r.IncusName()
+			break
+		}
+	}
+
+	s.Equal("my-nginx", instanceName, "container_name should be used as instance name")
+}
+
 // TestLoadProjectSuite runs the test suite.
 func TestLoadProjectSuite(t *testing.T) {
 	// Skip if fixtures don't exist.

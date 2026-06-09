@@ -608,8 +608,11 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	// They will be used for compose-specific transformations in future updates.
 	_ = serviceXIncusComposeExtensions(service)
 
-	// Instance name follows Docker Compose convention: {service}-{index}
+	// Instance name: container_name takes precedence, otherwise {service}-{index}.
 	instanceName := fmt.Sprintf("%s-%d", service.Name, index)
+	if service.ContainerName != "" {
+		instanceName = service.ContainerName
+	}
 
 	var instanceConfig *client.InstanceConfig
 	if image != nil {

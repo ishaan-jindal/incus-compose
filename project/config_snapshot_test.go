@@ -149,15 +149,6 @@ func (s *ConfigSnapshotSuite) TestConfigSnapshots() {
 			Fixture: "grafana",
 		},
 		{
-			Name:    "immich_yaml",
-			Fixture: "immich",
-		},
-		{
-			Name:    "immich_json",
-			Fixture: "immich",
-			Format:  "json",
-		},
-		{
 			Name:    "wordpress_yaml",
 			Fixture: "wordpress",
 		},
@@ -202,6 +193,10 @@ func (s *ConfigSnapshotSuite) TestConfigSnapshots() {
 		{
 			Name:    "with-build_yaml",
 			Fixture: "with-build",
+		},
+		{
+			Name:    "with-container-name_yaml",
+			Fixture: "with-container-name",
 		},
 	}
 

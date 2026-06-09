@@ -1,0 +1,15 @@
+name: with-container-name
+services:
+  web:
+    container_name: my-nginx
+    image: docker.io/nginx:alpine
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 80
+        published: "8080"
+        protocol: tcp
+networks:
+  default:
+    name: with-container-name_default
