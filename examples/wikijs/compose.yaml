@@ -9,14 +9,14 @@ services:
       driver: none
     restart: unless-stopped
     volumes:
-      - database:/var/lib/postgresql/data
+      - database:/var/lib/postgresql
 
   wiki:
     image: ghcr.io/requarks/wiki:${WIKIJS_VERSION}
     depends_on:
       database:
         condition: service_healthy
-        restart: true
+        restart: true # restart wiki after database - not supported
     init: true
     environment:
       DB_TYPE: postgres
