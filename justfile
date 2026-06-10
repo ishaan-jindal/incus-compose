@@ -134,6 +134,10 @@ pre-commit:
     just lint
     just test-local
 
+push: pre-commit
+    git push
+    git push github
+
 [private]
 make-nested container='local:ict' image='images:debian/trixie' listen="127.0.0.1:1443" project="default" storagepool="default":
     #!/usr/bin/env bash

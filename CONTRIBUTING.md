@@ -7,7 +7,6 @@ Thank you for your interest in contributing! This document outlines the conventi
 **KISS** - Keep It Simple, Stupid. As well as "boring" code. These are the guiding principles for all work.
 
 - Prefer shallow package structure over deep nesting
-- Use `internal/` for implementation details
 - Direct code over abstractions
 - Working software over perfect architecture
 - Simple solutions over clever ones
@@ -54,9 +53,10 @@ feature completeness or test coverage.
 ```
 incus-compose/
 ├── cmd/incus-compose/    # CLI entry point
+|-- cmd/ic-healthd/       # Sidecar
 ├── client/               # High-level Incus client wrapper
+|-- examples/             # Example projects
 ├── project/              # Compose project loading and service translation
-├── internal/             # Private implementation details (use as needed)
 ├── docs/                 # User-facing documentation
 └── test/                 # Tests and fixtures
 ```
@@ -64,9 +64,10 @@ incus-compose/
 **Package Guidelines**:
 
 - `cmd/incus-compose/` - CLI flag parsing, command handlers, wiring only
+- `cmd/ic-healthd/` - Sidecar for health checking and instance restarts
 - `client/` - High-level Incus wrapper, resource management, transactions
+- `examples/` - Example projects ready to use with incus-compose
 - `project/` - Compose-spec loading via compose-go, service-to-instance translation
-- `internal/` - Implementation details that shouldn't be imported externally
 - Root package - No code at root level (all in packages)
 
 **Don't create**:
@@ -152,11 +153,6 @@ if strings.Contains(err.Error(), "not found") { }
 if errors.Is(err, ErrNotFound) { }
 ```
 
-### Imports
-
-- Use gci for import ordering (enforced by linter)
-- Group: stdlib, external, internal
-
 ### Commit Messages
 
 Use conventional commit format with package scope:
@@ -200,15 +196,6 @@ These aren't hard rules, but following them helps maintain consistency:
 ### Keep it direct
 
 Avoid intermediate variables when the expression is clear:
-
-```go
-// Preferred
-err = r.client.hookOperation(r.client.globalClient.Ctx, ActionStop, r, options, op, err)
-
-// Avoid
-ctx := r.client.globalClient.Ctx
-err = r.client.hookOperation(ctx, ActionStop, r, options, op, err)
-```
 
 ### Unused parameters
 
