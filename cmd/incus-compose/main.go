@@ -101,8 +101,9 @@ func initLogger(debug bool) {
 		level = slog.LevelDebug
 	}
 
+	logWriter.Swap(colorable.NewColorable(os.Stderr))
 	logger := slog.New(tint.NewHandler(
-		colorable.NewColorable(os.Stderr),
+		logWriter,
 		&tint.Options{
 			NoColor:    noColor,
 			Level:      level,
