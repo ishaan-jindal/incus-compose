@@ -264,6 +264,10 @@ func (r *Profile) HasDevice(name string) bool {
 // Delete removes the profile from Incus.
 func (r *Profile) Delete(opts ...Option) error {
 	if !r.IsEnsured() {
+		r.IncusProfile = nil
+		r.ETag = ""
+
+		r.client.resources.Remove(r)
 		return nil // Nothing to delete
 	}
 
@@ -271,6 +275,10 @@ func (r *Profile) Delete(opts ...Option) error {
 
 	if r.client.hookBefore != nil {
 		if err := r.client.hookBefore(ActionDelete, r, options, nil); err != nil {
+			r.IncusProfile = nil
+			r.ETag = ""
+
+			r.client.resources.Remove(r)
 			return err
 		}
 	}
@@ -283,12 +291,17 @@ func (r *Profile) Delete(opts ...Option) error {
 	}
 
 	if err != nil {
+		r.IncusProfile = nil
+		r.ETag = ""
+
+		r.client.resources.Remove(r)
 		return err
 	}
 
-	// Clear state
 	r.IncusProfile = nil
 	r.ETag = ""
+
+	r.client.resources.Remove(r)
 	return nil
 }
 

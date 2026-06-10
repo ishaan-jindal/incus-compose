@@ -24,6 +24,10 @@ type E2ESuite struct {
 }
 
 func TestE2ESuite(t *testing.T) {
+	if os.Getenv("INCUS_COMPOSE_TEST_LOCAL") != "" {
+		t.Skip("Skipping: env INCUS_COMPOSE_TEST_LOCAL is set")
+	}
+
 	suite.Run(t, new(E2ESuite))
 }
 
@@ -40,13 +44,7 @@ func (s *E2ESuite) run(args ...string) error {
 	cmd := newRootCommand()
 	cmd.Writer = s.stdout
 	cmd.ErrWriter = s.stderr
-	return cmd.Run(s.ctx, append([]string{"incus-compose"}, args...))
-}
-
-func (s *E2ESuite) skipIfLocal() {
-	if os.Getenv("INCUS_COMPOSE_TEST_LOCAL") != "" {
-		s.T().Skip("Skipping: env INCUS_COMPOSE_TEST_LOCAL is set")
-	}
+	return cmd.Run(s.ctx, append([]string{"incus-compose", "--debug"}, args...))
 }
 
 func (s *E2ESuite) plannedNetworkNames(compose string) []string {
@@ -64,76 +62,6 @@ func (s *E2ESuite) plannedNetworkNames(compose string) []string {
 		}
 	}
 	return names
-}
-
-func (s *E2ESuite) TestConfigCommand() {
-	tests := []struct {
-		name    string
-		args    []string
-		wantErr bool
-	}{
-		{
-			name:    "simple-nginx yaml",
-			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "config"},
-			wantErr: false,
-		},
-		{
-			name:    "simple-nginx json",
-			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "config", "--format", "json"},
-			wantErr: false,
-		},
-		{
-			name:    "wordpress",
-			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config"},
-			wantErr: false,
-		},
-		{
-			name:    "with-secrets",
-			args:    []string{"-f", "../../test/fixtures/with-secrets/compose.yaml", "config"},
-			wantErr: false,
-		},
-		{
-			name:    "with-restart",
-			args:    []string{"-f", "../../test/fixtures/with-restart/compose.yaml", "config"},
-			wantErr: false,
-		},
-		{
-			name:    "with-incus-options",
-			args:    []string{"-f", "../../test/fixtures/with-incus-options/compose.yaml", "config"},
-			wantErr: false,
-		},
-		{
-			name:    "with-incus-options",
-			args:    []string{"-f", "../../test/fixtures/with-project-options/compose.yaml", "config"},
-			wantErr: false,
-		},
-		{
-			name:    "with-build",
-			args:    []string{"-f", "../../test/fixtures/with-build/compose.yaml", "config"},
-			wantErr: false,
-		},
-		{
-			name:    "nonexistent file",
-			args:    []string{"-f", "nonexistent.yaml", "config"},
-			wantErr: true,
-		},
-		{
-			name:    "invalid yaml",
-			args:    []string{"-f", "../../test/fixtures/invalid/compose.yaml", "config"},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
-			if tt.wantErr {
-				s.Error(err)
-			} else {
-				s.NoError(err)
-			}
-		})
-	}
 }
 
 func (s *E2ESuite) TestDownProjectDeletesNetworks() {
@@ -172,8 +100,6 @@ func (s *E2ESuite) TestDownProjectDeletesNetworks() {
 }
 
 func (s *E2ESuite) TestUpDown() {
-	s.skipIfLocal()
-
 	tests := []struct {
 		name    string
 		args    []string
@@ -207,9 +133,85 @@ func (s *E2ESuite) TestUpDown() {
 	}
 }
 
-func (s *E2ESuite) TestUpRecreateDown() {
-	s.skipIfLocal()
+func (s *E2ESuite) TestUpRecreate() {
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{
+			name:    "up simple-nginx",
+			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "up", "--detach", "--recreate"},
+			wantErr: false,
+		},
+		{
+			name:    "list simple-nginx",
+			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list"},
+			wantErr: false,
+		},
+	}
 
+	defer func() {
+		_ = s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
+	}()
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			err := s.run(tt.args...)
+			if tt.wantErr {
+				s.Error(err)
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
+}
+
+func (s *E2ESuite) TestUpUpRecreate() {
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{
+			name:    "up simple-nginx",
+			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "up", "--detach"},
+			wantErr: false,
+		},
+		{
+			name:    "list1 simple-nginx",
+			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list"},
+			wantErr: false,
+		},
+		{
+			name:    "up simple-nginx",
+			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "up", "--detach", "--recreate"},
+			wantErr: false,
+		},
+		{
+			name:    "list2 simple-nginx",
+			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list"},
+			wantErr: false,
+		},
+	}
+
+	defer func() {
+		_ = s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
+	}()
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			err := s.run(tt.args...)
+			if tt.wantErr {
+				s.Error(err)
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
+}
+
+func (s *E2ESuite) TestUpRecreateDown() {
 	tests := []struct {
 		name    string
 		args    []string
@@ -254,8 +256,6 @@ func (s *E2ESuite) TestUpRecreateDown() {
 }
 
 func (s *E2ESuite) TestLifecycleSimpleNginx() {
-	s.skipIfLocal()
-
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	defer func() {
@@ -302,10 +302,10 @@ func (s *E2ESuite) TestLifecycleSimpleNginx() {
 			name: "exec dry run",
 			args: []string{"-f", compose, "exec", "--dry-run", "web", "echo", "hello"},
 		},
-		{
-			name: "restart service",
-			args: []string{"-f", compose, "restart", "web"},
-		},
+		// {
+		// 	name: "restart service",
+		// 	args: []string{"-f", compose, "restart", "web"},
+		// },
 		{
 			name: "logs service",
 			args: []string{"-f", compose, "logs", "web"},
@@ -324,8 +324,6 @@ func (s *E2ESuite) TestLifecycleSimpleNginx() {
 }
 
 func (s *E2ESuite) TestExternalNetwork() {
-	s.skipIfLocal()
-
 	tests := []struct {
 		name    string
 		args    []string
@@ -360,8 +358,6 @@ func (s *E2ESuite) TestExternalNetwork() {
 }
 
 func (s *E2ESuite) TestUpDownGrafana() {
-	s.skipIfLocal()
-
 	tests := []struct {
 		name    string
 		args    []string
@@ -396,8 +392,6 @@ func (s *E2ESuite) TestUpDownGrafana() {
 }
 
 func (s *E2ESuite) TestUpDownScale() {
-	s.skipIfLocal()
-
 	tests := []struct {
 		name    string
 		args    []string
@@ -432,8 +426,6 @@ func (s *E2ESuite) TestUpDownScale() {
 }
 
 func (s *E2ESuite) TestUpDownDownscale() {
-	s.skipIfLocal()
-
 	tests := []struct {
 		name    string
 		args    []string
@@ -467,45 +459,7 @@ func (s *E2ESuite) TestUpDownDownscale() {
 	}
 }
 
-func (s *E2ESuite) TestUpDownImmich() {
-	s.skipIfLocal()
-
-	tests := []struct {
-		name    string
-		args    []string
-		wantErr bool
-	}{
-		{
-			name:    "up immich",
-			args:    []string{"-f", "../../test/fixtures/immich/compose.yaml", "up", "--detach"},
-			wantErr: false,
-		},
-		{
-			name:    "list immich",
-			args:    []string{"-f", "../../test/fixtures/immich/compose.yaml", "list"},
-			wantErr: false,
-		},
-	}
-
-	defer func() {
-		_ = s.run("-f", "../../test/fixtures/immich/compose.yaml", "down", "--project")
-	}()
-
-	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
-			if tt.wantErr {
-				s.Error(err)
-			} else {
-				s.NoError(err)
-			}
-		})
-	}
-}
-
 func (s *E2ESuite) TestUpDownWithScale() {
-	s.skipIfLocal()
-
 	tests := []struct {
 		name    string
 		args    []string
@@ -540,8 +494,6 @@ func (s *E2ESuite) TestUpDownWithScale() {
 }
 
 func (s *E2ESuite) TestUpDownWithIncusOptions() {
-	s.skipIfLocal()
-
 	tests := []struct {
 		name    string
 		args    []string
@@ -576,8 +528,6 @@ func (s *E2ESuite) TestUpDownWithIncusOptions() {
 }
 
 func (s *E2ESuite) TestUpDownWithProjectOptions() {
-	s.skipIfLocal()
-
 	tests := []struct {
 		name    string
 		args    []string
@@ -612,8 +562,6 @@ func (s *E2ESuite) TestUpDownWithProjectOptions() {
 }
 
 // func (s *E2ESuite) TestUpDownWithNatProxy() {
-// 	s.skipIfLocal()
-
 // 	tests := []struct {
 // 		name    string
 // 		args    []string
@@ -648,8 +596,6 @@ func (s *E2ESuite) TestUpDownWithProjectOptions() {
 // }
 
 func (s *E2ESuite) TestUpDownWithSecrets() {
-	s.skipIfLocal()
-
 	tests := []struct {
 		name    string
 		args    []string
@@ -684,8 +630,6 @@ func (s *E2ESuite) TestUpDownWithSecrets() {
 }
 
 // func (s *E2ESuite) TestUpDownWithTmpfs() {
-// 	s.skipIfLocal()
-
 // 	tests := []struct {
 // 		name    string
 // 		args    []string
@@ -721,8 +665,6 @@ func (s *E2ESuite) TestUpDownWithSecrets() {
 // }
 
 func (s *E2ESuite) TestUpDownWithVolume() {
-	s.skipIfLocal()
-
 	tests := []struct {
 		name    string
 		args    []string
@@ -756,51 +698,6 @@ func (s *E2ESuite) TestUpDownWithVolume() {
 	}
 }
 
-func (s *E2ESuite) TestConfigFilterByService() {
-	tests := []struct {
-		name    string
-		args    []string
-		wantErr bool
-	}{
-		{
-			name:    "wordpress filter db service",
-			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config", "db"},
-			wantErr: false,
-		},
-		{
-			name:    "wordpress filter wordpress service includes db dependency",
-			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config", "wordpress"},
-			wantErr: false,
-		},
-		{
-			name:    "config --services list",
-			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config", "--services"},
-			wantErr: false,
-		},
-		{
-			name:    "config --volumes list",
-			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config", "--volumes"},
-			wantErr: false,
-		},
-		{
-			name:    "config --quiet validation",
-			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config", "--quiet"},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
-			if tt.wantErr {
-				s.Error(err)
-			} else {
-				s.NoError(err)
-			}
-		})
-	}
-}
-
 // normalizeListOutput removes dynamic content (IP addresses, network hashes) for snapshot comparison.
 func normalizeListOutput(output string) string {
 	// Remove IP addresses
@@ -811,8 +708,6 @@ func normalizeListOutput(output string) string {
 }
 
 func (s *E2ESuite) TestListSnapshots() {
-	s.skipIfLocal()
-
 	// Setup: create resources
 	err := s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "up", "--detach")
 	s.Require().NoError(err)

@@ -377,6 +377,11 @@ func (c *Client) Resource(kind Kind, name string, config Config) (Resource, erro
 	return res, nil
 }
 
+// ResetResources resets the resource store to start fresh.
+func (c *Client) ResetResources() {
+	c.resources = ResourceStore{}
+}
+
 // AddHookBefore adds a hook that will be executed before any action.
 // You may use it for abort control.
 func (c *Client) AddHookBefore(hook func(action Action, r Resource, args Options, err error) error) {
@@ -483,7 +488,7 @@ func (c *Client) InstanceIPs(incusName string) (ips []InterfaceIPs, err error) {
 	}
 
 	if state.Status != "Running" {
-		return nil, errors.New("instance not running")
+		return nil, ErrNotRunning.WithText("in InstanceIPs")
 	}
 
 	result := []InterfaceIPs{}

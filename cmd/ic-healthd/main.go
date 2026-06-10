@@ -48,13 +48,14 @@ var runCommand = &cli.Command{
 			Sources: cli.EnvVars("IC_HEALTHD_INCUS_URL"),
 		},
 		&cli.StringSliceFlag{
-			Name:  "project",
-			Usage: "projects to manage",
+			Name:    "project",
+			Usage:   "projects to manage",
+			Sources: cli.EnvVars("IC_HEALTHD_INCUS_PROJECT"),
 		}, &cli.StringFlag{
 			Name:    "data-dir",
 			Usage:   "Persistent volume directory containing the generated cert/key",
 			Value:   defaultDataDir,
-			Sources: cli.EnvVars("IC_HEALTHD_INCUS_PROJECT"),
+			Sources: cli.EnvVars("IC_HEALTHD_DATA_DIR"),
 		},
 		&cli.StringFlag{
 			Name:    "secrets-dir",

@@ -162,28 +162,28 @@ func (r *StorageVolume) Start(_ ...Option) error {
 	}
 
 	// That part is very flaky.
-	img, ok := r.Config.ImageResource.(*Image)
-	if !ok {
-		errs = errors.Join(errs, ErrUnknownResource.WithResource(r.Config.ImageResource))
-		return errs
-	}
+	// img, ok := r.Config.ImageResource.(*Image)
+	// if !ok {
+	// 	errs = errors.Join(errs, ErrUnknownResource.WithResource(r.Config.ImageResource))
+	// 	return errs
+	// }
 
-	if !img.IsEnsured() {
-		errs = errors.Join(errs, ErrNotEnsured.WithResource(img))
-		return errs
-	}
+	// if !img.IsEnsured() {
+	// 	errs = errors.Join(errs, ErrNotEnsured.WithResource(img))
+	// 	return errs
+	// }
 
-	// Check UID/GID match
-	expectedUID := strconv.FormatUint(img.UID, 10)
-	expectedGID := strconv.FormatUint(img.GID, 10)
+	// // Check UID/GID match
+	// expectedUID := strconv.FormatUint(img.UID, 10)
+	// expectedGID := strconv.FormatUint(img.GID, 10)
 
-	if r.IncusVolume.Config["initial.uid"] != expectedUID {
-		errs = errors.Join(errs, fmt.Errorf("UID mismatch, expected %s got %s", expectedUID, r.IncusVolume.Config["initial.uid"]))
-	}
+	// if r.IncusVolume.Config["initial.uid"] != expectedUID {
+	// 	errs = errors.Join(errs, fmt.Errorf("UID mismatch, expected %s got %s", expectedUID, r.IncusVolume.Config["initial.uid"]))
+	// }
 
-	if r.IncusVolume.Config["initial.gid"] != expectedGID {
-		errs = errors.Join(errs, fmt.Errorf("GID mismatch, expected %s got %s", expectedGID, r.IncusVolume.Config["initial.gid"]))
-	}
+	// if r.IncusVolume.Config["initial.gid"] != expectedGID {
+	// 	errs = errors.Join(errs, fmt.Errorf("GID mismatch, expected %s got %s", expectedGID, r.IncusVolume.Config["initial.gid"]))
+	// }
 
 	return errs
 }
@@ -302,6 +302,10 @@ func (r *StorageVolume) pushDirectoryContent() error {
 // Delete removes the storage volume from Incus.
 func (r *StorageVolume) Delete(opts ...Option) error {
 	if !r.IsEnsured() {
+		r.IncusVolume = nil
+		r.ETag = ""
+
+		r.client.resources.Remove(r)
 		return nil
 	}
 
@@ -309,6 +313,10 @@ func (r *StorageVolume) Delete(opts ...Option) error {
 
 	if r.client.hookBefore != nil {
 		if err := r.client.hookBefore(ActionDelete, r, options, nil); err != nil {
+			r.IncusVolume = nil
+			r.ETag = ""
+
+			r.client.resources.Remove(r)
 			return err
 		}
 	}
@@ -320,12 +328,17 @@ func (r *StorageVolume) Delete(opts ...Option) error {
 	}
 
 	if err != nil {
+		r.IncusVolume = nil
+		r.ETag = ""
+
+		r.client.resources.Remove(r)
 		return err
 	}
 
-	// Clear state
 	r.IncusVolume = nil
 	r.ETag = ""
+
+	r.client.resources.Remove(r)
 	return nil
 }
 

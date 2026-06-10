@@ -193,38 +193,11 @@ type upParams struct {
 	services          []string
 	start             bool
 	reCreate          bool
-	noVolumes         bool
-	noImages          bool
 	pull              string
 	build             client.BuildMode
 	timeout           time.Duration
 	dependencyTimeout time.Duration
 	scale             map[string]int
-}
-
-func upMakeStack(params upParams, p *project.Project, c *client.Client) (*client.Stack, error) {
-	stack := client.NewStack(c)
-
-	toStackOpts := []project.ToStackOption{}
-	if !params.noVolumes {
-		toStackOpts = append(toStackOpts, project.ToStackStorageVolumes())
-	}
-	if params.noImages {
-		toStackOpts = append(toStackOpts, project.ToStackNoImages())
-	}
-	if len(params.services) > 0 {
-		toStackOpts = append(toStackOpts, project.ToStackOnlyServices(params.services))
-	}
-	if len(params.scale) > 0 {
-		toStackOpts = append(toStackOpts, project.ToStackScale(params.scale))
-	}
-	err := p.ToStack(c, stack, toStackOpts...)
-	if err != nil {
-		c.LogError("Adding the project to a stack", "error", err)
-		return nil, errLogged.Wrap(err)
-	}
-
-	return stack, nil
 }
 
 // parseScale parses --scale flags of the form "service=num".
@@ -261,15 +234,20 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 	// }()
 
 	if params.reCreate {
-		params.noVolumes = true
-		params.noImages = true
-		stack, err := upMakeStack(params, p, c)
+		stack := client.NewStack(c)
+		toStackOpts := []project.ToStackOption{}
+		toStackOpts = append(toStackOpts, project.ToStackNoImages())
+		if len(params.services) > 0 {
+			toStackOpts = append(toStackOpts, project.ToStackOnlyServices(params.services))
+		}
+		if len(params.scale) > 0 {
+			toStackOpts = append(toStackOpts, project.ToStackScale(params.scale))
+		}
+		err := p.ToStack(c, stack, toStackOpts...)
 		if err != nil {
 			c.LogError("Creating the stack in reCreate", "error", err)
 			return errLogged.Wrap(err)
 		}
-		params.noVolumes = false
-		params.noImages = false
 
 		c.LogDebug("Ensure", "resources", stack.All())
 
@@ -291,11 +269,24 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 				c.LogDebug("Deleting resources", "error", errDel)
 			}
 		}
+
+		// Start fresh after recreate
+		c.ResetResources()
 	}
 
-	stack, err := upMakeStack(params, p, c)
+	stack := client.NewStack(c)
+	toStackOpts := []project.ToStackOption{}
+	toStackOpts = append(toStackOpts, project.ToStackStorageVolumes())
+	if len(params.services) > 0 {
+		toStackOpts = append(toStackOpts, project.ToStackOnlyServices(params.services))
+	}
+	if len(params.scale) > 0 {
+		toStackOpts = append(toStackOpts, project.ToStackScale(params.scale))
+	}
+	err := p.ToStack(c, stack, toStackOpts...)
 	if err != nil {
-		return err
+		c.LogError("Adding the project to a stack", "error", err)
+		return errLogged.Wrap(err)
 	}
 
 	c.LogDebug("Ensure", "resources", stack.All())

@@ -1,5 +1,5 @@
 services:
-  immich-server:
+  server:
     ports: !reset []
     healthcheck:
       test: ["CMD", "/usr/src/app/server/bin/immich-healthcheck"]
@@ -12,9 +12,17 @@ services:
       default:
         ipv4_address: 10.131.32.17
 
-  immich-machine-learning:
+  machine-learning:
     healthcheck:
       test: ["CMD", "python3", "/usr/src/healthcheck.py"]
+
+  redis:
+    healthcheck:
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_interval: 1m
+      start_period: 4m
 
   database:
     healthcheck:
@@ -22,6 +30,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+      start_interval: 1m
+      start_period: 4m
 
 networks:
   default:

@@ -27,16 +27,22 @@ import (
 
 // Runner manages all health checkers.
 type Runner struct {
-	config        *Config
-	client        incus.InstanceServer
-	knownCheckers []string
+	config *Config
+	client incus.InstanceServer
+
+	knownMu       sync.Mutex
+	knownCheckers map[string]struct{}
 }
 
 // NewRunner creates a new runner with the given configuration.
 func NewRunner(cfg *Config) (*Runner, error) {
+	if len(cfg.Projects) == 0 {
+		return nil, errors.New("at least one --project is required")
+	}
+
 	return &Runner{
 		config:        cfg,
-		knownCheckers: []string{},
+		knownCheckers: map[string]struct{}{},
 	}, nil
 }
 
@@ -51,12 +57,10 @@ func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
 	slog.Debug("connected to incus", "project", r.config.Projects[0])
 
 	for {
-		runCtx, cancel := context.WithCancel(ctx)
-		r.startCheckers(runCtx)
+		r.startCheckers(ctx)
 
 		select {
 		case <-ctx.Done():
-			cancel()
 			return nil
 		case <-reload:
 			slog.Info("loading additional checkers")
@@ -70,28 +74,30 @@ func (r *Runner) startCheckers(ctx context.Context) {
 		slog.Warn("instance discovery had errors", "error", err)
 	}
 
-	var wg sync.WaitGroup
 	for name, inst := range instances {
-		if slices.Contains(r.knownCheckers, name) {
+		r.knownMu.Lock()
+		_, known := r.knownCheckers[name]
+		if !known {
+			r.knownCheckers[name] = struct{}{}
+		}
+		r.knownMu.Unlock()
+
+		if known {
 			continue
 		}
 
 		checker := NewChecker(r.client, name, inst)
-		wg.Add(1)
 		go func() {
-			defer wg.Done()
+			defer func() {
+				r.knownMu.Lock()
+				delete(r.knownCheckers, name)
+				r.knownMu.Unlock()
+			}()
 			checker.Run(ctx, true, false)
 		}()
-
-		r.knownCheckers = append(r.knownCheckers, name)
 	}
 
 	slog.Info("health daemon running", "instances", len(instances))
-
-	go func() {
-		wg.Wait()
-		r.knownCheckers = []string{}
-	}()
 }
 
 // connect returns an authenticated Incus client.
@@ -110,11 +116,7 @@ func (r *Runner) connect() (incus.InstanceServer, error) {
 	if !fileExists(certDataPath) && fileExists(tokenPath) {
 		slog.Debug("fresh token performing first-run registration")
 
-		// Source for register
-		certPath := filepath.Join(r.config.SecretsDir, certFile)
-		keyPath := filepath.Join(r.config.SecretsDir, keyFile)
-
-		if err := r.register(tokenPath, certPath, keyPath); err != nil {
+		if err := r.register(tokenPath); err != nil {
 			return nil, fmt.Errorf("first-run registration: %w", err)
 		}
 	} else if !fileExists(keyDataPath) || !fileExists(certDataPath) {
@@ -143,7 +145,9 @@ func (r *Runner) connect() (incus.InstanceServer, error) {
 // and asks the server to add it to the trust store using the one-time token.
 // The server reads the cert from the TLS handshake (see incusd certificates.go),
 // applies the restrictions stored in the token metadata, and returns trusted=true.
-func (r *Runner) register(tokenPath, certPath, keyPath string) error {
+// The cert/key are persisted to the data dir only after successful registration,
+// so a failed attempt is retried on the next run.
+func (r *Runner) register(tokenPath string) error {
 	tokenBytes, err := os.ReadFile(tokenPath)
 	if err != nil {
 		return fmt.Errorf("reading token: %w", err)
@@ -156,21 +160,6 @@ func (r *Runner) register(tokenPath, certPath, keyPath string) error {
 	certPEM, keyPEM, err := generateClientCert()
 	if err != nil {
 		return fmt.Errorf("generating cert: %w", err)
-	}
-
-	// Save key and cert
-	if err := os.MkdirAll(r.config.DataDir, 0o700); err != nil {
-		return fmt.Errorf("creating data-dir %v: %w", r.config.DataDir, err)
-	}
-
-	keySecretsPath := filepath.Join(r.config.DataDir, keyFile)
-	if err := os.WriteFile(keySecretsPath, keyPEM, 0o600); err != nil {
-		return fmt.Errorf("saving cert key %v: %w", keySecretsPath, err)
-	}
-
-	certSecretsPath := filepath.Join(r.config.DataDir, certFile)
-	if err := os.WriteFile(certSecretsPath, certPEM, 0o600); err != nil {
-		return fmt.Errorf("saving cert key %v: %w", certSecretsPath, err)
 	}
 
 	srv, err := incus.ConnectIncus(r.config.IncusURL, &incus.ConnectionArgs{
@@ -193,11 +182,18 @@ func (r *Runner) register(tokenPath, certPath, keyPath string) error {
 		return fmt.Errorf("registering cert with token: %w", err)
 	}
 
-	if err := os.WriteFile(certPath, certPEM, 0o600); err != nil {
-		return fmt.Errorf("persisting cert: %w", err)
+	if err := os.MkdirAll(r.config.DataDir, 0o700); err != nil {
+		return fmt.Errorf("creating data-dir %v: %w", r.config.DataDir, err)
 	}
-	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
-		return fmt.Errorf("persisting key: %w", err)
+
+	keyDataPath := filepath.Join(r.config.DataDir, keyFile)
+	if err := os.WriteFile(keyDataPath, keyPEM, 0o600); err != nil {
+		return fmt.Errorf("saving key %v: %w", keyDataPath, err)
+	}
+
+	certDataPath := filepath.Join(r.config.DataDir, certFile)
+	if err := os.WriteFile(certDataPath, certPEM, 0o600); err != nil {
+		return fmt.Errorf("saving cert %v: %w", certDataPath, err)
 	}
 
 	slog.Debug("certificate registered and persisted")
@@ -226,7 +222,7 @@ func (r *Runner) discover(client incus.InstanceServer) (map[string]InstanceConfi
 		}
 
 		restart := false
-		if slices.Contains([]string{"always", "on-failure", "on-failure:3", "unless-stopped"}, inst.Config["user.restart"]) {
+		if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, inst.Config["user.restart"]) {
 			restart = true
 			if inst.Config["user.healthcheck.test"] == "" {
 				inst.Config["user.healthcheck.test"] = "[\"NONE\"]"
@@ -266,6 +262,10 @@ func parseInstance(cfg map[string]string) (InstanceConfig, error) {
 		return svc, fmt.Errorf("parsing test: %w", err)
 	}
 
+	if len(svc.Test) > 0 && svc.Test[0] == "CMD-SHELL" && len(svc.Test) < 2 {
+		return svc, errors.New("CMD-SHELL requires a command")
+	}
+
 	if v := cfg["user.healthcheck.start_period"]; v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
@@ -303,10 +303,13 @@ func parseInstance(cfg map[string]string) (InstanceConfig, error) {
 		if err != nil {
 			return svc, fmt.Errorf("parsing retries: %w", err)
 		}
+		if n == 0 {
+			return svc, errors.New("retries must be greater than 0")
+		}
 		svc.Retries = int(n)
 	}
 
-	if slices.Contains([]string{"always", "on-failure", "on-failure:3", "unless-stopped"}, cfg["user.restart"]) {
+	if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, cfg["user.restart"]) {
 		svc.Restart = true
 	}
 
@@ -315,7 +318,7 @@ func parseInstance(cfg map[string]string) (InstanceConfig, error) {
 	}
 
 	if svc.Interval > 0 && svc.Retries > 0 {
-		svc.RestartDelay = time.Duration(svc.Interval.Nanoseconds() * int64(svc.Retries))
+		svc.RestartDelay = min(svc.Interval*time.Duration(svc.Retries), maxRestartDelay)
 	} else {
 		svc.RestartDelay = defaultRestartDelay
 	}

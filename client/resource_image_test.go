@@ -550,6 +550,28 @@ func (s *ImageSuite) TestConfig_RemoteAndImageParsed() {
 }
 
 // ----------------------------------------------------------------------------
+// Properties test
+// ----------------------------------------------------------------------------
+
+func (s *ImageSuite) TestProperties() {
+	r, err := s.client.Resource(KindImage, "registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest", &ImageConfig{})
+	s.Require().NoError(err)
+
+	err = RunAction(r, ActionEnsure, OptionCreate())
+	s.Require().NoError(err)
+
+	s.cleanup = append(s.cleanup, r)
+
+	image, ok := r.(*Image)
+	s.Require().True(ok)
+	s.Equal("registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest", image.Name())
+
+	s.Equal("/", image.Cwd)
+	s.Equal(65534, int(image.UID))
+	s.Equal(65534, int(image.GID))
+}
+
+// ----------------------------------------------------------------------------
 // Run the suite
 // ----------------------------------------------------------------------------
 

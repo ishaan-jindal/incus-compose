@@ -741,6 +741,8 @@ var healthdUpCommand = &cli.Command{
 					c.LogDebug("healthdDown in recreate", "error", e)
 				}
 			}
+
+			c.ResetResources()
 		}
 
 		inst, resources, err := healthdGetResources(c, params)

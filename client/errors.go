@@ -95,6 +95,9 @@ var (
 	// ErrUnknown indicates an unknown error occurred.
 	ErrUnknown = NewError("unknown")
 
+	// ErrNotRunning indicates a command on a not running instance.
+	ErrNotRunning = NewError("not running")
+
 	// ErrUnknownConfig indicates an unknown config for a resource.
 	ErrUnknownConfig = NewError("unknown config for resource")
 

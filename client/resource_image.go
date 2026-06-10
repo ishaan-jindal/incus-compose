@@ -268,7 +268,7 @@ func (r *Image) get() error {
 	r.IncusAlias = alias
 	r.ETag = eTag
 
-	if img, _, err := r.client.incus.GetImage(alias.Target); err == nil {
+	if img, _, err := r.cache.GetImage(alias.Target); err == nil {
 		r.readOCIConfigFromProperties(img.Properties)
 	}
 
@@ -325,23 +325,28 @@ func (r *Image) create(args Options) error {
 		return ErrImageSource.WithText("not configured")
 	}
 
+	var cacheAlias *incusApi.ImageAliasesEntry
+	var err error
+
 	// Check if the cache has the alias
-	_, _, err := r.cache.GetImageAlias(r.incusName)
+	cacheAlias, _, err = r.cache.GetImageAlias(r.incusName)
 	if err != nil {
 		// Resolve the total size up front so progress display can show scale
 		// even for OCI pulls, which report no percentage. Best-effort: the
 		// alias lookup is cached by the source server and reused by CopyImage.
-		if alias, _, aerr := r.source.GetImageAlias(r.image); aerr == nil && alias != nil {
-			if img, _, ierr := r.source.GetImage(alias.Target); ierr == nil && img != nil {
-				r.size = img.Size
-			}
+		sourceAlias, _, err := r.source.GetImageAlias(r.image)
+		if err != nil {
+			r.client.LogDebug("Image not found on source", "image", r.image, "error", err)
+			return ErrNotFound.WithText("on source")
+		}
+
+		sourceImage, _, err := r.source.GetImage(sourceAlias.Target)
+		if err != nil {
+			r.size = sourceImage.Size
 		}
 
 		cacheCopyArgs := &incusClient.ImageCopyArgs{
-			Aliases:    []incusApi.ImageAlias{{Name: r.incusName}},
-			AutoUpdate: true,
-			Public:     false,
-			Mode:       "pull",
+			Mode: "pull",
 		}
 
 		// Build image info for copy
@@ -359,19 +364,21 @@ func (r *Image) create(args Options) error {
 		if err = r.client.hookRemoteOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
 			return ErrCreate.WithText("caching image").Wrap(err)
 		}
+
+		if err := extractAndStoreOCIConfig(r.cache, sourceAlias.Target, r.client.Config().DefaultStoragePool); err != nil {
+			return ErrCreate.WithText("extracting OCI config from image").Wrap(err)
+		}
+
+		cacheAlias = &incusApi.ImageAliasesEntry{
+			ImageAliasesEntryPut: incusApi.ImageAliasesEntryPut{Target: sourceAlias.Target},
+		}
 	}
 
 	_, _, err = r.client.incus.GetImageAlias(r.incusName)
 	if err != nil {
-		cacheAlias, _, err := r.cache.GetImageAlias(r.incusName)
-		if err != nil {
-			return ErrCreate.WithText("cache alias after copy").Wrap(err)
-		}
-
 		projectCopyArgs := &incusClient.ImageCopyArgs{
 			Aliases:    []incusApi.ImageAlias{{Name: r.incusName}},
 			AutoUpdate: true,
-			Public:     false,
 			Mode:       "pull",
 		}
 
@@ -389,51 +396,35 @@ func (r *Image) create(args Options) error {
 		}
 	}
 
-	// Fetch the created alias
-	alias, eTag, err := r.client.incus.GetImageAlias(r.incusName)
-	if err != nil {
-		return ErrCreate.WithText("fetching image alias after copy").Wrap(err)
-	}
-
-	// r.client.LogDebug("create setting the alias")
-
-	r.IncusAlias = alias
-	r.ETag = eTag
-	r.created = true
-
-	if err := r.extractAndStoreOCIConfig(); err != nil {
-		r.client.LogDebug("extracting OCI config from image", "image", r.incusName, "error", err)
-	}
-
-	return nil
+	return r.get()
 }
 
 // extractAndStoreOCIConfig creates a temporary stopped container from this image,
 // reads oci.uid/oci.gid/oci.entrypoint/oci.cwd from its config, stores them as
 // image properties, then deletes the container.
 // Non-fatal: callers should log and continue on error.
-func (r *Image) extractAndStoreOCIConfig() error {
-	tempName := SanitizeIncusName("ic-uid-"+r.IncusAlias.Target, MaxIncusNameLen-7)
+func extractAndStoreOCIConfig(server incusClient.InstanceServer, fingerprint string, pool string) error {
+	tempName := SanitizeIncusName("ic-uid-"+fingerprint, MaxIncusNameLen-7)
 
 	req := incusApi.InstancesPost{
 		Name: tempName,
 		Type: incusApi.InstanceTypeContainer,
 		Source: incusApi.InstanceSource{
 			Type:        "image",
-			Fingerprint: r.IncusAlias.Target,
+			Fingerprint: fingerprint,
 		},
 		InstancePut: incusApi.InstancePut{
 			Devices: map[string]map[string]string{
 				"root": {
 					"type": "disk",
 					"path": "/",
-					"pool": r.client.Config().DefaultStoragePool,
+					"pool": pool,
 				},
 			},
 		},
 	}
 
-	createOp, err := r.client.incus.CreateInstance(req)
+	createOp, err := server.CreateInstance(req)
 	if err != nil {
 		return fmt.Errorf("creating temp instance: %w", err)
 	}
@@ -442,12 +433,12 @@ func (r *Image) extractAndStoreOCIConfig() error {
 	}
 
 	defer func() {
-		if deleteOp, err := r.client.incus.DeleteInstance(tempName); err == nil {
+		if deleteOp, err := server.DeleteInstance(tempName); err == nil {
 			_ = deleteOp.Wait()
 		}
 	}()
 
-	instance, _, err := r.client.incus.GetInstance(tempName)
+	instance, _, err := server.GetInstance(tempName)
 	if err != nil {
 		return fmt.Errorf("getting temp instance: %w", err)
 	}
@@ -464,7 +455,7 @@ func (r *Image) extractAndStoreOCIConfig() error {
 		return nil
 	}
 
-	img, eTag, err := r.cache.GetImage(r.IncusAlias.Target)
+	img, eTag, err := server.GetImage(fingerprint)
 	if err != nil {
 		return fmt.Errorf("getting image for property update: %w", err)
 	}
@@ -478,7 +469,7 @@ func (r *Image) extractAndStoreOCIConfig() error {
 	props["oci.entrypoint"] = entrypoint
 	props["oci.cwd"] = cwd
 
-	if err := r.cache.UpdateImage(r.IncusAlias.Target, incusApi.ImagePut{
+	if err := server.UpdateImage(fingerprint, incusApi.ImagePut{
 		AutoUpdate: img.AutoUpdate,
 		Properties: props,
 		Public:     img.Public,
@@ -488,10 +479,6 @@ func (r *Image) extractAndStoreOCIConfig() error {
 		return fmt.Errorf("storing OCI config as image properties: %w", err)
 	}
 
-	r.UID = uid
-	r.GID = gid
-	r.Entrypoint = entrypoint
-	r.Cwd = cwd
 	return nil
 }
 
@@ -628,6 +615,10 @@ func (r *Image) buildImage(args Options) error {
 // Delete is idempotent: a missing per-project copy is not an error.
 func (r *Image) Delete(opts ...Option) error {
 	if !r.IsEnsured() {
+		r.IncusAlias = nil
+		r.ETag = ""
+
+		r.client.resources.Remove(r)
 		return nil
 	}
 
@@ -635,6 +626,10 @@ func (r *Image) Delete(opts ...Option) error {
 
 	if r.client.hookBefore != nil {
 		if err := r.client.hookBefore(ActionDelete, r, options, nil); err != nil {
+			r.IncusAlias = nil
+			r.ETag = ""
+
+			r.client.resources.Remove(r)
 			return err
 		}
 	}
@@ -643,6 +638,11 @@ func (r *Image) Delete(opts ...Option) error {
 	// missing alias means nothing was copied here, so there is nothing to do.
 	alias, _, err := r.client.incus.GetImageAlias(r.incusName)
 	if err != nil || alias == nil {
+		r.IncusAlias = nil
+		r.ETag = ""
+
+		r.client.resources.Remove(r)
+
 		if r.client.hookAfter != nil {
 			return r.client.hookAfter(ActionDelete, r, options, err)
 		}
@@ -653,9 +653,17 @@ func (r *Image) Delete(opts ...Option) error {
 
 	err = r.client.hookOperation(r.client.globalClient.Ctx, ActionDelete, r, options, op, err)
 	if r.client.hookAfter != nil {
+		r.IncusAlias = nil
+		r.ETag = ""
+
+		r.client.resources.Remove(r)
 		return r.client.hookAfter(ActionDelete, r, options, err)
 	}
 
+	r.IncusAlias = nil
+	r.ETag = ""
+
+	r.client.resources.Remove(r)
 	return err
 }
 

@@ -234,40 +234,7 @@ func newRootCommand() *cli.Command {
 				cacheProject = v
 			}
 
-			// 1. If INCUS_COMPOSE_URL is set, use direct URL connection
-			if url, ok := os.LookupEnv("INCUS_COMPOSE_URL"); ok {
-				slog.Debug("Using connection", "url", url)
-
-				opts := []client.ClientOption{
-					client.ClientURL(url),
-					client.ClientLogger(slog.Default()),
-					client.ClientInsecureSkipVerify(),
-					client.ClientDefaultStoragePool(cmd.String("storage-pool")),
-				}
-
-				// Add TLS client certificate if provided
-				if cert, ok := os.LookupEnv("INCUS_COMPOSE_CERT"); ok {
-					opts = append(opts, client.ClientTLSClientCert(cert))
-				}
-				if key, ok := os.LookupEnv("INCUS_COMPOSE_KEY"); ok {
-					opts = append(opts, client.ClientTLSClientKey(key))
-				}
-
-				opts = append(opts, client.ClientCacheProject(cacheProject))
-
-				c := client.New(ctx, opts...)
-				if err := c.Connect(); err != nil {
-					return ctx, err
-				}
-
-				if cmd.Bool("debug") {
-					client.AddDebuggerHook(c)
-				}
-
-				return context.WithValue(ctx, clientKey{}, c), nil
-			}
-
-			// 2. Use Incus CLI config (explicit --remote flag, or configured default remote)
+			// Use Incus CLI config (explicit --remote flag, or configured default remote)
 			conf, err := cliconfig.LoadConfig("")
 			if err != nil {
 				return ctx, err

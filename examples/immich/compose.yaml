@@ -2,8 +2,8 @@
 name: immich
 
 services:
-  immich-server:
-    container_name: immich_server
+  server:
+    container_name: server
     image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}
     # extends:
     #   file: hwaccel.transcoding.yml
@@ -11,7 +11,7 @@ services:
     volumes:
       # Do not edit the next line. If you want to change the media storage location on your system, edit the value of UPLOAD_LOCATION in the .env file
       - ${UPLOAD_LOCATION}:/data
-      # - /etc/localtime:/etc/localtime:ro
+      - /etc/localtime:/etc/localtime:ro
     env_file:
       - .env
     ports:
@@ -24,8 +24,8 @@ services:
         restart: true
     restart: unless-stopped
 
-  immich-machine-learning:
-    container_name: immich_machine_learning
+  machine-learning:
+    container_name: machine_learning
     # For hardware acceleration, add one of -[armnn, cuda, rocm, openvino, rknn] to the image tag.
     # Example tag: ${IMMICH_VERSION:-release}-cuda
     image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-release}
@@ -33,20 +33,20 @@ services:
     #   file: hwaccel.ml.yml
     #   service: cpu # set to one of [armnn, cuda, rocm, openvino, openvino-wsl, rknn] for accelerated inference - use the `-wsl` version for WSL2 where applicable
     volumes:
-      - immich-model-cache:/cache
+      - model-cache:/cache
     env_file:
       - .env
     restart: unless-stopped
 
   redis:
-    container_name: immich_redis
+    container_name: redis
     image: docker.io/valkey/valkey:9@sha256:3b55fbaa0cd93cf0d9d961f405e4dfcc70efe325e2d84da207a0a8e6d8fde4f9
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping", "||", "exit 1"]
 
   database:
-    container_name: immich_postgres
+    container_name: postgres
     image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
     environment:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -63,5 +63,5 @@ services:
 
 volumes:
   library:
-  immich-model-cache:
+  model-cache:
   postgres:

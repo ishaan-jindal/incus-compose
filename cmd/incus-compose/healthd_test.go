@@ -1,8 +1,6 @@
 package main
 
 func (s *E2ESuite) TestLifecycleHealthd() {
-	s.skipIfLocal()
-
 	compose := "../../test/fixtures/healthd-debug/compose.yaml"
 
 	defer func() {

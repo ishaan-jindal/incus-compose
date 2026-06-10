@@ -173,6 +173,14 @@ func (r *Instance) ServiceName() string {
 // lease yet, so this gives it time. On timeout it returns whatever was found
 // (possibly empty).
 func (r *Instance) WaitIPs(timeout time.Duration) (ips []InterfaceIPs, err error) {
+	if err := r.fetch(); err != nil {
+		return nil, err
+	}
+
+	if !r.Running() {
+		return nil, ErrNotRunning.WithText("in WaitIPs")
+	}
+
 	deadline, cancel := context.WithTimeout(r.client.globalClient.Ctx, timeout)
 
 	for {
@@ -593,7 +601,7 @@ func (r *Instance) waitForDependencies(options Options) error {
 		timeout = options.Timeout
 	}
 
-	var deadline time.Time
+	deadline := time.Now()
 	if timeout > 0 {
 		deadline = time.Now().Add(timeout)
 	}
@@ -607,10 +615,11 @@ func (r *Instance) waitForDependencies(options Options) error {
 				break
 			}
 
-			if !deadline.IsZero() && time.Now().After(deadline) {
+			if time.Now().After(deadline) {
 				return fmt.Errorf("dependency %q did not reach status %q within %s", depName, requiredStatus, timeout)
 			}
 
+			r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "status", inst.Config[HealthConfigKey])
 			time.Sleep(2 * time.Second)
 		}
 	}
@@ -633,7 +642,9 @@ func (r *Instance) start() error {
 		return err
 	}
 
-	_ = r.setStopped(false)
+	if err := r.fetch(); err != nil {
+		return err
+	}
 
 	if r.created {
 		if err := r.PushFiles(); err != nil {
@@ -654,7 +665,7 @@ func (r *Instance) start() error {
 		}
 	}
 
-	return nil
+	return r.setHealthCheckingStopped(false)
 }
 
 // PushSecrets pushes secrets into the running instance.
@@ -820,9 +831,15 @@ func (r *Instance) Stop(opts ...Option) error {
 		}
 	}
 
-	if r.IncusInstance.Status == "Stopped" {
-		_ = r.setStopped(true)
+	if err := r.setHealthCheckingStopped(true); err != nil {
+		if r.client.hookAfter != nil {
+			return r.client.hookAfter(ActionStop, r, options, nil)
+		}
 
+		return err
+	}
+
+	if r.IncusInstance.Status == "Stopped" {
 		if r.client.hookAfter != nil {
 			return r.client.hookAfter(ActionStop, r, options, nil)
 		}
@@ -845,8 +862,6 @@ func (r *Instance) Stop(opts ...Option) error {
 		return err
 	}
 
-	err = r.setStopped(true)
-
 	if r.client.hookAfter != nil {
 		return r.client.hookAfter(ActionStop, r, options, err)
 	}
@@ -854,9 +869,8 @@ func (r *Instance) Stop(opts ...Option) error {
 	return err
 }
 
-// setStopped writes or clears the user.stopped config key on the instance.
-// It is a best-effort call; callers ignore the error with _.
-func (r *Instance) setStopped(stopped bool) error {
+// setHealthCheckingStopped writes or clears the user.stopped config key on the instance.
+func (r *Instance) setHealthCheckingStopped(stopped bool) error {
 	// Always fetch before writing to get a fresh ETag — the caller may have
 	// just run UpdateInstanceState which invalidates the cached ETag.
 	if err := r.fetch(); err != nil {
@@ -887,6 +901,10 @@ func (r *Instance) setStopped(stopped bool) error {
 // Delete removes the instance from Incus.
 func (r *Instance) Delete(opts ...Option) error {
 	if !r.IsEnsured() {
+		r.IncusInstance = nil
+		r.ETag = ""
+
+		r.client.resources.Remove(r)
 		return nil
 	}
 
@@ -894,6 +912,10 @@ func (r *Instance) Delete(opts ...Option) error {
 
 	if r.client.hookBefore != nil {
 		if err := r.client.hookBefore(ActionDelete, r, options, nil); err != nil {
+			r.IncusInstance = nil
+			r.ETag = ""
+
+			r.client.resources.Remove(r)
 			return err
 		}
 	}
@@ -905,18 +927,24 @@ func (r *Instance) Delete(opts ...Option) error {
 
 	if r.client.hookAfter != nil {
 		if err := r.client.hookAfter(ActionDelete, r, options, err); err != nil {
+			r.IncusInstance = nil
+			r.ETag = ""
+
+			r.client.resources.Remove(r)
 			return err
 		}
 	} else if err != nil {
+		r.IncusInstance = nil
+		r.ETag = ""
+
+		r.client.resources.Remove(r)
 		return err
 	}
 
-	// Clear state
 	r.IncusInstance = nil
 	r.ETag = ""
-	r.UID = 0
-	r.GID = 0
 
+	r.client.resources.Remove(r)
 	return nil
 }
 
@@ -924,6 +952,10 @@ func (r *Instance) Delete(opts ...Option) error {
 func (r *Instance) Log(opts ...Option) error {
 	if !r.IsEnsured() {
 		return ErrNotEnsured
+	}
+
+	if !r.Running() {
+		return nil
 	}
 
 	options := NewOptions(opts...)

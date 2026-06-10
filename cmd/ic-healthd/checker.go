@@ -49,8 +49,9 @@ const (
 // startInstance restarts the instance before checking.
 func (c *Checker) Run(ctx context.Context, inStart bool, startInstance bool) {
 	for {
-		slog.Debug("Starting checker",
+		slog.Debug("Loop starting checker",
 			"instance", c.name,
+			"status", c.status,
 			"inStart", inStart,
 			"startInstance", startInstance,
 			"config", c.config,
@@ -67,8 +68,20 @@ func (c *Checker) Run(ctx context.Context, inStart bool, startInstance bool) {
 			}
 		}
 
-		switch c.runPhase(ctx, inStart) {
+		result := c.runPhase(ctx, inStart)
+		slog.Debug("Loop stopped checker",
+			"instance", c.name,
+			"status", c.status,
+			"inStart", inStart,
+			"result", result,
+		)
+
+		switch result {
 		case phaseStop:
+			slog.Debug("Loop stop",
+				"instance", c.name,
+				"status", c.status,
+			)
 			return
 		case phaseNormal:
 			inStart, startInstance = false, false
@@ -91,20 +104,30 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 	}
 	defer cancel()
 
+	if c.status != client.HealthStatusHealthy && c.check(phaseCtx) == nil {
+		c.failures = 0
+		c.restartDelay = c.config.RestartDelay
+
+		// First success during the start period: switch to the normal checker.
+		if err := c.writeStatus(client.HealthStatusHealthy); err != nil {
+			slog.Debug("updating healthcheck status", "instance", c.name, "error", err)
+		}
+	}
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			oldStatus := c.status
+			var status string
 			var result phaseResult
 			done := false
 
 			if c.check(phaseCtx) == nil {
 				c.failures = 0
 				c.restartDelay = c.config.RestartDelay
-				c.status = client.HealthStatusHealthy
+				status = client.HealthStatusHealthy
 
 				if inStart {
 					// First success during the start period: switch to the normal checker.
@@ -118,7 +141,7 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 					"retries", c.config.Retries,
 					"inStart", inStart,
 				)
-				c.status = client.HealthStatusUnhealthy
+				status = client.HealthStatusUnhealthy
 
 				if c.failures >= c.config.Retries {
 					switch {
@@ -130,21 +153,23 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 						slog.Debug("unless-stopped: intentionally stopped, skipping restart", "instance", c.name)
 					default:
 						c.failures = 0
-						slog.Info("restarting instance", "instance", c.name, "delay", c.restartDelay)
+						delay := c.restartDelay
 						c.restartDelay = min(c.restartDelay*2, maxRestartDelay)
 
-						slog.Debug("backoff restart, sleeping", "delay", c.restartDelay)
-						time.Sleep(c.restartDelay)
+						slog.Info("restarting instance", "instance", c.name, "delay", delay)
+						select {
+						case <-time.After(delay):
+						case <-ctx.Done():
+							return phaseStop
+						}
 
 						result, done = phaseRestart, true
 					}
 				}
 			}
 
-			if c.status != oldStatus {
-				if err := c.writeStatus(); err != nil {
-					slog.Debug("updating healthcheck status", "instance", c.name, "error", err)
-				}
+			if err := c.writeStatus(status); err != nil {
+				slog.Debug("updating healthcheck status", "instance", c.name, "error", err)
 			}
 
 			if done {
@@ -171,8 +196,7 @@ func (c *Checker) check(ctx context.Context) error {
 	}
 
 	if inst.Status != "Running" {
-		slog.Debug("status is not Running", "instance", c.name, "status", inst.Status)
-		return errors.New("Not running")
+		return errors.New("not running")
 	}
 
 	// Build command based on test format
@@ -197,9 +221,9 @@ func (c *Checker) check(ctx context.Context) error {
 	execCtx, cancel := context.WithTimeout(ctx, c.config.Timeout)
 	defer cancel()
 
-	exitCode, err := c.exec(execCtx, cmd)
+	exitCode, stdout, stderr, err := c.exec(execCtx, cmd)
 	if err != nil {
-		slog.Debug("exec error", "instance", c.name, "error", err)
+		slog.Debug("exec error", "instance", c.name, "error", err, "stdout", stdout, "stderr", stderr)
 		return err
 	}
 
@@ -211,7 +235,7 @@ func (c *Checker) check(ctx context.Context) error {
 }
 
 // exec runs a command inside the instance and returns the exit code.
-func (c *Checker) exec(ctx context.Context, cmd []string) (int, error) {
+func (c *Checker) exec(ctx context.Context, cmd []string) (int, string, string, error) {
 	req := api.InstanceExecPost{
 		Command:     cmd,
 		WaitForWS:   true,
@@ -228,49 +252,60 @@ func (c *Checker) exec(ctx context.Context, cmd []string) (int, error) {
 
 	op, err := c.client.ExecInstance(c.name, req, &args)
 	if err != nil {
-		return -1, err
+		return -1, "", "", err
 	}
 
 	// Wait for I/O to complete
 	select {
 	case <-args.DataDone:
 	case <-ctx.Done():
-		return -1, ctx.Err()
+		if err := op.Cancel(); err != nil {
+			slog.Debug("cancelling exec operation", "instance", c.name, "error", err)
+		}
+		return -1, "", "", ctx.Err()
 	}
 
 	// Wait for operation to complete
 	err = op.Wait()
 	if err != nil {
-		slog.Debug("Output", "name", c.name, "stdout", stdout.String(), "stderr", stderr.String())
-		return -1, err
+		return -1, stdout.String(), stderr.String(), err
 	}
 
 	// Get exit code from operation metadata
 	opAPI := op.Get()
 	if exitCode, ok := opAPI.Metadata["return"].(float64); ok {
-		if exitCode != 0 {
-			slog.Debug("Output", "name", c.name, "stdout", stdout.String(), "stderr", stderr.String())
-		}
-		return int(exitCode), nil
+		return int(exitCode), stdout.String(), stderr.String(), nil
 	}
 
-	return -1, nil
+	return -1, "", "", nil
 }
 
 // writeStatus persists c.status into the instance's user.healthcheck.status config key.
-func (c *Checker) writeStatus() error {
+func (c *Checker) writeStatus(status string) error {
+	if c.status == status {
+		// We already wrote that.
+		return nil
+	}
+
+	slog.Debug("Writing status", "instance", c.name, "status", status)
+
 	inst, etag, err := c.client.GetInstance(c.name)
 	if err != nil {
 		return err
 	}
 
-	inst.Config[client.HealthConfigKey] = c.status
+	inst.Config[client.HealthConfigKey] = status
 	op, err := c.client.UpdateInstance(c.name, inst.Writable(), etag)
 	if err != nil {
 		return err
 	}
 
-	return op.Wait()
+	if err := op.Wait(); err != nil {
+		return err
+	}
+
+	c.status = status
+	return nil
 }
 
 // isStopped reports whether the instance has user.stopped=true, meaning it was

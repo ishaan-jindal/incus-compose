@@ -5,70 +5,72 @@ Incus has no native healthcheck support, so ic-healthd fills that role.
 
 ## How It Works
 
-When `incus-compose up` finds services with a `healthcheck` directive, it:
+`incus-compose up` creates the sidecar when any service declares a `healthcheck`,
+has a restart policy other than `no`, or is depended on with `condition: service_healthy`.
+It then:
 
 1. Resolves the Incus bridge healthd should attach to (see [Network Configuration](#network-configuration)).
 2. Creates a restricted Incus trust token scoped to the project.
-3. Starts an `ic-healthd` sidecar container, attaches it to the bridge, and injects the token as a secret.
-4. ic-healthd authenticates once (token consumed), persists the resulting cert.
+3. Starts the `ic-healthd` sidecar, attaches it to the bridge, and injects the token as a secret.
+4. ic-healthd authenticates once (token consumed) and persists the resulting cert.
 5. ic-healthd discovers which instances to watch by reading the Incus API.
-6. ic-healthd runs the health loop and updates instance config keys with the result.
+6. ic-healthd runs the health loop and writes the result to `user.healthcheck.status`.
 
-The sidecar starts after all regular instances (priority = `PriorityInstance + 1`)
-and is removed when `incus-compose down` runs.
+The sidecar starts before the regular services so `service_healthy` dependencies
+can be evaluated, and is removed by `incus-compose down`.
 
 ## Config Storage
 
 Health check config and runtime state live in the instance's `user.*` config keys.
 There is no separate config file. ic-healthd reads these keys at startup and on
-every check cycle via `GetInstancesFull`.
+SIGHUP (`incus-compose healthd reload`).
 
-Read the docker docs about healthchecks to understand these values: https://docs.docker.com/reference/dockerfile#healthcheck
-
-```
-user.healthcheck.test      '["CMD","wget","-q","--spider","http://localhost"]'
-user.healthcheck.interval  10s
-user.healthcheck.timeout   5s
-user.healthcheck.retries   3
-user.healthcheck.status    healthy | unhealthy | starting
-user.restart               always | on-failure
-```
-
-These keys are visible in `incus config show <instance>`:
+See the Docker healthcheck docs for the value semantics: https://docs.docker.com/reference/dockerfile#healthcheck
 
 ```
-user.healthcheck.interval: 10s
-user.healthcheck.retries: "3"
-user.healthcheck.status: unhealthy
-user.healthcheck.test: '["CMD","wget","-q","--spider","http://localhost"]'
-user.healthcheck.timeout: 5s
-user.restart: always
+user.healthcheck.test            '["CMD","wget","-q","--spider","http://localhost"]'
+user.healthcheck.start_period    10s
+user.healthcheck.start_interval  2s
+user.healthcheck.interval        10s
+user.healthcheck.timeout         5s
+user.healthcheck.retries         3
+user.healthcheck.status          starting | healthy | unhealthy
+user.restart                     always | on-failure | unless-stopped
 ```
 
-`user.healthcheck.status` is the only key that ic-healthd writes back; all others
-are set by incus-compose at instance creation time and treated as read-only by
-the daemon.
+These keys are visible in `incus config show <instance>`.
+
+`user.healthcheck.status` is the only key ic-healthd writes back; all others are
+set by incus-compose at instance creation time and treated as read-only by the
+daemon. incus-compose sets the initial status to `starting`.
 
 ## Defaults
 
 When keys are missing, ic-healthd falls back to:
 
-| Key      | Default |
-| -------- | ------- |
-| interval | 5s      |
-| timeout  | 5s      |
-| retries  | 3       |
+| Key            | Default       |
+| -------------- | ------------- |
+| start_period   | 0s (disabled) |
+| start_interval | 5s            |
+| interval       | 30s           |
+| timeout        | 30s           |
+| retries        | 3             |
+
+`retries` must be greater than 0.
+
+After `retries` consecutive failures the instance is restarted. The first
+restart waits `interval * retries`; the delay doubles on every further restart,
+capped at 60s.
 
 ## Dockerfile HEALTHCHECK Not Supported
 
 incus-compose does not read or inherit the `HEALTHCHECK` instruction embedded in Docker images.
 
-Incus imports OCI images via umoci, which converts the OCI image config into an OCI runtime spec.
-The Docker `HEALTHCHECK` extension is not part of the OCI image spec and is discarded during that
-conversion — by the time the image is cached in Incus, the healthcheck data no longer exists.
-
-Fetching it directly from the registry at `up` time would require registry access on every run
-and fails in air-gapped environments.
+Incus imports OCI images via umoci, which converts the OCI image config into an
+OCI runtime spec. The Docker `HEALTHCHECK` extension is not part of the OCI image
+spec and is discarded during that conversion. Fetching it from the registry at
+`up` time would require registry access on every run and fails in air-gapped
+environments.
 
 **Workaround:** Always declare `healthcheck.test` explicitly in the compose file:
 
@@ -85,9 +87,12 @@ services:
 
 ## Restart Without a Test
 
-`restart: always` or `restart: on-failure` without a `healthcheck` block is also
-handled. ic-healthd monitors the instance state and restarts it when stopped,
-without running an exec-based test command.
+`restart: always`, `on-failure`, or `unless-stopped` without a `healthcheck`
+block is also handled. ic-healthd monitors the instance state and restarts it
+when stopped, without running an exec-based test command.
+
+With `unless-stopped`, instances stopped intentionally (`user.stopped=true`,
+set by `incus-compose stop`) are not restarted.
 
 ## Network Configuration
 
@@ -98,9 +103,11 @@ IP to reach the Incus HTTPS API (`:8443`).
 
 When no network is specified, incus-compose probes in order:
 
-1. **`incusbr0`** — the default Incus bridge, present on most installations
-2. **`eth0` of the `default` profile** — reads the network name from the profile's `eth0` device
-3. **First compose-managed network** — falls back to the first network defined in the compose file
+1. **`incusbr0`** - the default Incus bridge, present on most installations
+2. **The bridge of the current connection** - the network whose gateway IP matches
+   the IP incus-compose itself uses to reach the Incus API
+
+If neither matches, `up` fails; set the network explicitly.
 
 ### Explicit override
 
@@ -118,7 +125,7 @@ x-incus-compose:
   healthd-network: incusbr0
 ```
 
-When set explicitly, the named network must exist — incus-compose errors out if not found.
+When set explicitly, the named network must exist - incus-compose errors out if not found.
 
 The same flag is available on `incus-compose healthd up --network`.
 
@@ -132,15 +139,7 @@ The restricted token gives ic-healthd project-scoped access only:
 
 ## Management Commands
 
-The `healthd` command group lets you manage the sidecar directly without touching services:
-
-```
-incus-compose healthd logs [--follow]
-incus-compose healthd reload
-incus-compose healthd restart
-incus-compose healthd up [--recreate]
-incus-compose healthd down
-```
+The `healthd` command group manages the sidecar directly without touching services:
 
 | Subcommand        | Description                                           |
 | ----------------- | ----------------------------------------------------- |
@@ -150,8 +149,9 @@ incus-compose healthd down
 | `up [--recreate]` | Create or recreate the sidecar                        |
 | `down`            | Stop and remove the sidecar                           |
 
-`healthd up` accepts `--image`, `--binary`, and `--network`.
-`healthd up` refuses with an error when no service in the project declares a `healthcheck`.
+`healthd up` accepts `--image`, `--binary`, and `--network`. It refuses with an
+error when no service in the project requires healthd (no healthcheck, no restart
+policy, no `service_healthy` dependency).
 
 ## Disabling the Sidecar
 
@@ -175,7 +175,7 @@ Default image: `registry.gitlab.com/r3j0/incus-compose/ic-healthd:{version}`
 
 Override with `--healthd-image` flag or `INCUS_COMPOSE_HEALTHD_IMAGE` env var.
 
-The container is named `ic-healthd` within the project and tagged with
+The container is named `{project}-ic-healthd` and tagged with
 `user.healthcheck.daemon=true` so ic-healthd skips itself during discovery.
 
 ## Troubleshooting
@@ -191,5 +191,5 @@ incus-compose healthd up --recreate
 
 **Sidecar not running after `incus-compose start`?**
 
-Healthd is only included in `start` if the project has services with a `healthcheck`.
-Use `incus-compose healthd up` to start it independently.
+`start` never creates or starts the sidecar; only `up` does. Use
+`incus-compose healthd up` to start it independently.

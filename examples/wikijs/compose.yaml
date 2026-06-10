@@ -1,0 +1,33 @@
+services:
+  database:
+    image: postgres:${POSTGRES_VERSION}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER}
+    logging:
+      driver: none
+    restart: unless-stopped
+    volumes:
+      - database:/var/lib/postgresql/data
+
+  wiki:
+    image: ghcr.io/requarks/wiki:${WIKIJS_VERSION}
+    depends_on:
+      database:
+        condition: service_healthy
+        restart: true
+    init: true
+    environment:
+      DB_TYPE: postgres
+      DB_HOST: database
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER}
+      DB_PASS: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+    restart: unless-stopped
+    ports:
+      - "80:3000"
+
+volumes:
+  database:

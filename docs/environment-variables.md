@@ -82,23 +82,11 @@ incus-compose --os-env up
 
 These environment variables configure how incus-compose connects to an Incus server. For normal use, incus-compose uses your existing Incus CLI configuration via the `--remote` flag or defaults to `local`.
 
-### Connection Priority
-
-incus-compose determines the connection in this order:
-
-1. **`--remote` flag or `INCUS_REMOTE`** - Uses Incus CLI config to resolve the remote
-2. **`INCUS_COMPOSE_URL`** - Direct URL connection (only when remote is `local`)
-
-When `INCUS_REMOTE` is set to anything other than `local`, the `INCUS_COMPOSE_URL` variables are ignored and the Incus CLI configuration is used instead.
-
 ### Variables
 
 | Variable                       | Description                                                                    |
 | ------------------------------ | ------------------------------------------------------------------------------ |
 | `INCUS_REMOTE`                 | Incus remote name from CLI config (e.g., `local`, `myserver`)                  |
-| `INCUS_COMPOSE_URL`            | Direct URL to Incus server (only used when remote is `local`)                  |
-| `INCUS_COMPOSE_CERT`           | Path to TLS client certificate (used with `INCUS_COMPOSE_URL`)                 |
-| `INCUS_COMPOSE_KEY`            | Path to TLS client key (used with `INCUS_COMPOSE_URL`)                         |
 | `INCUS_COMPOSE_IMAGE_CACHE`    | Incus project for image cache (default: `default`)                             |
 | `INCUS_COMPOSE_HEALTHD_IMAGE`  | Healthd OCI image to use; {version} is replaced with the incus-compose version |
 | `INCUS_COMPOSE_HEALTHD_BINARY` | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image) |
@@ -115,16 +103,5 @@ incus-compose --remote myserver up
 export INCUS_REMOTE=myserver
 incus-compose up
 ```
-
-**Using direct URL (for testing/nested Incus):**
-
-```bash
-export INCUS_COMPOSE_URL="https://192.168.1.100:8443"
-export INCUS_COMPOSE_CERT="./certs/client.crt"
-export INCUS_COMPOSE_KEY="./certs/client.key"
-incus-compose up
-```
-
-**Note:** The `INCUS_COMPOSE_URL` method is mainly intended for development, testing, or nested Incus scenarios where you need to bypass the CLI configuration.
 
 See [CLI Reference](cli.md) for command options and flags.

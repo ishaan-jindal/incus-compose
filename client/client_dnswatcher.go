@@ -72,7 +72,7 @@ func (c *Client) RegisterDNSWatcher() error {
 				instanceIPs[inst.IncusName()] = ips
 
 				changed = true
-			case ActionStop, ActionDelete:
+			case ActionStop:
 				delete(instances, inst.IncusName())
 				delete(instanceIPs, inst.IncusName())
 

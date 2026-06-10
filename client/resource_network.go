@@ -302,11 +302,19 @@ func networkCreateConfig(extensions map[string]string) (map[string]string, error
 // External networks are never deleted.
 func (r *Network) Delete(opts ...Option) error {
 	if !r.IsEnsured() {
+		r.IncusNetwork = nil
+		r.ETag = ""
+
+		r.client.resources.Remove(r)
 		return nil
 	}
 
 	// External networks are not managed - don't delete them
 	if r.Config.External {
+		r.IncusNetwork = nil
+		r.ETag = ""
+
+		r.client.resources.Remove(r)
 		return nil
 	}
 
@@ -314,6 +322,10 @@ func (r *Network) Delete(opts ...Option) error {
 
 	if r.client.hookBefore != nil {
 		if err := r.client.hookBefore(ActionDelete, r, options, nil); err != nil {
+			r.IncusNetwork = nil
+			r.ETag = ""
+
+			r.client.resources.Remove(r)
 			return err
 		}
 	}
@@ -325,11 +337,17 @@ func (r *Network) Delete(opts ...Option) error {
 	}
 
 	if err != nil {
+		r.IncusNetwork = nil
+		r.ETag = ""
+
+		r.client.resources.Remove(r)
 		return err
 	}
 
 	r.IncusNetwork = nil
 	r.ETag = ""
+
+	r.client.resources.Remove(r)
 	return nil
 }
 
