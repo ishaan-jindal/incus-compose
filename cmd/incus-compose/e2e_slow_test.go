@@ -43,6 +43,7 @@ func (s *E2ESlowSuite) run(args ...string) error {
 	return cmd.Run(s.ctx, append([]string{"incus-compose"}, args...))
 }
 
+<<<<<<< HEAD
 func (s *E2ESlowSuite) TestExternalNetwork() {
 	tests := []struct {
 		name    string
@@ -302,6 +303,29 @@ func (s *E2ESlowSuite) TestUpDownWithVolume() {
 
 	defer func() {
 		_ = s.run("-f", "../../test/fixtures/with-volume/compose.yaml", "down", "--project")
+||||||| 77f5664
+=======
+func (s *E2ESlowSuite) TestUpDownGrafana() {
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{
+			name:    "up grafana",
+			args:    []string{"-f", "../../test/fixtures/grafana/compose.yaml", "up", "--detach"},
+			wantErr: false,
+		},
+		{
+			name:    "list grafana",
+			args:    []string{"-f", "../../test/fixtures/grafana/compose.yaml", "list"},
+			wantErr: false,
+		},
+	}
+
+	defer func() {
+		_ = s.run("-f", "../../test/fixtures/grafana/compose.yaml", "down", "--project")
+>>>>>>> issue/43
 	}()
 
 	for _, tt := range tests {

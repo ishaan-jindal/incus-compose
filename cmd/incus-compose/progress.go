@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/lxc/incus/v7/shared/units"
 	"github.com/mattn/go-isatty"
+	"golang.org/x/term"
 
 	"gitlab.com/r3j0/incus-compose/client"
 )
@@ -19,13 +21,14 @@ import (
 // on the animate flag (set only for a real terminal), so piped output and
 // NO_COLOR both degrade cleanly.
 const (
-	ansiUp       = "\033[A" // move cursor up one line
-	ansiClearEnd = "\033[K" // clear from cursor to end of line
-	colorGreen   = "\033[32m"
-	colorReset   = "\033[0m"
+	ansiUp        = "\033[A" // move cursor up one line
+	ansiClearEnd  = "\033[K" // clear from cursor to end of line
+	ansiClearDown = "\033[J" // clear from cursor to end of screen
+	colorGreen    = "\033[32m"
+	colorReset    = "\033[0m"
 
 	actionWidth = 8
-	kindWith    = 18
+	kindWidth   = 18
 	labelWidth  = 38
 	barWidth    = 20
 )
@@ -51,13 +54,15 @@ type progressLine struct {
 type progressRenderer struct {
 	out     io.Writer
 	noColor bool
-	animate bool // redraw in place with a spinner (real terminal only)
+	animate bool       // redraw in place with a spinner (real terminal only)
+	width   func() int // terminal width in columns, 0 disables truncation
 
 	mu      sync.Mutex
 	order   []string
 	lines   map[string]*progressLine
 	spin    int
-	drawn   int // lines drawn in the last frame (animate mode)
+	drawn   int    // lines drawn in the last frame (animate mode)
+	logBuf  []byte // partial log line buffered by the bypass writer
 	stopped bool
 	stopCh  chan struct{}
 	wg      sync.WaitGroup
@@ -68,14 +73,23 @@ type progressRenderer struct {
 // after any resolution-only ensure so resource lookups stay silent; only the
 // wrapped actions report. The markDone hook fires at action completion, so each
 // action reports in batch/priority order.
-func startProgress(globalClient *client.GlobalClient, c *client.Client, errWriter io.Writer) func(success bool) {
-	if errWriter == nil {
-		errWriter = os.Stderr
+func startProgress(globalClient *client.GlobalClient, c *client.Client, writer io.Writer) func(success bool) {
+	if writer == nil {
+		writer = os.Stderr
 	}
 
-	renderer := newProgressRenderer(errWriter, noColor, isatty.IsTerminal(os.Stderr.Fd()) && !globalClient.IsDebugging())
+	renderer := newProgressRenderer(writer, noColor, isatty.IsTerminal(os.Stderr.Fd()))
 	renderer.Start()
 	globalClient.SetProgressHandler(renderer.handle)
+
+	// Route log records through the renderer while the live block is on
+	// screen, so they print above it instead of being overwritten by the
+	// next repaint. Plain mode has no in-place block, nothing to protect.
+	var prevLog io.Writer
+	if renderer.animate {
+		prevLog = logWriter.Swap(renderer.bypass())
+	}
+
 	c.AddHookAfter(func(_ context.Context, action client.Action, r client.Resource, _ client.Options, herr error) error {
 		if herr == nil {
 			renderer.markDone(action, r)
@@ -86,6 +100,9 @@ func startProgress(globalClient *client.GlobalClient, c *client.Client, errWrite
 	return func(success bool) {
 		globalClient.SetProgressHandler(nil)
 		renderer.Stop(success)
+		if prevLog != nil {
+			logWriter.Swap(prevLog)
+		}
 	}
 }
 
@@ -94,9 +111,19 @@ func newProgressRenderer(out io.Writer, noColor, animate bool) *progressRenderer
 		out:     out,
 		noColor: noColor,
 		animate: animate,
+		width:   termWidth,
 		lines:   map[string]*progressLine{},
 		stopCh:  make(chan struct{}),
 	}
+}
+
+// termWidth returns the terminal width of stderr, or 0 when unknown.
+func termWidth() int {
+	w, _, err := term.GetSize(int(os.Stderr.Fd()))
+	if err != nil {
+		return 0
+	}
+	return w
 }
 
 // Start launches the spinner ticker in animated mode. It is a no-op otherwise.
@@ -136,6 +163,13 @@ func (p *progressRenderer) Stop(success bool) {
 	defer p.mu.Unlock()
 
 	p.stopped = true
+
+	// Flush a trailing partial log line so it is not lost (bypass writer
+	// buffers until a newline arrives).
+	if len(p.logBuf) > 0 {
+		p.writeAbove(append(p.logBuf, '\n'))
+		p.logBuf = nil
+	}
 
 	if success {
 		for _, key := range p.order {
@@ -224,6 +258,8 @@ func (p *progressRenderer) draw() {
 		return
 	}
 
+	width := p.width()
+
 	var b strings.Builder
 	for range p.drawn {
 		b.WriteString(ansiUp)
@@ -231,12 +267,29 @@ func (p *progressRenderer) draw() {
 	for _, key := range p.order {
 		b.WriteString("\r")
 		b.WriteString(ansiClearEnd)
-		b.WriteString(p.render(p.lines[key]))
+		b.WriteString(p.render(p.lines[key], width))
 		b.WriteString("\n")
 	}
 	p.drawn = len(p.order)
 
 	_, _ = io.WriteString(p.out, b.String())
+}
+
+// writeAbove erases the live block, writes raw bytes in its place, and
+// repaints the block below them, so interleaved output scrolls up naturally
+// (animate mode, mu held).
+func (p *progressRenderer) writeAbove(b []byte) {
+	var sb strings.Builder
+	for range p.drawn {
+		sb.WriteString(ansiUp)
+	}
+	sb.WriteString("\r")
+	sb.WriteString(ansiClearDown)
+	sb.Write(b)
+	p.drawn = 0
+
+	_, _ = io.WriteString(p.out, sb.String())
+	p.draw()
 }
 
 // drawPlain emits one line per distinct status change (non-animate mode, mu held).
@@ -252,13 +305,22 @@ func (p *progressRenderer) drawPlain(line *progressLine) {
 	_, _ = fmt.Fprintf(p.out, "%s %s %s: %s\n", line.action, line.kind, line.label, msg)
 }
 
-func (p *progressRenderer) render(line *progressLine) string {
+// render formats one line, truncated to width so it never wraps; a wrapped
+// line spans two terminal rows and breaks the cursor-up repositioning in
+// draw, leaving stale copies of the block behind.
+func (p *progressRenderer) render(line *progressLine, width int) string {
 	action := fmt.Sprintf("%-*s", actionWidth, truncate(line.action, actionWidth))
-	kind := fmt.Sprintf("%-*s", kindWith, truncate(line.kind, kindWith))
+	kind := fmt.Sprintf("%-*s", kindWidth, truncate(line.kind, kindWidth))
 	label := fmt.Sprintf("%-*s", labelWidth, truncate(line.label, labelWidth))
 
 	switch {
 	case line.done:
+		// Colorize only when the line fits; truncating would cut the
+		// escape sequence and print garbage.
+		plain := action + " " + kind + " " + label + " [done]"
+		if width > 0 && len(plain) > width {
+			return truncate(plain, width)
+		}
 		return action + " " + kind + " " + label + " " + p.colorize("[done]", colorGreen)
 	case line.percent >= 0:
 		// Native images: text carries the transfer speed, append it.
@@ -266,11 +328,76 @@ func (p *progressRenderer) render(line *progressLine) string {
 		if line.text != "" {
 			out += "  " + line.text
 		}
-		return out
+		return fit(out, width)
 	default:
 		// OCI pulls: no percentage, only status text plus a spinner.
-		return fmt.Sprintf("%s %s %s %s %s", action, kind, label, spinFrames[p.spin%len(spinFrames)], line.text)
+		return fit(fmt.Sprintf("%s %s %s %s %s", action, kind, label, spinFrames[p.spin%len(spinFrames)], line.text), width)
 	}
+}
+
+// fit truncates s to the terminal width, no-op when the width is unknown.
+func fit(s string, width int) string {
+	if width > 0 && len(s) > width {
+		return truncate(s, width)
+	}
+	return s
+}
+
+// bypass returns a writer that prints whole lines above the live progress
+// block. Partial lines are buffered until their newline arrives so a torn
+// write cannot split the block.
+func (p *progressRenderer) bypass() io.Writer {
+	return &bypassWriter{p: p}
+}
+
+type bypassWriter struct {
+	p *progressRenderer
+}
+
+func (w *bypassWriter) Write(b []byte) (int, error) {
+	p := w.p
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.stopped {
+		return p.out.Write(b)
+	}
+
+	p.logBuf = append(p.logBuf, b...)
+	idx := bytes.LastIndexByte(p.logBuf, '\n')
+	if idx < 0 {
+		return len(b), nil
+	}
+
+	p.writeAbove(p.logBuf[:idx+1])
+	p.logBuf = p.logBuf[idx+1:]
+	return len(b), nil
+}
+
+// swapWriter is an io.Writer whose destination can be swapped at runtime. The
+// slog handler writes through it (see initLogger) so startProgress can reroute
+// log lines above the live progress block while one is on screen.
+type swapWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+// logWriter is the destination behind the default slog handler.
+var logWriter = &swapWriter{w: os.Stderr}
+
+func (s *swapWriter) Write(b []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.w.Write(b)
+}
+
+// Swap replaces the destination and returns the previous one.
+func (s *swapWriter) Swap(w io.Writer) io.Writer {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	old := s.w
+	s.w = w
+	return old
 }
 
 func (p *progressRenderer) colorize(s, color string) string {
