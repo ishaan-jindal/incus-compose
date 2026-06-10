@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/lxc/incus/v7/shared/cliconfig"
 	"github.com/stretchr/testify/assert"
@@ -164,254 +163,6 @@ func TestParallelImageDownload(t *testing.T) {
 	t.Logf("Successfully downloaded %d images in parallel", len(imageNames))
 }
 
-type stackRun struct {
-	action      Action
-	options     []Option
-	wantError   bool
-	wantEnsured bool
-}
-
-type stackTest struct {
-	name      string
-	runs      []stackRun
-	resources func(s *StackTestSuite, client *Client) ([]Resource, error)
-}
-
-var stackTests = []*stackTest{
-	{
-		name: "instance-with-secrets",
-		resources: func(s *StackTestSuite, client *Client) ([]Resource, error) {
-			network, err := client.Resource(KindNetwork, "default", &NetworkConfig{})
-			s.Require().NoError(err)
-
-			imageResource, err := client.Resource(KindImage, "docker.io/alpine:latest", &ImageConfig{})
-			s.Require().NoError(err)
-
-			image, ok := imageResource.(*Image)
-			s.Require().True(ok)
-
-			devices := []InstanceDevice{}
-			devices = append(devices, InstanceDevice{
-				Name: "eth0",
-				Config: InstanceDeviceConfig{
-					DeviceType: InstanceDeviceTypeNic,
-					Network:    network,
-				},
-			})
-
-			secrets := []InstanceSecret{
-				{
-					Source:  "db_password",
-					Content: []byte("super-secret-password"),
-				},
-				{
-					Source:  "api_key",
-					Target:  "/app/secrets/api.key",
-					Content: []byte("my-api-key-value"),
-					UID:     0,
-					GID:     0,
-					Mode:    0o440,
-				},
-			}
-
-			instance, err := client.Resource(KindInstance, "app-with-secrets", &InstanceConfig{
-				Image:   image.Name(),
-				Devices: devices,
-				Secrets: secrets,
-			})
-			s.Require().NoError(err)
-
-			return []Resource{network, image, instance}, nil
-		},
-		runs: []stackRun{
-			{ActionEnsure, []Option{OptionCreate()}, false, true},
-			{ActionStart, []Option{}, false, false},
-			{ActionStop, []Option{OptionForce()}, false, false},
-			{ActionDelete, []Option{OptionForce()}, false, false},
-		},
-	},
-	{
-		name: "ensure without create fails for non-existent",
-		resources: func(s *StackTestSuite, client *Client) ([]Resource, error) {
-			profile, err := client.Resource(KindProfile, "p1", &ProfileConfig{})
-			s.Require().NoError(err)
-
-			return []Resource{profile}, nil
-		},
-		runs: []stackRun{
-			{ActionEnsure, []Option{}, true, false},
-		},
-	},
-	{
-		name: "single profile ensure",
-		resources: func(s *StackTestSuite, client *Client) ([]Resource, error) {
-			profile, err := client.Resource(KindProfile, "p1", &ProfileConfig{})
-			s.Require().NoError(err)
-
-			return []Resource{profile}, nil
-		},
-		runs: []stackRun{
-			{ActionEnsure, []Option{OptionCreate()}, false, true},
-			{ActionDelete, []Option{}, false, false},
-		},
-	},
-	{
-		name: "profile and network mixed priorities",
-		resources: func(s *StackTestSuite, client *Client) ([]Resource, error) {
-			profile, err := client.Resource(KindProfile, "p1", &ProfileConfig{})
-			s.Require().NoError(err)
-
-			network, err := client.Resource(KindNetwork, "n1", &NetworkConfig{})
-			s.Require().NoError(err)
-
-			return []Resource{profile, network}, nil
-		},
-		runs: []stackRun{
-			{ActionEnsure, []Option{OptionCreate()}, false, true},
-			{ActionDelete, []Option{}, false, false},
-		},
-	},
-	{
-		name: "simple-nginx",
-		resources: func(s *StackTestSuite, client *Client) ([]Resource, error) {
-			network, err := client.Resource(KindNetwork, "default", &NetworkConfig{})
-			s.Require().NoError(err)
-
-			imageResource, err := client.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
-			s.Require().NoError(err)
-
-			image, ok := imageResource.(*Image)
-			s.Require().True(ok)
-
-			devices := []InstanceDevice{}
-			devices = append(devices, InstanceDevice{
-				Name: "eth0",
-				Config: InstanceDeviceConfig{
-					DeviceType: InstanceDeviceTypeNic,
-					Network:    network,
-				},
-			})
-
-			instance, err := client.Resource(KindInstance, "web", &InstanceConfig{
-				Image:   image.Name(),
-				Devices: devices,
-			})
-			s.Require().NoError(err)
-
-			return []Resource{network, image, instance}, nil
-		},
-		runs: []stackRun{
-			{ActionEnsure, []Option{OptionCreate()}, false, true},
-			{ActionStart, []Option{}, false, false},
-			{ActionStop, []Option{OptionForce()}, false, false},
-			{ActionDelete, []Option{OptionForce()}, false, false},
-		},
-	},
-	{
-		name: "nginx-scale",
-		resources: func(s *StackTestSuite, client *Client) ([]Resource, error) {
-			network, err := client.Resource(KindNetwork, "default", &NetworkConfig{})
-			s.Require().NoError(err)
-
-			imageResource, err := client.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
-			s.Require().NoError(err)
-
-			image, ok := imageResource.(*Image)
-			s.Require().True(ok)
-
-			devices := []InstanceDevice{}
-			devices = append(devices, InstanceDevice{
-				Name: "eth0",
-				Config: InstanceDeviceConfig{
-					DeviceType: InstanceDeviceTypeNic,
-					Network:    network,
-				},
-			})
-
-			resources := []Resource{network, image}
-
-			// Create 3 scaled instances: web-1, web-2, web-3
-			for i := 1; i <= 3; i++ {
-				instance, err := client.Resource(KindInstance, fmt.Sprintf("web-%d", i), &InstanceConfig{
-					Image:   image.Name(),
-					Devices: devices,
-				})
-				s.Require().NoError(err)
-
-				resources = append(resources, instance)
-			}
-
-			return resources, nil
-		},
-		runs: []stackRun{
-			{ActionEnsure, []Option{OptionCreate()}, false, true},
-			{ActionStart, []Option{}, false, false},
-			{ActionStop, []Option{OptionForce()}, false, false},
-			{ActionDelete, []Option{OptionForce()}, false, false},
-		},
-	},
-	// Flaky test cause of bind port
-	// {
-	// 	name: "simple-nginx-proxy",
-	// 	resources: func(s *StackTestSuite, client *Client) ([]Resource, error) {
-	// 		network, err := client.Resource(KindNetwork, "simple-nginx", &NetworkConfig{})
-	// 		s.Require().NoError(err)
-
-	// 		is, err := s.incusConfig.GetImageServer("docker.io")
-	// 		s.Require().NoError(err)
-
-	// 		image, err := client.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{
-	// 			Source: is,
-	// 		})
-	// 		s.Require().NoError(err)
-
-	// 		devices := []InstanceDevice{}
-	// 		devices = append(devices, InstanceDevice{
-	// 			Name: "eth0",
-	// 			Config: InstanceDeviceConfig{
-	// 				DeviceType: InstanceDeviceTypeNic,
-	// 				Network:    network,
-	// 			},
-	// 		})
-	// 		devices = append(devices, InstanceDevice{
-	// 			Name: "proxy-8080",
-	// 			Config: InstanceDeviceConfig{
-	// 				DeviceType: InstanceDeviceTypeProxy,
-	// 				Proxy: InstanceDeviceProxyConfig{
-	// 					ListenType:  "tcp",
-	// 					ListenAddr:  "0.0.0.0",
-	// 					ListenPort:  8080,
-	// 					ConnectType: "tcp",
-	// 					ConnectAddr: "127.0.0.1",
-	// 					ConnectPort: 80,
-	// 				},
-	// 			},
-	// 		})
-
-	// 		instance, err := client.Resource(KindInstance, "web", &InstanceConfig{
-	// 			Image:   image.Name(),
-	// 			Devices: devices,
-	// 		})
-	// 		s.Require().NoError(err)
-
-	// 		return []Resource{network, image, instance}, nil
-	// 	},
-	// 	runs: []stackRun{
-	// 		{[]StackOption{}, ActionEnsure, []Option{OptionCreate()}, false, true},
-	// 		{[]StackOption{}, ActionStart, []Option{}, false, false},
-	// 		{[]StackOption{StackSortDescending()}, ActionDelete, []Option{OptionForce()}, false, false},
-	// 	},
-	// },
-}
-
-// type stackScenario struct {
-// 	name     string
-// 	setup    func(client *Client) (*Stack, error)
-// 	options  []StackOption
-// 	validate func(t *testing.T, client *Client, err error)
-// 	wantErr  bool
-// }
-
 // StackTestSuite tests Stack operations against a real Incus instance.
 type StackTestSuite struct {
 	suite.Suite
@@ -420,13 +171,6 @@ type StackTestSuite struct {
 	client       *Client
 
 	incusConfig *cliconfig.Config
-
-	// imageServer incusClient.ImageServer
-
-	// upTests         []*stackTest
-	// downTests       []*stackTest
-	// validationTests []*stackTest
-	// scenarioTests   map[string]stackScenario
 }
 
 // SetupSuite runs once before all tests.
@@ -458,223 +202,6 @@ func (s *StackTestSuite) SetupTest() {
 func (s *StackTestSuite) TearDownTest() {
 	_ = s.globalClient.DeleteProject("stack-test", true)
 }
-
-// // initializeDownTests creates Down-related test cases (delete).
-// func (s *StackTestSuite) initializeDownTests() {
-// 	s.downTests = []stackTest{
-// 		{
-// 			name: "delete single profile",
-// 			setup: func() (*Stack, error) {
-// 				// First create the profile
-// 				profile, err := s.client.Profile("test-delete-single", ProfileConfig{})
-// 				if err != nil {
-// 					return nil, err
-// 				}
-// 				if err := profile.Ensure(ActionArgs{Create: true}); err != nil {
-// 					return nil, err
-// 				}
-
-// 				// Now set up delete stack
-// 				stack := NewStack(s.client)
-// 				stack.Add(profile, ActionArgs{})
-// 				return stack, nil
-// 			},
-// 			options: []StackOption{StackSortDescending()},
-// 			wantErr: false,
-// 			validate: func(t *testing.T, err error) {
-// 				profile, _ := s.client.Profile("test-delete-single", ProfileConfig{})
-// 				s.False(profile.IsEnsured(), "profile should not be ensured after delete")
-// 			},
-// 		},
-// 		{
-// 			name: "delete multiple resources in reverse priority",
-// 			setup: func() (*Stack, error) {
-// 				// Create resources
-// 				profile, err := s.client.Profile("test-delete-multi-p", ProfileConfig{})
-// 				if err != nil {
-// 					return nil, err
-// 				}
-// 				if err := profile.Ensure(ActionArgs{Create: true}); err != nil {
-// 					return nil, err
-// 				}
-
-// 				network, err := s.client.Network("test-delete-multi-n", NetworkConfig{})
-// 				if err != nil {
-// 					return nil, err
-// 				}
-// 				if err := network.Ensure(ActionArgs{Create: true}); err != nil {
-// 					return nil, err
-// 				}
-
-// 				// Set up delete stack - should delete in reverse priority order
-// 				stack := NewStack(s.client)
-// 				stack.Add(profile)
-// 				stack.Add(network)
-// 				return stack, nil
-// 			},
-// 			options: []StackOption{StackSortDescending()},
-// 			wantErr: false,
-// 			validate: func(t *testing.T, err error) {
-// 				profile, _ := s.client.Profile("test-delete-multi-p", ProfileConfig{})
-// 				network, _ := s.client.Network("test-delete-multi-n", NetworkConfig{})
-// 				s.False(profile.IsEnsured(), "profile should not be ensured after delete")
-// 				s.False(network.IsEnsured(), "network should not be ensured after delete")
-// 			},
-// 		},
-// 		{
-// 			name: "delete non-ensured resource is no-op",
-// 			setup: func() (*Stack, error) {
-// 				profile, err := s.client.Profile("test-delete-noop", ProfileConfig{})
-// 				if err != nil {
-// 					return nil, err
-// 				}
-// 				// Don't ensure - just try to delete
-// 				stack := NewStack(s.client)
-// 				stack.Add(profile)
-// 				return stack, nil
-// 			},
-// 			options: []StackOption{StackSortDescending()},
-// 			wantErr: false,
-// 		},
-// 	}
-// }
-
-// // initializeScenarioTests creates real-world scenario test cases.
-// func (s *StackTestSuite) initializeScenarioTests() {
-// 	s.scenarioTests = map[string]stackScenario{
-// 		"wordpress": {
-// 			name: "wordpress: images + instances + volumes",
-// 			setup: func(client *Client) (*Stack, error) {
-// 				// Mirror: test/fixtures/wordpress/compose.yaml
-// 				// services:
-// 				//   db:
-// 				//     image: docker.io/library/mysql:8.0
-// 				//     volumes:
-// 				//       - db_data:/var/lib/mysql
-// 				//   wordpress:
-// 				//     depends_on: [db]
-// 				//     image: docker.io/library/wordpress:latest
-// 				//     ports:
-// 				//       - "8000:80"
-// 				//     volumes:
-// 				//       - wordpress_data:/var/www/html
-
-// 				// Default profile (copies from default project, provides root disk)
-// 				profile, err := client.Profile("default", ProfileConfig{})
-// 				if err != nil {
-// 					return nil, err
-// 				}
-
-// 				mysqlImage, err := client.Image("docker.io/library/mysql:8.0", ImageConfig{
-// 					Source: s.imageServer,
-// 				})
-// 				if err != nil {
-// 					return nil, err
-// 				}
-
-// 				wpImage, err := client.Image("docker.io/library/wordpress:latest", ImageConfig{
-// 					Source: s.imageServer,
-// 				})
-// 				if err != nil {
-// 					return nil, err
-// 				}
-
-// 				// db instance with volume
-// 				dbInstance, err := client.Instance("db", InstanceConfig{
-// 					Image: mysqlImage,
-// 					Config: map[string]string{
-// 						"environment.MYSQL_ROOT_PASSWORD": "somewordpress",
-// 						"environment.MYSQL_DATABASE":      "wordpress",
-// 						"environment.MYSQL_USER":          "wordpress",
-// 						"environment.MYSQL_PASSWORD":      "wordpress",
-// 					},
-// 					PostDevices: []*Device{
-// 						{
-// 							Name: "vol-db_data",
-// 							Config: DeviceConfig{
-// 								DeviceType: DeviceTypeDisk,
-// 								Disk: DeviceDiskConfig{
-// 									StorageVolumeConfig: &StorageVolumeConfig{},
-// 									Source:              "db_data",
-// 									Path:                "/var/lib/mysql",
-// 									Shift:               true,
-// 								},
-// 							},
-// 						},
-// 					},
-// 				})
-// 				if err != nil {
-// 					return nil, err
-// 				}
-
-// 				// wordpress instance with volume and proxy
-// 				wpInstance, err := client.Instance("wordpress", InstanceConfig{
-// 					Image: wpImage,
-// 					Config: map[string]string{
-// 						"environment.WORDPRESS_DB_HOST":     "db:3306",
-// 						"environment.WORDPRESS_DB_USER":     "wordpress",
-// 						"environment.WORDPRESS_DB_PASSWORD": "wordpress",
-// 						"environment.WORDPRESS_DB_NAME":     "wordpress",
-// 					},
-// 					Devices: []*Device{
-// 						{
-// 							Name: "proxy-8000",
-// 							Config: DeviceConfig{
-// 								DeviceType: DeviceTypeProxy,
-// 								Proxy: DeviceProxyConfig{
-// 									ListenType:  "tcp",
-// 									ListenAddr:  "0.0.0.0",
-// 									ListenPort:  8000,
-// 									ConnectType: "tcp",
-// 									ConnectAddr: "127.0.0.1",
-// 									ConnectPort: 80,
-// 								},
-// 							},
-// 						},
-// 					},
-// 					PostDevices: []*Device{
-// 						{
-// 							Name: "vol-wordpress_data",
-// 							Config: DeviceConfig{
-// 								DeviceType: DeviceTypeDisk,
-// 								Disk: DeviceDiskConfig{
-// 									StorageVolumeConfig: &StorageVolumeConfig{},
-// 									Source:              "wordpress_data",
-// 									Path:                "/var/www/html",
-// 									Shift:               true,
-// 								},
-// 							},
-// 						},
-// 					},
-// 				})
-// 				if err != nil {
-// 					return nil, err
-// 				}
-
-// 				stack := NewStack(client)
-// 				stack.Add(profile, mysqlImage, wpImage, dbInstance, wpInstance)
-
-// 				return stack, nil
-// 			},
-// 			wantErr: false,
-// 			validate: func(t *testing.T, client *Client, err error) {
-// 				mysqlImage, _ := client.Image("docker.io/library/mysql:8.0", ImageConfig{})
-// 				s.Require().True(mysqlImage.IsEnsured(), "mysql image should be ensured")
-
-// 				wpImage, _ := client.Image("docker.io/library/wordpress:latest", ImageConfig{})
-// 				s.Require().True(wpImage.IsEnsured(), "wordpress image should be ensured")
-
-// 				dbInstance, _ := client.Instance("db", InstanceConfig{})
-// 				s.Require().True(dbInstance.IsEnsured(), "db instance should be ensured")
-// 				s.Equal("Running", dbInstance.IncusInstance.Status, "db instance should be running")
-
-// 				wpInstance, _ := s.client.Instance("wordpress", InstanceConfig{})
-// 				s.Require().True(wpInstance.IsEnsured(), "wordpress instance should be ensured")
-// 				s.Equal("Running", wpInstance.IncusInstance.Status, "wordpress instance should be running")
-// 			},
-// 		},
-// 	}
-// }
 
 // TestHooksWithStack tests that hooks are called during Stack.Run.
 func (s *StackTestSuite) TestHooksWithStack() {
@@ -736,59 +263,181 @@ func (s *StackTestSuite) TestErrorAggregation() {
 	s.Contains(err.Error(), "error-test-2")
 }
 
-// TestScenarios tests real-world compose scenarios (simple-nginx, wordpress).
-func (s *StackTestSuite) TestScenarios() {
-	for _, scenario := range stackTests {
-		s.Run(scenario.name, func() {
-			projectName := fmt.Sprintf("%s-%d", scenario.name, time.Now().UnixNano())
-			client, err := createProjectClient(s.globalClient, projectName)
-			s.Require().NoError(err, "Failed to create test project")
+func (s *StackTestSuite) TestInstanceWithSecrets() {
+	network, err := s.client.Resource(KindNetwork, "default", &NetworkConfig{})
+	s.Require().NoError(err)
 
-			cleanup := func() {
-				if err := s.globalClient.DeleteProject(projectName, true); err != nil {
-					s.T().Errorf("Failed to delete test project %q: %v", projectName, err)
-				}
-			}
+	imageResource, err := s.client.Resource(KindImage, "docker.io/alpine:latest", &ImageConfig{})
+	s.Require().NoError(err)
 
-			resources, err := scenario.resources(s, client)
-			if !s.NoError(err) {
-				cleanup()
-				return
-			}
+	image, ok := imageResource.(*Image)
+	s.Require().True(ok)
 
-			allStack := NewStack(client)
-			allStack.Add(resources...)
-
-			for _, stackRun := range scenario.runs {
-				stack := allStack.ForAction(stackRun.action)
-				err = stack.Run(s.ctx, stackRun.action, stackRun.options...)
-
-				if stackRun.wantError {
-					if !s.Error(err) {
-						cleanup()
-						return
-					}
-					continue
-				}
-
-				if !s.NoError(err) {
-					cleanup()
-					return
-				}
-
-				if stackRun.wantEnsured {
-					for _, r := range stack.All() {
-						if !s.True(r.IsEnsured(), "Should be ensured") {
-							cleanup()
-							return
-						}
-					}
-				}
-			}
-
-			cleanup()
-		})
+	devices := []InstanceDevice{
+		{
+			Name: "eth0",
+			Config: InstanceDeviceConfig{
+				DeviceType: InstanceDeviceTypeNic,
+				Network:    network,
+			},
+		},
 	}
+
+	secrets := []InstanceSecret{
+		{
+			Source:  "db_password",
+			Content: []byte("super-secret-password"),
+		},
+		{
+			Source:  "api_key",
+			Target:  "/app/secrets/api.key",
+			Content: []byte("my-api-key-value"),
+			UID:     0,
+			GID:     0,
+			Mode:    0o440,
+		},
+	}
+
+	instance, err := s.client.Resource(KindInstance, "app-with-secrets", &InstanceConfig{
+		Image:   image.Name(),
+		Devices: devices,
+		Secrets: secrets,
+	})
+	s.Require().NoError(err)
+
+	stack := NewStack(s.client)
+	stack.Add(network, image, instance)
+
+	ensureStack := stack.ForAction(ActionEnsure)
+	s.Require().NoError(ensureStack.Run(s.ctx, ActionEnsure, OptionCreate()))
+	for _, r := range ensureStack.All() {
+		s.Require().True(r.IsEnsured(), "resource %q should be ensured", r.Name())
+	}
+	s.Require().NoError(stack.ForAction(ActionStart).Run(s.ctx, ActionStart))
+	s.Require().NoError(stack.ForAction(ActionStop).Run(s.ctx, ActionStop, OptionForce()))
+}
+
+func (s *StackTestSuite) TestEnsureWithoutCreateFailsForNonExistent() {
+	profile, err := s.client.Resource(KindProfile, "p1", &ProfileConfig{})
+	s.Require().NoError(err)
+
+	stack := NewStack(s.client)
+	stack.Add(profile)
+	s.Require().Error(stack.ForAction(ActionEnsure).Run(s.ctx, ActionEnsure))
+}
+
+func (s *StackTestSuite) TestSingleProfileEnsure() {
+	profile, err := s.client.Resource(KindProfile, "p1", &ProfileConfig{})
+	s.Require().NoError(err)
+
+	stack := NewStack(s.client)
+	stack.Add(profile)
+
+	ensureStack := stack.ForAction(ActionEnsure)
+	s.Require().NoError(ensureStack.Run(s.ctx, ActionEnsure, OptionCreate()))
+	for _, r := range ensureStack.All() {
+		s.Require().True(r.IsEnsured(), "resource %q should be ensured", r.Name())
+	}
+}
+
+func (s *StackTestSuite) TestProfileAndNetworkMixedPriorities() {
+	profile, err := s.client.Resource(KindProfile, "p1", &ProfileConfig{})
+	s.Require().NoError(err)
+
+	network, err := s.client.Resource(KindNetwork, "n1", &NetworkConfig{})
+	s.Require().NoError(err)
+
+	stack := NewStack(s.client)
+	stack.Add(profile, network)
+
+	ensureStack := stack.ForAction(ActionEnsure)
+	s.Require().NoError(ensureStack.Run(s.ctx, ActionEnsure, OptionCreate()))
+	for _, r := range ensureStack.All() {
+		s.Require().True(r.IsEnsured(), "resource %q should be ensured", r.Name())
+	}
+}
+
+func (s *StackTestSuite) TestSimpleNginx() {
+	network, err := s.client.Resource(KindNetwork, "default", &NetworkConfig{})
+	s.Require().NoError(err)
+
+	imageResource, err := s.client.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
+	s.Require().NoError(err)
+
+	image, ok := imageResource.(*Image)
+	s.Require().True(ok)
+
+	devices := []InstanceDevice{
+		{
+			Name: "eth0",
+			Config: InstanceDeviceConfig{
+				DeviceType: InstanceDeviceTypeNic,
+				Network:    network,
+			},
+		},
+	}
+
+	instance, err := s.client.Resource(KindInstance, "web", &InstanceConfig{
+		Image:   image.Name(),
+		Devices: devices,
+	})
+	s.Require().NoError(err)
+
+	stack := NewStack(s.client)
+	stack.Add(network, image, instance)
+
+	ensureStack := stack.ForAction(ActionEnsure)
+	s.Require().NoError(ensureStack.Run(s.ctx, ActionEnsure, OptionCreate()))
+	for _, r := range ensureStack.All() {
+		s.Require().True(r.IsEnsured(), "resource %q should be ensured", r.Name())
+	}
+	s.Require().NoError(stack.ForAction(ActionStart).Run(s.ctx, ActionStart))
+	s.Require().NoError(stack.ForAction(ActionStop).Run(s.ctx, ActionStop, OptionForce()))
+}
+
+func (s *StackTestSuite) TestNginxScale() {
+	network, err := s.client.Resource(KindNetwork, "default", &NetworkConfig{})
+	s.Require().NoError(err)
+
+	imageResource, err := s.client.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
+	s.Require().NoError(err)
+
+	image, ok := imageResource.(*Image)
+	s.Require().True(ok)
+
+	devices := []InstanceDevice{
+		{
+			Name: "eth0",
+			Config: InstanceDeviceConfig{
+				DeviceType: InstanceDeviceTypeNic,
+				Network:    network,
+			},
+		},
+	}
+
+	resources := []Resource{network, image}
+
+	// Create 3 scaled instances: web-1, web-2, web-3
+	for i := 1; i <= 3; i++ {
+		instance, err := s.client.Resource(KindInstance, fmt.Sprintf("web-%d", i), &InstanceConfig{
+			Image:   image.Name(),
+			Devices: devices,
+		})
+		s.Require().NoError(err)
+
+		resources = append(resources, instance)
+	}
+
+	stack := NewStack(s.client)
+	stack.Add(resources...)
+
+	ensureStack := stack.ForAction(ActionEnsure)
+	s.Require().NoError(ensureStack.Run(s.ctx, ActionEnsure, OptionCreate()))
+	for _, r := range ensureStack.All() {
+		s.Require().True(r.IsEnsured(), "resource %q should be ensured", r.Name())
+	}
+	s.Require().NoError(stack.ForAction(ActionStart).Run(s.ctx, ActionStart))
+	s.Require().NoError(stack.ForAction(ActionStop).Run(s.ctx, ActionStop, OptionForce()))
 }
 
 // TestStackSuite runs the test suite.

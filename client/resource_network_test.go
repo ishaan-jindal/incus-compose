@@ -229,13 +229,11 @@ type NetworkSuite struct {
 	ctx          context.Context
 	globalClient *GlobalClient
 	client       *Client
-	projectName  string
 }
 
 // SetupSuite runs once before all tests.
 func (s *NetworkSuite) SetupSuite() {
 	s.ctx = context.Background()
-	s.projectName = "network-test"
 
 	gc, err := NewTestClient(s.ctx)
 	if err != nil {
@@ -247,7 +245,7 @@ func (s *NetworkSuite) SetupSuite() {
 
 // SetupTest runs before each test - creates fresh project.
 func (s *NetworkSuite) SetupTest() {
-	client, err := createProjectClient(s.globalClient, s.projectName)
+	client, err := createProjectClient(s.globalClient, "")
 	if err != nil {
 		s.T().Fatalf("Failed to create test project: %v", err)
 	}
@@ -256,8 +254,10 @@ func (s *NetworkSuite) SetupTest() {
 
 // TearDownTest runs after each test - cleans up project.
 func (s *NetworkSuite) TearDownTest() {
-	if err := s.globalClient.DeleteProject(s.projectName, true); err != nil {
-		s.T().Fatalf("Failed to delete the project after run: %v", err)
+	if s.client != nil {
+		if err := s.globalClient.DeleteProject(s.client.Project(), true); err != nil {
+			s.T().Fatalf("Failed to delete the project after run: %v", err)
+		}
 	}
 }
 
@@ -272,6 +272,31 @@ func (s *NetworkSuite) TestEnsure_WithCreate() {
 	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
+}
+
+func (s *NetworkSuite) TestProjectDeletesNetwork() {
+	r, err := s.client.Resource(KindNetwork, "test-project-net", &NetworkConfig{})
+	s.Require().NoError(err)
+
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
+	s.Require().NoError(err)
+	s.True(r.IsEnsured())
+
+	// Delete the project
+	s.Require().NoError(s.globalClient.DeleteProject(s.client.Project(), true))
+
+	// Create it again and query the net
+	client, err := createProjectClient(s.globalClient, s.client.Project())
+	s.Require().NoError(err)
+	s.client = client
+
+	r, err = client.Resource(KindNetwork, "test-project-net", &NetworkConfig{})
+	s.Require().NoError(err)
+
+	// No create
+	err = RunAction(s.ctx, r, ActionEnsure)
+	s.Require().Error(err, "The network should be gone")
+	s.Require().False(r.IsEnsured())
 }
 
 func (s *NetworkSuite) TestEnsure_WithoutCreate_Fails() {
@@ -508,7 +533,7 @@ func (s *NetworkSuite) TestEnsure_ExistsOnNewClient() {
 	s.Require().NoError(err)
 
 	// Get new client for same project
-	newClient, err := s.globalClient.getProject(s.projectName)
+	newClient, err := s.globalClient.getProject(s.client.Project())
 	s.Require().NoError(err)
 
 	// Ensure without create should find it
@@ -613,7 +638,7 @@ func (s *NetworkSuite) TestExternal_DeleteIsNoOp() {
 	incusName := network.IncusName()
 
 	// Now create an external reference to it with a new client.
-	newDeleteClient, err := s.globalClient.getProject(s.projectName)
+	newDeleteClient, err := s.globalClient.getProject(s.client.Project())
 	s.Require().NoError(err)
 
 	extR, err := newDeleteClient.Resource(KindNetwork, incusName, &NetworkConfig{External: true})
@@ -628,7 +653,7 @@ func (s *NetworkSuite) TestExternal_DeleteIsNoOp() {
 	s.Require().NoError(err)
 
 	// Network should still exist (verify with original resource)
-	newClient, err := s.globalClient.getProject(s.projectName)
+	newClient, err := s.globalClient.getProject(s.client.Project())
 	s.Require().NoError(err)
 
 	checkR, err := newClient.Resource(KindNetwork, "test-ext-del", &NetworkConfig{})

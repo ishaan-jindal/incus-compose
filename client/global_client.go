@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/lmittmann/tint"
@@ -209,23 +207,6 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 	}
 
 	return c
-}
-
-// projectRoot returns the absolute path to the project root directory.
-func projectRoot() string {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		return "."
-	}
-	return filepath.Dir(filepath.Dir(file))
-}
-
-// resolvePath resolves a path relative to the project root.
-func resolvePath(path string) string {
-	if path == "" || filepath.IsAbs(path) {
-		return path
-	}
-	return filepath.Join(projectRoot(), path)
 }
 
 // NewTestClient creates a new GlobalClient for testing.
@@ -546,6 +527,16 @@ func (c *GlobalClient) DeleteProject(name string, force bool) error {
 
 	// c.logger.DebugContext(c.Ctx, "Deleting project", "name", name, "incus_name", incusName)
 
+	var err error
+	if force {
+		err = c.incus.DeleteProjectForce(incusName)
+	} else {
+		err = c.incus.DeleteProject(incusName)
+	}
+	if err != nil {
+		return fmt.Errorf("deleting project %s (incus: %s): %w", name, incusName, err)
+	}
+
 	// Delete networks first - they are global, not project-scoped
 	for _, p := range c.projects {
 		if p.project == name {
@@ -560,16 +551,6 @@ func (c *GlobalClient) DeleteProject(name string, force bool) error {
 			}
 			break
 		}
-	}
-
-	var err error
-	if force {
-		err = c.incus.DeleteProjectForce(incusName)
-	} else {
-		err = c.incus.DeleteProject(incusName)
-	}
-	if err != nil {
-		return fmt.Errorf("deleting project %s (incus: %s): %w", name, incusName, err)
 	}
 
 	// Remove from cache
