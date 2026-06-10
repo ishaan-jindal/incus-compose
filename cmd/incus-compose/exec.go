@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -105,7 +106,7 @@ var execCommand = &cli.Command{
 		}
 		defer func() { _ = c.Done() }()
 
-		// Build stack with only requested service
+		// Build stack with the requested service and its dependencies
 		stack := client.NewStack(c)
 		err = p.ToStack(c, stack, project.ToStackFull(), project.ToStackOnlyServices([]string{service}))
 		if err != nil {
@@ -119,36 +120,25 @@ var execCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		var r client.Resource
+		var inst *client.Instance
 		for _, rr := range stack.All() {
-			if rr.Kind() == client.KindInstance {
-				r = rr
-				break
+			if rr.Kind() == client.KindInstance && rr.IsEnsured() {
+				if ri, ok := rr.(*client.Instance); ok && ri.ServiceName() == service {
+					inst = ri
+					break
+				}
 			}
 		}
 
-		if r == nil || r.Kind() != client.KindInstance {
+		if inst == nil {
 			c.LogError("No service", "service", service)
 			return errLogged.Wrap(client.ErrNotFound.WithText("service not found"))
 		}
 
-		if !r.IsEnsured() {
-			if err = client.RunAction(ctx, r, client.ActionEnsure); err != nil {
-				c.LogError("Ensuring service", "service", service, "error", err)
-				return errLogged.Wrap(err)
-			}
-		}
-
-		inst, ok := r.(*client.Instance)
-		if !ok {
-			c.LogError("Failed to cast resource to instance", "name", r.Name())
-			return errLogged.Wrap(client.ErrUnknown.WithResource(r))
-		}
-
 		// Make sure we have full instance details
 		if !inst.HasFull() {
-			c.LogWarn("Instance missing full details", "name", inst.Name())
-			return errLogged.Wrap(client.NewError("instance details incomplete").WithResource(r))
+			c.LogError("Instance missing full details", "name", inst.Name())
+			return errLogged.Wrap(client.NewError("instance details incomplete").WithResource(inst))
 		}
 
 		// Check instance running state
@@ -160,7 +150,7 @@ var execCommand = &cli.Command{
 				}
 				return instFull.State.Status
 			}())
-			return errLogged.Wrap(client.NewError("instance is not running").WithResource(r))
+			return errLogged.Wrap(client.NewError("instance is not running").WithResource(inst))
 		}
 
 		// Build the effective command. For MVP we use a shell wrapper to support env and workdir.
@@ -240,10 +230,19 @@ var execCommand = &cli.Command{
 			argsExec.Stdout = nil
 			argsExec.Stderr = nil
 		} else {
-			// Attach to the local stdio.
+			// Attach to the local stdio, but honour cmd.Writer/ErrWriter so
+			// non-interactive callers (tests, piped output) can capture output.
+			stdout := io.Writer(os.Stdout)
+			if cmd.Writer != nil && !interactive {
+				stdout = cmd.Writer
+			}
+			stderr := io.Writer(os.Stderr)
+			if cmd.ErrWriter != nil && !interactive {
+				stderr = cmd.ErrWriter
+			}
 			argsExec.Stdin = os.Stdin
-			argsExec.Stdout = os.Stdout
-			argsExec.Stderr = os.Stderr
+			argsExec.Stdout = stdout
+			argsExec.Stderr = stderr
 		}
 
 		// If interactive TTY requested, put the local terminal into raw mode.
