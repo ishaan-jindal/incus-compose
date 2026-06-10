@@ -243,6 +243,7 @@ Use `just --list` to see all available commands. Below is the complete reference
 | `just test-coverage`                            | Run tests with coverage report                     |
 | `just update-snapshots`                         | Update all snapshot test files                     |
 | `just update-snapshots ./cmd/incus-compose/...` | Update snapshots for specific package              |
+| `just update-local-snapshots`                   | Update local snapshot test files (no Incus ones)   |
 
 ### Development Commands
 

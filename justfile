@@ -32,10 +32,15 @@ lint folder="./...":
 fix folder="./...":
     golangci-lint run --fix {{ folder }}
 
-# Update snapshot test files
-update-snapshots folder="./...":
+# Update local snapshot test files
+update-local-snapshots folder="./..." *args:
     go clean -testcache
-    INCUS_COMPOSE_TEST_LOCAL=1 UPDATE_SNAPSHOTS=true go test {{ folder }} || true
+    INCUS_COMPOSE_TEST_LOCAL=1 UPDATE_SNAPSHOTS=true go test {{ folder }} -v {{ args }} || true
+
+# Update snapshot test files that require a remote
+update-snapshots folder="./..." *args:
+    go clean -testcache
+    UPDATE_SNAPSHOTS=true go test {{ folder }} -v {{ args }} || true
 
 # Dev install creates your dev environment: `just dev-install [container] [listen] [project] [image]`
 dev-install container_name="local:ict" listen='127.0.0.1:1443' project='default' image='images:debian/trixie' storagepool='default':
