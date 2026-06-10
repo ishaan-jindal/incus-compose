@@ -28,6 +28,10 @@ test-local folder="./..." *args:
 lint folder="./...":
     golangci-lint run {{ folder }}
 
+# Lint and fix all files.
+fix folder="./...":
+    golangci-lint run --fix {{ folder }}
+
 # Update snapshot test files
 update-snapshots folder="./...":
     go clean -testcache
@@ -114,11 +118,15 @@ run-debug *args:
     @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
     @go run ./cmd/incus-compose --debug --remote "${INCUS_REMOTE:-"local"}" {{ args }}
 
-# Run all tests against nested Incus
+# Run tests against nested Incus, includes direct incus tests.
 test folder="./..." *args:
     @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
-
     go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}
+
+# Run all tests against nested Incus, includes direct incus as well as slow tests.
+test-slow folder="./..." *args:
+    @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
+    INCUS_COMPOSE_TEST_SLOW=1 go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}
 
 # Run tests with coverage report
 test-coverage folder="./..." *args:
