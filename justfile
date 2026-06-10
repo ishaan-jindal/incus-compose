@@ -22,7 +22,7 @@ run-local *args:
 
 # Run local unit-tests, incus-facing tests are skipped.
 test-local folder="./..." *args:
-    INCUS_COMPOSE_TEST_LOCAL=1 go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}
+    INCUS_COMPOSE_TEST_LOCAL=1 go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} | tee test/logs/`date +%Y%m%d-%H%M%S`-local.log
 
 # Lint all files.
 lint folder="./...":
@@ -35,12 +35,12 @@ fix folder="./...":
 # Update local snapshot test files
 update-local-snapshots folder="./..." *args:
     go clean -testcache
-    INCUS_COMPOSE_TEST_LOCAL=1 UPDATE_SNAPSHOTS=true go test {{ folder }} -v {{ args }} || true
+    INCUS_COMPOSE_TEST_LOCAL=1 UPDATE_SNAPSHOTS=true go test {{ folder }} -v {{ args }} | tee test/logs/`date +%Y%m%d-%H%M%S`-update-local-snapshots.log || true
 
 # Update snapshot test files that require a remote
 update-snapshots folder="./..." *args:
     go clean -testcache
-    UPDATE_SNAPSHOTS=true go test {{ folder }} -v {{ args }} || true
+    UPDATE_SNAPSHOTS=true go test {{ folder }} -v {{ args }} | tee test/logs/`date +%Y%m%d-%H%M%S`-update-snapshots.log || true
 
 # Dev install creates your dev environment: `just dev-install [container] [listen] [project] [image]`
 dev-install container_name="local:ict" listen='127.0.0.1:1443' project='default' image='images:debian/trixie' storagepool='default':
@@ -126,12 +126,12 @@ run-debug *args:
 # Run tests against nested Incus, includes direct incus tests.
 test folder="./..." *args:
     @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
-    go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}
+    go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} | tee test/logs/`date +%Y%m%d-%H%M%S`-test.log
 
 # Run all tests against nested Incus, includes direct incus as well as slow tests.
 test-slow folder="./..." *args:
     @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
-    INCUS_COMPOSE_TEST_SLOW=1 go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}
+    INCUS_COMPOSE_TEST_SLOW=1 go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} | tee test/logs/`date +%Y%m%d-%H%M%S`-test-slow.log
 
 # Run tests with coverage report
 test-coverage folder="./..." *args:

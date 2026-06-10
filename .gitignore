@@ -1,6 +1,9 @@
 *.local.json
 *.local.md
 
+test/logs/*
+!test/logs/.gitkeep
+
 .feedback/*
 
 # Its generated with random host only data, still no need to commit.
