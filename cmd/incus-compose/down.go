@@ -163,34 +163,6 @@ func runDown(ctx context.Context, globalClient *client.GlobalClient, c *client.C
 
 	var errs error
 
-	if healthdInUseByProject(p) {
-		if name, err := c.FindHealthdName(); err != nil {
-			c.LogError("Finding healthd", "error", err)
-			errs = errors.Join(errs, err)
-		} else if name != "" {
-			params := healthdParams{
-				projectName: p.Name,
-				binary:      "",
-				image:       resolveHealthdImage(defaultHealthdImage),
-				reCreate:    false,
-				network:     "auto",
-				timeout:     params.timeout,
-			}
-
-			inst, resources, err := healthdGetResources(c, params)
-			if err != nil {
-				globalClient.LogError("Getting healthd resources", "error", err)
-				errs = errors.Join(errs, err)
-			} else {
-				if err := healthdDown(ctx, c, inst, resources, params.timeout); err != nil {
-					c.LogWarn("Healthd down", "error", err)
-				} else {
-					c.LogDebug("Stopped healthd sidecar")
-				}
-			}
-		}
-	}
-
 	if err := stack.Run(ctx, client.ActionEnsure); err != nil {
 		c.LogError("Getting resources", "error", err)
 		errs = errors.Join(errs, err)
