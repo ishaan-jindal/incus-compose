@@ -15,13 +15,14 @@ type FormattersSuite struct {
 }
 
 type logResource struct {
-	name string
+	name     string
+	priority int
 }
 
 func (r logResource) Kind() client.Kind { return client.KindInstance }
 func (r logResource) Name() string      { return r.name }
 func (r logResource) IncusName() string { return r.name }
-func (r logResource) Priority() int     { return client.PriorityInstance }
+func (r logResource) Priority() int     { return r.priority }
 func (r logResource) IsEnsured() bool   { return false }
 func (r logResource) Created() bool     { return false }
 
@@ -65,6 +66,23 @@ func (s *FormattersSuite) TestContainerStatusesFormats() {
 		s.Contains(buf.String(), "name: web")
 		s.Contains(buf.String(), "incus_name: web-1")
 	})
+}
+
+func (s *FormattersSuite) TestSortResources() {
+	resources := []client.Resource{
+		logResource{name: "web-2", priority: client.PriorityInstance},
+		logResource{name: "ic-net", priority: client.PriorityNetwork},
+		logResource{name: "db-1", priority: client.PriorityInstance},
+		logResource{name: "web-1", priority: client.PriorityInstance},
+	}
+
+	names := []string{}
+	for _, r := range sortResources(resources) {
+		names = append(names, r.IncusName())
+	}
+
+	s.Equal([]string{"ic-net", "db-1", "web-1", "web-2"}, names)
+	s.Equal("web-2", resources[0].IncusName(), "input slice must stay untouched")
 }
 
 func (s *FormattersSuite) TestLogFormatterNoColor() {

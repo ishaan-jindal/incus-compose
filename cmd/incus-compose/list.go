@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"os"
 	"slices"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/urfave/cli/v3"
@@ -45,6 +47,19 @@ func NewContainerStatuses(w io.Writer) *ContainerStatuses {
 // Add appends a status to the collection.
 func (c *ContainerStatuses) Add(status ProjectStatus) {
 	c.Statuses = append(c.Statuses, status)
+}
+
+// sortResources orders resources by priority, then Incus name.
+func sortResources(resources []client.Resource) []client.Resource {
+	sorted := slices.Clone(resources)
+	slices.SortFunc(sorted, func(a, b client.Resource) int {
+		if c := cmp.Compare(a.Priority(), b.Priority()); c != 0 {
+			return c
+		}
+		return strings.Compare(a.IncusName(), b.IncusName())
+	})
+
+	return sorted
 }
 
 // Yaml outputs statuses as YAML.
@@ -190,7 +205,7 @@ var listCommand = &cli.Command{
 
 		statuses := NewContainerStatuses(w)
 
-		for _, r := range stack.All() {
+		for _, r := range sortResources(stack.All()) {
 			if r == nil {
 				c.LogDebug("Found a nil resource")
 				continue

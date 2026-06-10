@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/urfave/cli/v3"
@@ -105,7 +106,7 @@ var psCommand = &cli.Command{
 
 		seenServices := map[string]struct{}{}
 
-		for _, r := range stack.All() {
+		for _, r := range sortResources(stack.All()) {
 			if r == nil {
 				c.LogDebug("Found a nil resource")
 				continue
@@ -225,6 +226,11 @@ var psCommand = &cli.Command{
 				}
 			}
 		}()
+
+		// Orphans come from a map, sort for a stable output.
+		slices.SortFunc(entries, func(a, b psEntry) int {
+			return strings.Compare(a.IncusName, b.IncusName)
+		})
 
 		// Handle quiet and services flags
 		w := cmd.Root().Writer
