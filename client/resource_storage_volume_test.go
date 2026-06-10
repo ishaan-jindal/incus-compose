@@ -97,12 +97,6 @@ func (s *StorageVolumeSuite) TestEnsure_WithoutCreate_ThenWithCreate() {
 }
 
 func (s *StorageVolumeSuite) TestEnsure_ShiftedVolume() {
-	ir, err := s.client.Resource(KindImage, "docker.io/library/nginx:latest", &ImageConfig{})
-	s.Require().NoError(err)
-
-	// Create the image
-	s.Require().NoError(RunAction(s.ctx, ir, ActionEnsure, OptionCreate()))
-
 	r, err := s.client.Resource(KindStorageVolume, "test-shifted", &StorageVolumeConfig{
 		Shifted: true,
 		UID:     1000,
@@ -119,6 +113,34 @@ func (s *StorageVolumeSuite) TestEnsure_ShiftedVolume() {
 	s.Equal("true", vol.IncusVolume.Config["security.shifted"])
 	s.Equal("1000", vol.IncusVolume.Config["initial.uid"])
 	s.Equal("1000", vol.IncusVolume.Config["initial.gid"])
+
+	// Does the same as the hardcoded values above
+	err = RunAction(s.ctx, r, ActionStart)
+	s.Require().NoError(err)
+}
+
+func (s *StorageVolumeSuite) TestEnsure_HealthdShiftedVolume() {
+	ir, err := s.client.Resource(KindImage, "registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest", &ImageConfig{})
+	s.Require().NoError(err)
+
+	// Create the image
+	s.Require().NoError(RunAction(s.ctx, ir, ActionEnsure, OptionCreate()))
+
+	r, err := s.client.Resource(KindStorageVolume, "test-healthd-shifted", &StorageVolumeConfig{
+		Shifted:       true,
+		ImageResource: ir,
+	})
+	s.Require().NoError(err)
+
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
+	s.Require().NoError(err)
+
+	vol, ok := r.(*StorageVolume)
+	s.Require().True(ok)
+	s.NotNil(vol.IncusVolume)
+	s.Equal("true", vol.IncusVolume.Config["security.shifted"])
+	s.Equal("65534", vol.IncusVolume.Config["initial.uid"])
+	s.Equal("65534", vol.IncusVolume.Config["initial.gid"])
 }
 
 func (s *StorageVolumeSuite) TestEnsure_ExtraConfig() {
