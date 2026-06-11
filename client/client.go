@@ -79,14 +79,17 @@ func (c *GlobalClient) newProjectClient(name, incusName string, created bool) (*
 	c.projects = append(c.projects, cp)
 
 	if c.IsDebugging() {
-		// Debug logging hook
+		// Debug logging hooks
+		c.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
+			c.LogDebug(string(action), "kind", r.Kind(), "name", r.Name(), "incus_name", r.IncusName(), "action", action, "created", r.Created())
+			return err
+		})
 		c.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 			if err != nil {
-				c.LogDebug("Result with error", "name", r.Name(), "kind", r.Kind(), "action", action, "created", r.Created(), "error", err)
+				c.LogWarn("Result with error", "action", action, "kind", r.Kind(), "name", r.Name(), "incus_name", r.IncusName(), "created", r.Created(), "error", err)
 				return err
 			}
 
-			c.LogDebug("Done", "name", r.Name(), "kind", r.Kind(), "action", action, "created", r.Created())
 			return nil
 		})
 	}
