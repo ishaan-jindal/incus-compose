@@ -45,6 +45,8 @@ incus-compose uses a **resource-first design**, see [Architecture Documentation]
 
 ### Prerequisites
 
+`skopeo` installed on the client for image downloads and `podman` or `docker` for image building.
+
 Switch to a https remote (required for healthchecking).
 
 incus-compose auto-detects the bridge healthd should use (incusbr0, then the default profile's eth0).
