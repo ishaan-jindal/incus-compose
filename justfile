@@ -178,6 +178,25 @@ purge-networks:
     done <<< "${networks}"
     echo "Done."
 
+purge-images *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    remote="${INCUS_REMOTE:-local}"
+    images=$(incus image list "${remote}:" {{ args }} -f json | jq -r '.[] .fingerprint')
+
+    if [[ -z "${images}" ]]; then
+        echo "No images found."
+        exit 1
+    fi
+
+    echo "Deleting image on remote '${remote}':"
+    while IFS= read -r image; do
+        echo "  Deleting: ${image}"
+        incus image delete "${remote}:${image}"
+    done <<< "${images}"
+    echo "Done."
+
 # Run this before you commit.
 pre-commit:
     go mod tidy
