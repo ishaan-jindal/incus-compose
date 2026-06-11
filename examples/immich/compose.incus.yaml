@@ -12,6 +12,15 @@ services:
       default:
         ipv4_address: 10.131.32.17
 
+  microservices:
+    healthcheck:
+      test: ["CMD", "/usr/src/app/server/bin/immich-healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_interval: 1m
+      start_period: 4m
+
   machine-learning:
     healthcheck:
       test: ["CMD", "python3", "/usr/src/healthcheck.py"]

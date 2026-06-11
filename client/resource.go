@@ -246,6 +246,10 @@ func (s *ResourceStore) Add(r Resource) {
 // Remove removes a resource from the store by kind and name.
 func (s *ResourceStore) Remove(r Resource) {
 	s.resources = slices.DeleteFunc(s.resources, func(res Resource) bool {
+		if res == nil {
+			return true
+		}
+
 		return res.Kind() == r.Kind() && res.IncusName() == r.IncusName()
 	})
 }
