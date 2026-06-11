@@ -22,7 +22,11 @@ run-local *args:
 
 # Run local unit-tests, incus-facing tests are skipped.
 test-local folder="./..." *args:
-    INCUS_COMPOSE_TEST_LOCAL=1 go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} | tee test/logs/`date +%Y%m%d-%H%M%S`-local.log
+    LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-test-local.log; \
+        INCUS_COMPOSE_TEST_LOCAL=1 go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} | tee ${LOGFILE} || EXIT_CODE=$?; \
+        echo "Log: ${LOGFILE}"; \
+        echo `date +%Y%m%d-%H%M%S` >> "${LOGFILE}"; \
+        exit ${EXIT_CODE:-0}
 
 # Lint all files.
 lint folder="./...":
@@ -35,12 +39,18 @@ fix folder="./...":
 # Update local snapshot test files
 update-local-snapshots folder="./..." *args:
     go clean -testcache
-    INCUS_COMPOSE_TEST_LOCAL=1 UPDATE_SNAPSHOTS=true go test {{ folder }} -v {{ args }} | tee test/logs/`date +%Y%m%d-%H%M%S`-update-local-snapshots.log || true
+    LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-update-local-snapshots.log; \
+        INCUS_COMPOSE_TEST_LOCAL=1 UPDATE_SNAPSHOTS=true go test {{ folder }} -v {{ args }} | tee ${LOGFILE} || true; \
+        echo `date +%Y%m%d-%H%M%S` >> "${LOGFILE}"; \
+        echo "Log: ${LOGFILE}"
 
 # Update snapshot test files that require a remote
 update-snapshots folder="./..." *args:
     go clean -testcache
-    UPDATE_SNAPSHOTS=true go test {{ folder }} -v {{ args }} | tee test/logs/`date +%Y%m%d-%H%M%S`-update-snapshots.log || true
+    LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-update-snapshots.log; \
+        UPDATE_SNAPSHOTS=true go test {{ folder }} -v {{ args }} | tee ${LOGFILE} || true; \
+        echo `date +%Y%m%d-%H%M%S` >> "${LOGFILE}"; \
+        echo "Log: ${LOGFILE}"
 
 # Dev install creates your dev environment: `just dev-install [container] [listen] [project] [image]`
 dev-install container_name="local:ict" listen='127.0.0.1:1443' project='default' image='images:debian/trixie' storagepool='default':
@@ -126,12 +136,20 @@ run-debug *args:
 # Run tests against nested Incus, includes direct incus tests.
 test folder="./..." *args:
     @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
-    go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} | tee test/logs/`date +%Y%m%d-%H%M%S`-test.log
+    LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-test.log; \
+        go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} | tee ${LOGFILE} || EXIT_CODE=$?; \
+        echo "Log: ${LOGFILE}"; \
+        echo `date +%Y%m%d-%H%M%S` >> "${LOGFILE}"; \
+        exit ${EXIT_CODE:-0}
 
 # Run all tests against nested Incus, includes direct incus as well as slow tests.
 test-slow folder="./..." *args:
     @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
-    INCUS_COMPOSE_TEST_SLOW=1 go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} | tee test/logs/`date +%Y%m%d-%H%M%S`-test-slow.log
+    LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-test-slow.log; \
+        INCUS_COMPOSE_TEST_SLOW=1 go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} | tee ${LOGFILE} || EXIT_CODE=$?; \
+        echo "Log: ${LOGFILE}"; \
+        echo `date +%Y%m%d-%H%M%S` >> "${LOGFILE}"; \
+        exit ${EXIT_CODE:-0}
 
 # Run tests with coverage report
 test-coverage folder="./..." *args:
@@ -139,6 +157,26 @@ test-coverage folder="./..." *args:
     go tool cover -func=coverage.out
     echo ""
     echo "For detailed HTML report, run: go tool cover -html=coverage.out"
+
+# Purge all dangling networks (0 users) from the configured remote
+purge-networks:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    remote="${INCUS_REMOTE:-local}"
+    networks=$(incus --project default network list "${remote}:" -f json | jq -r '.[] | select(.used_by | length == 0) | .name')
+
+    if [[ -z "${networks}" ]]; then
+        echo "No dangling networks found."
+        exit 0
+    fi
+
+    echo "Deleting dangling networks on remote '${remote}':"
+    while IFS= read -r network; do
+        echo "  Deleting: ${network}"
+        incus network delete "${remote}:${network}"
+    done <<< "${networks}"
+    echo "Done."
 
 # Run this before you commit.
 pre-commit:

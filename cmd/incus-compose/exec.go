@@ -234,11 +234,11 @@ var execCommand = &cli.Command{
 			// non-interactive callers (tests, piped output) can capture output.
 			stdout := io.Writer(os.Stdout)
 			if cmd.Writer != nil && !interactive {
-				stdout = cmd.Writer
+				stdout = cmd.Root().Writer
 			}
 			stderr := io.Writer(os.Stderr)
 			if cmd.ErrWriter != nil && !interactive {
-				stderr = cmd.ErrWriter
+				stderr = cmd.Root().ErrWriter
 			}
 			argsExec.Stdin = os.Stdin
 			argsExec.Stdout = stdout
