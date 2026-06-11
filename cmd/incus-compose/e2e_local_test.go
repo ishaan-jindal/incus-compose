@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-type LocalSuite struct {
+type E2ELocalSuite struct {
 	suite.Suite
 	ctx    context.Context
 	stdout *bytes.Buffer
@@ -16,16 +16,16 @@ type LocalSuite struct {
 }
 
 func TestLocalSuite(t *testing.T) {
-	suite.Run(t, new(LocalSuite))
+	suite.Run(t, new(E2ELocalSuite))
 }
 
-func (s *LocalSuite) SetupSuite() {
+func (s *E2ELocalSuite) SetupSuite() {
 	s.ctx = context.Background()
 	s.stdout = &bytes.Buffer{}
 	s.stderr = &bytes.Buffer{}
 }
 
-func (s *LocalSuite) run(args ...string) error {
+func (s *E2ELocalSuite) run(args ...string) error {
 	s.stdout.Reset()
 	s.stderr.Reset()
 	cmd := newRootCommand()
@@ -34,7 +34,7 @@ func (s *LocalSuite) run(args ...string) error {
 	return cmd.Run(s.ctx, append([]string{"incus-compose", "--debug"}, args...))
 }
 
-func (s *LocalSuite) TestConfigCommand() {
+func (s *E2ELocalSuite) TestConfigCommand() {
 	tests := []struct {
 		name    string
 		args    []string
@@ -104,7 +104,7 @@ func (s *LocalSuite) TestConfigCommand() {
 	}
 }
 
-func (s *LocalSuite) TestConfigFilterByService() {
+func (s *E2ELocalSuite) TestConfigFilterByService() {
 	tests := []struct {
 		name    string
 		args    []string

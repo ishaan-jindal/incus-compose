@@ -98,7 +98,7 @@ func (s *E2ESuite) TestDownProjectDeletesNetworks() {
 	}
 }
 
-func (s *E2ESuite) TestUpDownSimpleNginx() {
+func (s *E2ESuite) TestUpSimpleNginx() {
 	tests := []struct {
 		name     string
 		args     []string
@@ -112,6 +112,68 @@ func (s *E2ESuite) TestUpDownSimpleNginx() {
 		},
 		{
 			name:     "list simple-nginx",
+			args:     []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list"},
+			wantErr:  false,
+			snapshot: true,
+		},
+	}
+
+	defer func() {
+		_, _, _ = s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
+	}()
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			stdout, _, err := s.run(tt.args...)
+			if tt.wantErr {
+				s.Error(err)
+			} else {
+				s.NoError(err)
+			}
+
+			if tt.snapshot {
+				s.snapshotter.SnapshotT(s.T(), normalizeListOutput(stdout))
+			}
+		})
+	}
+}
+
+func (s *E2ESuite) TestUpDownUpSimpleNginx() {
+	tests := []struct {
+		name     string
+		args     []string
+		wantErr  bool
+		snapshot bool
+	}{
+		{
+			name:    "up simple-nginx",
+			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "up", "--detach"},
+			wantErr: false,
+		},
+		{
+			name:     "list up simple-nginx",
+			args:     []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list"},
+			wantErr:  false,
+			snapshot: true,
+		},
+		{
+			name:    "down simple-nginx",
+			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "down"},
+			wantErr: false,
+		},
+		{
+			name:     "list down simple-nginx",
+			args:     []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list"},
+			wantErr:  false,
+			snapshot: true,
+		},
+		{
+			name:    "up simple-nginx",
+			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "up", "--detach"},
+			wantErr: false,
+		},
+		{
+			name:     "list down-up simple-nginx",
 			args:     []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list"},
 			wantErr:  false,
 			snapshot: true,
