@@ -154,10 +154,8 @@ func (r *Network) Created() bool {
 func (r *Network) Ensure(ctx context.Context, opts ...Option) error {
 	options := NewOptions(opts...)
 
-	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ctx, ActionEnsure, r, options, nil); err != nil {
-			return err
-		}
+	if err := r.client.hookBefore(ctx, ActionEnsure, r, options, nil); err != nil {
+		return err
 	}
 
 	// Try to get existing network.
@@ -175,35 +173,26 @@ func (r *Network) Ensure(ctx context.Context, opts ...Option) error {
 	}
 
 	if err == nil {
-		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
-		}
+		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 
 		return err
 	}
 
 	// External networks must exist - don't create them.
 	if r.Config.External {
-		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
-		}
+		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 
 		return err
 	}
 
 	if !options.Create || !errors.Is(err, ErrNotFound) {
-		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
-		}
+		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 
 		return err
 	}
 
 	err = r.create(ctx)
-
-	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
-	}
+	err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 
 	return err
 }
@@ -330,14 +319,12 @@ func (r *Network) Delete(ctx context.Context, opts ...Option) error {
 
 	options := NewOptions(opts...)
 
-	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
-			r.IncusNetwork = nil
-			r.ETag = ""
+	if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
+		r.IncusNetwork = nil
+		r.ETag = ""
 
-			r.client.resources.Remove(r)
-			return err
-		}
+		r.client.resources.Remove(r)
+		return err
 	}
 
 	err := r.client.hookAfter(

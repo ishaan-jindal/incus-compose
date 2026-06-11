@@ -94,10 +94,8 @@ func (r *Profile) Created() bool {
 func (r *Profile) Ensure(ctx context.Context, opts ...Option) error {
 	options := NewOptions(opts...)
 
-	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ctx, ActionEnsure, r, options, nil); err != nil {
-			return err
-		}
+	if err := r.client.hookBefore(ctx, ActionEnsure, r, options, nil); err != nil {
+		return err
 	}
 
 	// Try to get existing
@@ -106,26 +104,19 @@ func (r *Profile) Ensure(ctx context.Context, opts ...Option) error {
 		if r.Config.SourceProfile != "" {
 			err = r.updateFromSource()
 		}
-		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
-		}
+		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 
 		return err
 	}
 
 	if !options.Create || !errors.Is(err, ErrNotFound) {
-		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
-		}
+		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 
 		return err
 	}
 
 	err = r.create()
-
-	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
-	}
+	err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 
 	return err
 }
@@ -279,23 +270,17 @@ func (r *Profile) Delete(ctx context.Context, opts ...Option) error {
 
 	options := NewOptions(opts...)
 
-	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
-			r.IncusProfile = nil
-			r.ETag = ""
+	if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
+		r.IncusProfile = nil
+		r.ETag = ""
 
-			r.client.resources.Remove(r)
-			return err
-		}
+		r.client.resources.Remove(r)
+		return err
 	}
 
 	// Do the actual work
 	err := r.client.incus.DeleteProfile(r.incusName)
-
-	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ctx, ActionDelete, r, options, err)
-	}
-
+	err = r.client.hookAfter(ctx, ActionDelete, r, options, err)
 	if err != nil {
 		r.IncusProfile = nil
 		r.ETag = ""

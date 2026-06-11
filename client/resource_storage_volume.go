@@ -111,10 +111,8 @@ func (r *StorageVolume) Created() bool {
 func (r *StorageVolume) Ensure(ctx context.Context, opts ...Option) error {
 	args := NewOptions(opts...)
 
-	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ctx, ActionEnsure, r, args, nil); err != nil {
-			return err
-		}
+	if err := r.client.hookBefore(ctx, ActionEnsure, r, args, nil); err != nil {
+		return err
 	}
 
 	err := r.get()
@@ -124,9 +122,7 @@ func (r *StorageVolume) Ensure(ctx context.Context, opts ...Option) error {
 		}
 	}
 
-	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
-	}
+	err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
 
 	return err
 }
@@ -323,22 +319,16 @@ func (r *StorageVolume) Delete(ctx context.Context, opts ...Option) error {
 
 	options := NewOptions(opts...)
 
-	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
-			r.IncusVolume = nil
-			r.ETag = ""
+	if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
+		r.IncusVolume = nil
+		r.ETag = ""
 
-			r.client.resources.Remove(r)
-			return err
-		}
+		r.client.resources.Remove(r)
+		return err
 	}
 
 	err := r.client.incus.DeleteStoragePoolVolume(r.Config.Pool, "custom", r.incusName)
-
-	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ctx, ActionDelete, r, options, err)
-	}
-
+	err = r.client.hookAfter(ctx, ActionDelete, r, options, err)
 	if err != nil {
 		r.IncusVolume = nil
 		r.ETag = ""

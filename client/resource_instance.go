@@ -232,10 +232,8 @@ func (r *Instance) fetch() error {
 func (r *Instance) Ensure(ctx context.Context, opts ...Option) error {
 	options := NewOptions(opts...)
 
-	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ctx, ActionEnsure, r, options, nil); err != nil {
-			return err
-		}
+	if err := r.client.hookBefore(ctx, ActionEnsure, r, options, nil); err != nil {
+		return err
 	}
 
 	// Try to get existing
@@ -243,29 +241,20 @@ func (r *Instance) Ensure(ctx context.Context, opts ...Option) error {
 	err := r.fetch()
 	if err == nil {
 		err = r.ensured()
-
-		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
-		}
+		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 
 		return err
 	}
 
 	if !options.Create {
 		err = ErrNotFound.WithResource(r).Wrap(err)
-
-		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
-		}
+		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 
 		return err
 	}
 
 	err = r.create(ctx, opts...)
-
-	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
-	}
+	err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 
 	return err
 }
@@ -920,14 +909,12 @@ func (r *Instance) Delete(ctx context.Context, opts ...Option) error {
 
 	options := NewOptions(opts...)
 
-	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
-			r.IncusInstance = nil
-			r.ETag = ""
+	if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
+		r.IncusInstance = nil
+		r.ETag = ""
 
-			r.client.resources.Remove(r)
-			return err
-		}
+		r.client.resources.Remove(r)
+		return err
 	}
 
 	op, err := r.client.incus.DeleteInstance(r.incusName)
@@ -935,15 +922,7 @@ func (r *Instance) Delete(ctx context.Context, opts ...Option) error {
 	// Do the delete
 	err = r.client.hookOperation(ctx, ActionDelete, r, options, op, err)
 
-	if r.client.hookAfter != nil {
-		if err := r.client.hookAfter(ctx, ActionDelete, r, options, err); err != nil {
-			r.IncusInstance = nil
-			r.ETag = ""
-
-			r.client.resources.Remove(r)
-			return err
-		}
-	} else if err != nil {
+	if err := r.client.hookAfter(ctx, ActionDelete, r, options, err); err != nil {
 		r.IncusInstance = nil
 		r.ETag = ""
 
@@ -970,17 +949,12 @@ func (r *Instance) Log(ctx context.Context, opts ...Option) error {
 
 	options := NewOptions(opts...)
 
-	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ctx, ActionLog, r, options, nil); err != nil {
-			return err
-		}
+	if err := r.client.hookBefore(ctx, ActionLog, r, options, nil); err != nil {
+		return err
 	}
 
 	err := r.log(ctx, options)
-
-	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ctx, ActionLog, r, options, err)
-	}
+	err = r.client.hookAfter(ctx, ActionLog, r, options, err)
 
 	return err
 }

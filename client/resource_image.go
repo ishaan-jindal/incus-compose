@@ -222,10 +222,8 @@ func (r *Image) Ensure(ctx context.Context, opts ...Option) error {
 		}
 	}
 
-	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ctx, ActionEnsure, r, args, nil); err != nil {
-			return err
-		}
+	if err := r.client.hookBefore(ctx, ActionEnsure, r, args, nil); err != nil {
+		return err
 	}
 
 	// Try to get existing image
@@ -235,26 +233,19 @@ func (r *Image) Ensure(ctx context.Context, opts ...Option) error {
 			err = r.refresh(ctx, args)
 		}
 
-		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
-		}
+		err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
 
 		return err
 	}
 
 	if !args.Create || !errors.Is(err, ErrNotFound) {
-		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
-		}
+		err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
 
 		return err
 	}
 
 	err = r.create(ctx, args)
-
-	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
-	}
+	err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
 
 	return err
 }
@@ -519,10 +510,8 @@ func (r *Image) readOCIConfigFromProperties(props map[string]string) {
 // ensureBuild handles the Ensure lifecycle for locally-built images. It does not
 // touch the remote-pull machinery (source image server, cache project).
 func (r *Image) ensureBuild(ctx context.Context, args Options) error {
-	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ctx, ActionEnsure, r, args, nil); err != nil {
-			return err
-		}
+	if err := r.client.hookBefore(ctx, ActionEnsure, r, args, nil); err != nil {
+		return err
 	}
 
 	err := r.get()
@@ -550,9 +539,7 @@ func (r *Image) ensureBuild(ctx context.Context, args Options) error {
 		// !args.Create and BuildAuto: leave err non-nil (not found, don't create).
 	}
 
-	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
-	}
+	err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
 	return err
 }
 
@@ -648,14 +635,12 @@ func (r *Image) Delete(ctx context.Context, opts ...Option) error {
 
 	options := NewOptions(opts...)
 
-	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
-			r.IncusAlias = nil
-			r.ETag = ""
+	if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
+		r.IncusAlias = nil
+		r.ETag = ""
 
-			r.client.resources.Remove(r)
-			return err
-		}
+		r.client.resources.Remove(r)
+		return err
 	}
 
 	// Resolve the per-project copy in the active project (not the cache). A
@@ -667,28 +652,17 @@ func (r *Image) Delete(ctx context.Context, opts ...Option) error {
 
 		r.client.resources.Remove(r)
 
-		if r.client.hookAfter != nil {
-			return r.client.hookAfter(ctx, ActionDelete, r, options, err)
-		}
-		return err
+		return r.client.hookAfter(ctx, ActionDelete, r, options, err)
 	}
 
 	op, err := r.client.incus.DeleteImage(alias.Target)
 
 	err = r.client.hookOperation(ctx, ActionDelete, r, options, op, err)
-	if r.client.hookAfter != nil {
-		r.IncusAlias = nil
-		r.ETag = ""
-
-		r.client.resources.Remove(r)
-		return r.client.hookAfter(ctx, ActionDelete, r, options, err)
-	}
-
 	r.IncusAlias = nil
 	r.ETag = ""
 
 	r.client.resources.Remove(r)
-	return err
+	return r.client.hookAfter(ctx, ActionDelete, r, options, err)
 }
 
 var (
