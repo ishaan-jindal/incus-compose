@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
-	"io"
 	"time"
 
 	"github.com/urfave/cli/v3"
@@ -20,7 +18,8 @@ var downCommand = &cli.Command{
 	ArgsUsage: "[SERVICE...]",
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
-			Name:    "project",
+			Name: "project",
+			// The alias volumes is for docker-compose compatibility
 			Aliases: []string{"volumes"},
 			Usage:   "Remove the project",
 		},
@@ -31,8 +30,6 @@ var downCommand = &cli.Command{
 		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
-		deleteProject := cmd.Bool("project")
-
 		globalClient, err := clientFromContext(ctx)
 		if err != nil {
 			return err
@@ -47,33 +44,10 @@ var downCommand = &cli.Command{
 		// Get the per Project client early, gives early errors if the project does not exists
 		c, err := globalClient.EnsureProject(p.Name)
 		if err != nil {
-			globalClient.LogError("Getting the incus project", "project", p.Name, "error", err)
-			return errLogged.Wrap(err)
-		}
-		defer func() { _ = c.Done() }()
-
-		if deleteProject {
-			networks, err := projectNetworks(ctx, c, p)
-			if err != nil {
-				c.LogWarn("Getting project networks", "project", p.Name, "error", err)
-			}
-
-			c.LogDebug("Deleting the project")
-			err = globalClient.DeleteProject(c.Project(), true)
-			if err != nil {
-				globalClient.LogError("Deleting the project", "project", p.Name, "error", err)
-				return errLogged
-			}
-
-			if networks != nil {
-				if err := deleteProjectNetworks(c, networks); err != nil {
-					globalClient.LogError("Deleting project networks", "project", p.Name, "error", err)
-					return errLogged.Wrap(err)
-				}
-			}
-
+			globalClient.LogWarn("Getting the incus project", "project", p.Name, "error", err)
 			return nil
 		}
+		defer func() { _ = c.Done() }()
 
 		// Register the DNS Watcher
 		if err := c.RegisterDNSWatcher(); err != nil {
@@ -88,101 +62,49 @@ var downCommand = &cli.Command{
 
 		finish := startProgress(globalClient, c, cmd.Root().Writer)
 
-		err = runDown(ctx, globalClient, c, p, downParams{
-			services:  cmd.Args().Slice(),
-			timeout:   cmd.Duration("timeout"),
-			errWriter: cmd.Root().ErrWriter,
-		})
+		stackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackReverse()}
+
+		stack := client.NewStack(c)
+		if err := p.ToStack(c, stack, stackOpts...); err != nil {
+			c.LogError("Adding the project to a stack", "error", err)
+			return errLogged
+		}
+
+		var errs error
+
+		if err := stack.Run(ctx, client.ActionEnsure); err != nil {
+			c.LogError("Getting resources", "error", err)
+			errs = errors.Join(errs, err)
+		}
+
+		if cmd.Bool("project") {
+			c.LogDebug("Deleting the project")
+			err := globalClient.DeleteProject(c.Project(), true)
+			if err != nil {
+				c.LogError("Deleting the project", "error", err)
+				return errLogged
+			}
+
+			return nil
+		}
+
+		errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout")))
+		if errStop != nil {
+			c.LogWarn("Stopping resources", "error", errStop)
+			errs = errors.Join(errs, errStop)
+		}
+
+		errDel := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout")))
+		if errDel != nil {
+			c.LogWarn("Deleting resources", "error", errDel)
+			errs = errors.Join(errs, errDel)
+		}
+
+		if errs != nil {
+			return errLogged.Wrap(errs)
+		}
 
 		finish(err == nil)
 		return nil
 	},
-}
-
-func projectNetworks(ctx context.Context, c *client.Client, p *project.Project) ([]*client.Network, error) {
-	stack := client.NewStack(c)
-	if err := p.ToStack(c, stack, project.ToStackReverse()); err != nil {
-		c.LogError("Adding the project to a stack", "error", err)
-		return nil, err
-	}
-
-	networkStack := client.NewStack(c)
-	networks := []*client.Network{}
-	for _, r := range stack.All() {
-		network, ok := r.(*client.Network)
-		if ok && !network.Config.External {
-			networkStack.Add(network)
-			networks = append(networks, network)
-		}
-	}
-
-	if err := networkStack.Run(ctx, client.ActionEnsure); err != nil {
-		return nil, err
-	}
-
-	return networks, nil
-}
-
-func deleteProjectNetworks(c *client.Client, networks []*client.Network) error {
-	var errs error
-	for _, network := range networks {
-		if network.Config.External {
-			continue
-		}
-
-		if err := c.GlobalConnection().DeleteNetwork(network.IncusName()); err != nil {
-			errs = errors.Join(errs, fmt.Errorf("deleting network %q: %w", network.Name(), err))
-		}
-	}
-	return errs
-}
-
-// downParams holds the parsed arguments for a down run.
-// services is the raw service filter (empty means all services).
-type downParams struct {
-	services  []string
-	images    bool
-	timeout   time.Duration
-	errWriter io.Writer
-}
-
-// runDown stops and removes the instances of a loaded project, along with their
-// per-project image copies. Volumes and the image cache are left untouched.
-func runDown(ctx context.Context, globalClient *client.GlobalClient, c *client.Client, p *project.Project, params downParams) error {
-	stackOpts := []project.ToStackOption{project.ToStackOnlyServices(params.services), project.ToStackReverse()}
-
-	if !params.images {
-		stackOpts = append(stackOpts, project.ToStackNoImages())
-	}
-
-	stack := client.NewStack(c)
-	if err := p.ToStack(c, stack, stackOpts...); err != nil {
-		c.LogError("Adding the project to a stack", "error", err)
-		return errLogged
-	}
-
-	var errs error
-
-	if err := stack.Run(ctx, client.ActionEnsure); err != nil {
-		c.LogError("Getting resources", "error", err)
-		errs = errors.Join(errs, err)
-	}
-
-	errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionForce(), client.OptionTimeout(params.timeout))
-	if errStop != nil {
-		c.LogWarn("Stopping resources", "error", errStop)
-		errs = errors.Join(errs, errStop)
-	}
-
-	errDel := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, client.OptionForce(), client.OptionTimeout(params.timeout))
-	if errDel != nil {
-		c.LogWarn("Deleting resources", "error", errDel)
-		errs = errors.Join(errs, errDel)
-	}
-
-	if errs != nil {
-		return errLogged.Wrap(errs)
-	}
-
-	return nil
 }

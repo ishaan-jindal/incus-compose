@@ -199,13 +199,13 @@ func healthdUp(ctx context.Context, c *client.Client, inst *client.Instance, res
 		if _, _, err := c.Connection().GetNetwork("incusbr0"); err == nil {
 			params.network = "incusbr0"
 		} else {
-			ip, err := c.ConnectionIP()
+			ip, err := c.Global().ConnectionIP()
 			if err != nil {
 				c.LogError("Getting the connection IP", "error", err)
 				return errLogged.Wrap(err)
 			}
 
-			network, err := c.NetworkForIP(ip)
+			network, err := c.Global().NetworkForIP(ip)
 			if err != nil {
 				c.LogError("Getting the connection network", "error", err)
 				return errLogged.Wrap(err)

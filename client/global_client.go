@@ -5,14 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 
-	"github.com/lmittmann/tint"
 	incusClient "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/lxc/incus/v7/shared/cliconfig"
-	"github.com/mattn/go-colorable"
 )
 
 // ClientConfig holds configuration options for the Client.
@@ -100,6 +100,9 @@ type GlobalClient struct {
 	imageCache incusClient.InstanceServer
 	unix       bool
 	connected  bool
+
+	// Cache for ConnectionIP()
+	connectionIP string
 
 	// hookBefore is called hookBefore any action.
 	hookBefore func(ctx context.Context, action Action, r Resource, args Options, err error) error
@@ -220,12 +223,7 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 
 	logFormat, ok := os.LookupEnv("LOG_FORMAT")
 	if !ok {
-		_, inCI := os.LookupEnv("CI")
-		if inCI {
-			logFormat = "text"
-		} else {
-			logFormat = "colortext"
-		}
+		logFormat = "text"
 	}
 
 	switch logFormat {
@@ -234,14 +232,6 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 			os.Stderr,
 			&slog.HandlerOptions{Level: slog.LevelDebug - 4}),
 		)
-	case "colortext":
-		logger = slog.New(tint.NewHandler(
-			colorable.NewColorable(os.Stderr),
-			&tint.Options{
-				Level:      slog.LevelDebug - 4,
-				TimeFormat: "15:04",
-			},
-		))
 	default:
 		logger = slog.New(slog.NewTextHandler(
 			os.Stderr,
@@ -322,19 +312,10 @@ func NewOfflineClient(ctx context.Context, name string) *Client {
 
 // Connect establishes a connection to the Incus server.
 func (c *GlobalClient) Connect() error {
-	if c.Config.ProvidedInstanceServer != nil {
-		return c.connectProvided()
+	if c.Config.ProvidedInstanceServer == nil {
+		return errors.New("provide a ProvidedInstanceServer")
 	}
 
-	return errors.New("provide a ProvidedInstanceServer")
-}
-
-// Connection returns the project-scoped Connection client.
-func (c *GlobalClient) Connection() *incusClient.ProtocolIncus {
-	return c.incus
-}
-
-func (c *GlobalClient) connectProvided() error {
 	info, err := c.Config.ProvidedInstanceServer.GetConnectionInfo()
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrConnectionFailed, err)
@@ -360,6 +341,11 @@ func (c *GlobalClient) connectProvided() error {
 	}
 
 	return c.setupImageCache()
+}
+
+// Connection returns the project-scoped Connection client.
+func (c *GlobalClient) Connection() *incusClient.ProtocolIncus {
+	return c.incus
 }
 
 // detectStoragePool gets the first storage pool from the incus server.
@@ -397,6 +383,12 @@ func (c *GlobalClient) setupImageCache() error {
 // The `any` here is ok.
 func (c *GlobalClient) LogError(msg string, args ...any) {
 	c.logger.ErrorContext(c.ctx, msg, args...)
+}
+
+// LogWarn logs a warning.
+// The `any` here is ok.
+func (c *GlobalClient) LogWarn(msg string, args ...any) {
+	c.logger.WarnContext(c.ctx, msg, args...)
 }
 
 // LogDebug logs a debug message.
@@ -534,20 +526,24 @@ func (c *GlobalClient) DeleteProject(name string, force bool) error {
 		err = c.incus.DeleteProject(incusName)
 	}
 	if err != nil {
-		return fmt.Errorf("deleting project %s (incus: %s): %w", name, incusName, err)
+		return err
 	}
 
-	// Delete networks first - they are global, not project-scoped
+	// Delete networks - they are global, not project-scoped
 	for _, p := range c.projects {
 		if p.project == name {
 			// Delete networks first - they are global, not project-scoped
 			networks, err := ByKind[*Network](p.resources.All(), KindNetwork)
 			if err != nil {
+				c.LogWarn("Deleting networks", "error", err)
 				continue
 			}
 
 			for _, n := range networks {
-				_ = RunAction(c.ctx, n, ActionDelete, OptionForce())
+				err = RunAction(c.ctx, n, ActionDelete, OptionForce())
+				if err != nil {
+					c.LogWarn("Deleting network", "network", n, "error", err)
+				}
 			}
 			break
 		}
@@ -667,4 +663,80 @@ func (c *GlobalClient) SetOutputHandler(handler func(action Action, r Resource, 
 // concurrently and must be safe for concurrent use.
 func (c *GlobalClient) SetProgressHandler(handler func(action Action, r Resource, args Options, p Progress)) {
 	c.progressHandler = handler
+}
+
+// NetworkBridgeIPs returns the IPv4 and IPv6 bridge addresses of an Incus network.
+// The addresses are returned without CIDR notation.
+// Addresses for which the network config key is absent or set to "none" are omitted.
+func (c *GlobalClient) NetworkBridgeIPs(networkName string) (ipv4 []string, ipv6 []string, err error) {
+	network, _, err := c.incus.GetNetwork(networkName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("getting network %s: %w", networkName, err)
+	}
+
+	if v := network.Config["ipv4.address"]; v != "" && v != "none" {
+		ip, _, err := net.ParseCIDR(v)
+		if err == nil {
+			ipv4 = append(ipv4, ip.String())
+		}
+	} else if v := network.Config["ipv6.address"]; v != "" && v != "none" {
+		ip, _, err := net.ParseCIDR(v)
+		if err == nil {
+			ipv6 = append(ipv6, ip.String())
+		}
+	}
+
+	return ipv4, ipv6, nil
+}
+
+// ConnectionIP returns the IP of the current connection,
+// this function is cached by GlobalClient.connectionIP.
+func (c *GlobalClient) ConnectionIP() (string, error) {
+	if !c.IsRemote() {
+		return "", errors.New("Client.ConnectionIP needs a non unix connection")
+	}
+
+	if c.connectionIP != "" {
+		return c.connectionIP, nil
+	}
+
+	u, err := url.Parse(c.Config.URL)
+	if err != nil {
+		return "", fmt.Errorf("while parsing url %q: %w", c.Config.URL, err)
+	}
+
+	if net.ParseIP(u.Hostname()) != nil {
+		c.connectionIP = u.Hostname()
+		return c.connectionIP, nil
+	}
+
+	ip, err := net.LookupIP(u.Hostname())
+	if err != nil {
+		return "", fmt.Errorf("while looking up the IP for %q: %w", c.Config.URL, err)
+	}
+
+	c.connectionIP = ip[0].String()
+	return c.connectionIP, nil
+}
+
+// NetworkForIP lookups the incus network for the given ip.
+func (c *GlobalClient) NetworkForIP(ip string) (string, error) {
+	isV4 := net.ParseIP(ip).To4() != nil
+
+	networks, err := c.incus.GetNetworks()
+	if err != nil {
+		return "", fmt.Errorf("GetNetworks: %w", err)
+	}
+
+	for _, network := range networks {
+		if isV4 && network.Config["ipv4.address"] == ip {
+			return network.Name, nil
+		}
+
+		if !isV4 && network.Config["ipv6.address"] == ip {
+			return network.Name, nil
+		}
+	}
+
+	return "", fmt.Errorf("network with ip %q not found", ip)
 }

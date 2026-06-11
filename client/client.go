@@ -2,11 +2,8 @@ package client
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
-	"net"
-	"net/url"
 
 	incusClient "github.com/lxc/incus/v7/client"
 )
@@ -27,9 +24,6 @@ type Client struct {
 
 	// Resource storage
 	resources ResourceStore
-
-	// Cache for ConnectionIP()
-	connectionIP string
 
 	// hookBefore is called before any action
 	hookBefore func(ctx context.Context, action Action, r Resource, args Options, err error) error
@@ -100,6 +94,16 @@ func (c *GlobalClient) newProjectClient(name, incusName string, created bool) (*
 	return cp, nil
 }
 
+// Global returns the GlobalClient associated with this project client.
+func (c *Client) Global() *GlobalClient {
+	return c.globalClient
+}
+
+// GlobalConnection returns the global incus connection (with the default project).
+func (c *Client) GlobalConnection() *incusClient.ProtocolIncus {
+	return c.globalClient.incus
+}
+
 // Project returns the user-facing project name.
 func (c *Client) Project() string {
 	return c.project
@@ -113,30 +117,6 @@ func (c *Client) IncusProject() string {
 // IsRemote returns true if connected via network (not unix socket).
 func (c *Client) IsRemote() bool {
 	return c.globalClient.IsRemote()
-}
-
-// NetworkBridgeIPs returns the IPv4 and IPv6 bridge addresses of an Incus network.
-// The addresses are returned without CIDR notation.
-// Addresses for which the network config key is absent or set to "none" are omitted.
-func (c *Client) NetworkBridgeIPs(networkName string) (ipv4 []string, ipv6 []string, err error) {
-	network, _, err := c.incus.GetNetwork(networkName)
-	if err != nil {
-		return nil, nil, fmt.Errorf("getting network %s: %w", networkName, err)
-	}
-
-	if v := network.Config["ipv4.address"]; v != "" && v != "none" {
-		ip, _, err := net.ParseCIDR(v)
-		if err == nil {
-			ipv4 = append(ipv4, ip.String())
-		}
-	} else if v := network.Config["ipv6.address"]; v != "" && v != "none" {
-		ip, _, err := net.ParseCIDR(v)
-		if err == nil {
-			ipv6 = append(ipv6, ip.String())
-		}
-	}
-
-	return ipv4, ipv6, nil
 }
 
 // IsDebugging returns if debugging is enabled.
@@ -171,11 +151,6 @@ func (c *Client) LogError(msg string, args ...any) {
 // Connection returns the project-scoped Connection client.
 func (c *Client) Connection() *incusClient.ProtocolIncus {
 	return c.incus
-}
-
-// GlobalConnection returns the global (non-project-scoped) Incus client.
-func (c *Client) GlobalConnection() *incusClient.ProtocolIncus {
-	return c.globalClient.incus
 }
 
 // Config returns the client config.
@@ -407,56 +382,4 @@ func (c *Client) ResolveImageFingerprint(fingerprint string) string {
 
 	c.LogWarn("failed to resolve image", "fingerprint", fingerprint)
 	return fingerprint
-}
-
-// ConnectionIP returns the IP of the current connection,
-// this function is cached by Client.connectionIP.
-func (c *Client) ConnectionIP() (string, error) {
-	if !c.IsRemote() {
-		return "", errors.New("Client.ConnectionIP needs a non unix connection")
-	}
-
-	if c.connectionIP != "" {
-		return c.connectionIP, nil
-	}
-
-	u, err := url.Parse(c.config.URL)
-	if err != nil {
-		return "", fmt.Errorf("while parsing url %q: %w", c.config.URL, err)
-	}
-
-	if net.ParseIP(u.Hostname()) != nil {
-		c.connectionIP = u.Hostname()
-		return c.connectionIP, nil
-	}
-
-	ip, err := net.LookupIP(u.Hostname())
-	if err != nil {
-		return "", fmt.Errorf("while looking up the IP for %q: %w", c.config.URL, err)
-	}
-
-	c.connectionIP = ip[0].String()
-	return c.connectionIP, nil
-}
-
-// NetworkForIP lookups the incus network for the given ip.
-func (c *Client) NetworkForIP(ip string) (string, error) {
-	isV4 := net.ParseIP(ip).To4() != nil
-
-	networks, err := c.incus.GetNetworks()
-	if err != nil {
-		return "", fmt.Errorf("GetNetworks: %w", err)
-	}
-
-	for _, network := range networks {
-		if isV4 && network.Config["ipv4.address"] == ip {
-			return network.Name, nil
-		}
-
-		if !isV4 && network.Config["ipv6.address"] == ip {
-			return network.Name, nil
-		}
-	}
-
-	return "", fmt.Errorf("network with ip %q not found", ip)
 }

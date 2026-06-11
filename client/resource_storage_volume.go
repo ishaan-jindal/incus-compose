@@ -137,6 +137,8 @@ func (r *StorageVolume) get() error {
 	// Try to get existing volume
 	volume, eTag, err := r.client.incus.GetStoragePoolVolume(r.Config.Pool, "custom", r.incusName)
 	if err != nil {
+		r.IncusVolume = nil
+		r.ETag = ""
 		return ErrNotFound.Wrap(err)
 	}
 
@@ -311,6 +313,12 @@ func (r *StorageVolume) Delete(ctx context.Context, opts ...Option) error {
 
 		r.client.resources.Remove(r)
 		return nil
+	}
+
+	if err := r.get(); err != nil {
+		// Already gone server side
+		r.client.resources.Remove(r)
+		return err
 	}
 
 	options := NewOptions(opts...)

@@ -7,6 +7,8 @@ import (
 	"io"
 	"maps"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"slices"
@@ -482,15 +484,7 @@ func (r *Instance) ensureVolumes() error {
 }
 
 func (r *Instance) attachPostStartDevices(ctx context.Context) error {
-	// Fetch fresh state and ETag before modifying devices — start may have
-	// invalidated the cached ETag via UpdateInstanceState.
-	if err := r.fetch(); err != nil {
-		return ErrNotFound.WithText("refreshing instance before post-start devices").Wrap(err)
-	}
-
-	instance := r.IncusInstance
-
-	// Resolve container IPs once — instance is running so this should be fast.
+	// Resolve container IPs once - instance is running so this should be fast.
 	ips, err := r.WaitIPs(ctx, 30*time.Second)
 	if err != nil {
 		r.client.LogWarn("could not resolve IPs for post-start devices", "instance", r.incusName, "err", err)
@@ -501,7 +495,7 @@ func (r *Instance) attachPostStartDevices(ctx context.Context) error {
 	iPv6s := ips[0].IPv6s
 
 	var bridgeV4Addrs, bridgeV6Addrs []string
-	bridgeV4Addrs, bridgeV6Addrs, err = r.client.NetworkBridgeIPs(network)
+	bridgeV4Addrs, bridgeV6Addrs, err = r.client.Global().NetworkBridgeIPs(network)
 	if err != nil {
 		return fmt.Errorf("nat-proxy: could not get bridge IPs for network %s: %w", network, err)
 	}
@@ -510,6 +504,7 @@ func (r *Instance) attachPostStartDevices(ctx context.Context) error {
 		return fmt.Errorf("nat-proxy: didn't get an IP for network %s", network)
 	}
 
+	devices := map[string]map[string]string{}
 	for _, dev := range r.Config.PostStartDevices {
 		if dev.Config.DeviceType == InstanceDeviceTypeProxy && dev.Config.Proxy.Nat {
 			if dev.Config.Proxy.ListenAddr == "" {
@@ -534,16 +529,11 @@ func (r *Instance) attachPostStartDevices(ctx context.Context) error {
 			return err
 		}
 
-		instance.Devices[devName] = devConfig
+		devices[devName] = devConfig
 	}
 
-	op, err := r.client.incus.UpdateInstance(instance.Name, instance.Writable(), r.ETag)
-	if err != nil {
+	if err := r.patch(instancePatch{Devices: devices}); err != nil {
 		return ErrCreate.WithText("updating with post-start devices").Wrap(err)
-	}
-
-	if err := op.Wait(); err != nil {
-		return ErrOperation.WithText("waiting for post-start device update").Wrap(err)
 	}
 
 	return nil
@@ -873,33 +863,49 @@ func (r *Instance) stop(ctx context.Context, options Options) error {
 	return r.fetch()
 }
 
-// setHealthCheckingStopped writes or clears the user.stopped config key on the instance.
+// instancePatch is the partial body for PATCH /1.0/instances/<name>.
+// Only non-empty fields are sent; the server preserves everything absent.
+type instancePatch struct {
+	Config  map[string]string            `json:"config,omitempty"`
+	Devices map[string]map[string]string `json:"devices,omitempty"`
+}
+
+// patch sends a partial instance update. Unlike UpdateInstance (full PUT with
+// ETag), the server merges only the given keys, so it cannot conflict with
+// incusd writing volatile config keys concurrently.
+func (r *Instance) patch(body instancePatch) error {
+	u := "/1.0/instances/" + url.PathEscape(r.incusName)
+	if r.client.incusProject != "" {
+		u += "?project=" + url.QueryEscape(r.client.incusProject)
+	}
+
+	_, _, err := r.client.incus.RawQuery(http.MethodPatch, u, body, "")
+	return err
+}
+
+// setHealthCheckingStopped writes the user.healthcheck.stopped config key on
+// the instance. Patches only this key; a full UpdateInstance races with incusd
+// writing volatile config keys around start/stop (ETag mismatch under load).
 func (r *Instance) setHealthCheckingStopped(stopped bool) error {
-	// Always fetch before writing to get a fresh ETag — the caller may have
-	// just run UpdateInstanceState which invalidates the cached ETag.
 	if err := r.fetch(); err != nil {
 		return err
 	}
 
-	current, exists := r.IncusInstance.Config[HealthStoppedKey]
-	if stopped {
-		if exists && current == "true" {
-			return nil
-		}
-		r.IncusInstance.Config[HealthStoppedKey] = "true"
-	} else {
-		if !exists {
-			return nil
-		}
-		delete(r.IncusInstance.Config, HealthStoppedKey)
+	if (r.IncusInstance.Config[HealthStoppedKey] == "true") == stopped {
+		return nil
 	}
 
-	op, err := r.client.incus.UpdateInstance(r.incusName, r.IncusInstance.Writable(), r.ETag)
-	if err != nil {
+	value := "false"
+	if stopped {
+		value = "true"
+	}
+
+	if err := r.patch(instancePatch{Config: map[string]string{HealthStoppedKey: value}}); err != nil {
 		return err
 	}
 
-	return op.Wait()
+	r.IncusInstance.Config[HealthStoppedKey] = value
+	return nil
 }
 
 // Delete removes the instance from Incus.

@@ -263,6 +263,8 @@ func (r *Image) get() error {
 	// Check if image alias exists in cache
 	alias, eTag, err := r.client.incus.GetImageAlias(r.incusName)
 	if err != nil {
+		r.IncusAlias = nil
+		r.ETag = ""
 		return ErrNotFound.Wrap(err)
 	}
 
@@ -636,6 +638,12 @@ func (r *Image) Delete(ctx context.Context, opts ...Option) error {
 
 		r.client.resources.Remove(r)
 		return nil
+	}
+
+	if err := r.get(); err != nil {
+		// Already gone server side
+		r.client.resources.Remove(r)
+		return err
 	}
 
 	options := NewOptions(opts...)

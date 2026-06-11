@@ -320,7 +320,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 				if dev.Config.DeviceType != client.InstanceDeviceTypeNic || dev.Config.Network == nil {
 					continue
 				}
-				v4, v6, err := c.NetworkBridgeIPs(dev.Config.Network.IncusName())
+				v4, v6, err := c.Global().NetworkBridgeIPs(dev.Config.Network.IncusName())
 				if err != nil {
 					c.LogWarn("nat-proxy: could not get bridge IPs", "network", dev.Config.Network.IncusName(), "err", err)
 					continue

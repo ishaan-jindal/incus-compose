@@ -133,6 +133,8 @@ func (r *Profile) Ensure(ctx context.Context, opts ...Option) error {
 func (r *Profile) get() error {
 	profile, eTag, err := r.client.incus.GetProfile(r.incusName)
 	if err != nil {
+		r.IncusProfile = nil
+		r.ETag = ""
 		return ErrNotFound.WithResource(r).Wrap(err)
 	}
 
@@ -265,11 +267,14 @@ func (r *Profile) HasDevice(name string) bool {
 // Delete removes the profile from Incus.
 func (r *Profile) Delete(ctx context.Context, opts ...Option) error {
 	if !r.IsEnsured() {
-		r.IncusProfile = nil
-		r.ETag = ""
-
 		r.client.resources.Remove(r)
 		return nil // Nothing to delete
+	}
+
+	if err := r.get(); err != nil {
+		// Already gone server side
+		r.client.resources.Remove(r)
+		return err
 	}
 
 	options := NewOptions(opts...)
