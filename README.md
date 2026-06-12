@@ -180,7 +180,7 @@ See [Getting Started](docs/getting-started.md) for detailed examples.
 
 ## Credits
 
-This project builds on work by [@bketelsen](https://github.com/bketelsen).
+This project is inspired by [@bketelsen](https://github.com/bketelsen/incus-compose).
 Some components are adapted from [docker compose](https://github.com/docker/compose).
 
 This project uses AI tools as development aids (drafting, iteration, reviews, tests, and documentation).
