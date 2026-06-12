@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -30,6 +29,9 @@ type ImageConfig struct {
 	// from a registry. Ensure will shell out to podman/docker instead of
 	// calling CopyImage.
 	Build *BuildConfig
+
+	// A list of service dependencies for log output.
+	Services []string
 }
 
 // GetConfig returns the configuration.
@@ -572,7 +574,7 @@ func (r *Image) ensureBuild(ctx context.Context, args Options) error {
 		// BuildAuto or BuildNever with an existing image: nothing to do.
 	} else {
 		if args.Build.Mode == BuildNever {
-			err = fmt.Errorf("image %q is missing and --no-build was set", r.incusName)
+			err = errors.New("image is missing and building is disabled")
 		} else if args.Create {
 			err = r.buildImage(ctx, args)
 		}
@@ -615,7 +617,7 @@ func (r *Image) buildImage(ctx context.Context, args Options) error {
 		return ErrCreate.WithText("no container builder").Wrap(err)
 	}
 
-	rootfs, configJSON, err := buildRootfs(ctx, builder, &buildCfg, os.Stderr)
+	rootfs, configJSON, err := buildRootfs(ctx, builder, &buildCfg, args.Stdout, args.Stderr)
 	if err != nil {
 		return ErrCreate.WithText("building container image").Wrap(err)
 	}
@@ -642,6 +644,8 @@ func (r *Image) buildImage(ctx context.Context, args Options) error {
 	if err != nil {
 		return ErrCreate.WithText("fetching alias after build").Wrap(err)
 	}
+
+	r.client.LogInfo("Built image for", "image", r.incusName, "services", r.Config.Services)
 
 	r.IncusAlias = alias
 	r.ETag = eTag

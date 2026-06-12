@@ -104,8 +104,8 @@ func sniffBuilder(ctx context.Context, builder string) bool {
 
 // buildRootfs runs the container builder and returns both the rootfs tar and
 // the OCI runtime config.json bytes. The rootfs is a ReadCloser that deletes
-// its temp file on Close. stderr is forwarded to logW.
-func buildRootfs(ctx context.Context, builder string, cfg *BuildConfig, logW io.Writer) (io.ReadCloser, []byte, error) {
+// its temp file on Close. stdout/stderr are forwarded.
+func buildRootfs(ctx context.Context, builder string, cfg *BuildConfig, stdout io.Writer, stderr io.Writer) (io.ReadCloser, []byte, error) {
 	isPodman := sniffBuilder(ctx, builder)
 	tmpTag := fmt.Sprintf("ic-compose-build-%x", time.Now().UnixNano())
 
@@ -125,7 +125,8 @@ func buildRootfs(ctx context.Context, builder string, cfg *BuildConfig, logW io.
 
 	args := buildArgs(isPodman, buildCfg, tmpTag, rootfsPath)
 	cmd := exec.CommandContext(ctx, builder, args...)
-	cmd.Stderr = logW
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		_ = os.Remove(rootfsPath)
 		return nil, nil, fmt.Errorf("building container image: %w", err)
@@ -134,7 +135,7 @@ func buildRootfs(ctx context.Context, builder string, cfg *BuildConfig, logW io.
 	// Generate config.json from the stored image (podman only; docker/BuildKit embeds it differently).
 	var configJSON []byte
 	if isPodman {
-		configJSON, err = buildConfigJSON(ctx, builder, tmpTag, logW)
+		configJSON, err = buildConfigJSON(ctx, builder, tmpTag, stderr)
 		if err != nil {
 			_ = os.Remove(rootfsPath)
 			return nil, nil, err
@@ -143,7 +144,8 @@ func buildRootfs(ctx context.Context, builder string, cfg *BuildConfig, logW io.
 
 	// Remove the temporary image tag; ignore errors (best-effort cleanup).
 	rmi := exec.CommandContext(ctx, builder, "rmi", tmpTag)
-	rmi.Stderr = logW
+	rmi.Stdout = stdout
+	rmi.Stderr = stderr
 	_ = rmi.Run()
 
 	f, err := os.Open(rootfsPath)

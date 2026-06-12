@@ -166,10 +166,14 @@ func (c *Client) IsConnected() bool {
 	return c != nil && c.incus != nil
 }
 
-// Resources returns a pointer the internal resource store, use with care.
-func (c *Client) Resources() *ResourceStore {
-	return &c.resources
-}
+// // HasResource returns if the client has the given resource.
+// func (c *Client) HasResource(kind Kind, incusName string) bool {
+// 	idx := slices.IndexFunc(c.resources.All(), func(r Resource) bool {
+// 		return r.Kind() == kind && r.IncusName() == incusName
+// 	})
+
+// 	return idx != -1
+// }
 
 // Resource returns an existing resource or creates a new one.
 // Deduplication uses IncusName so differently-formatted inputs that resolve
