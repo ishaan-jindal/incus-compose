@@ -68,9 +68,34 @@ func TestLifecycleHealthd(t *testing.T) {
 	}
 }
 
-func TestUpNoHealthdSkipsHealthdInstance(t *testing.T) {
+func TestNoHealthdSkipsHealthdInstance(t *testing.T) {
 	skipLocal(t)
-	skipSlow(t)
+	t.Parallel()
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/with-restart/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--no-healthd")
+	require.NoError(t, err)
+
+	gc, err := client.NewTestClient(ctx)
+	require.NoError(t, err)
+
+	c, err := gc.EnsureProject(pn)
+	require.NoError(t, err)
+
+	h, err := healthdResolve(c)
+	require.Nil(t, h)
+	require.Error(t, err)
+}
+
+func TestNoHealthdWhenNotNeeded(t *testing.T) {
+	skipLocal(t)
 	t.Parallel()
 
 	ctx := context.Background()
@@ -81,7 +106,7 @@ func TestUpNoHealthdSkipsHealthdInstance(t *testing.T) {
 		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--no-healthd")
+	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	gc, err := client.NewTestClient(ctx)

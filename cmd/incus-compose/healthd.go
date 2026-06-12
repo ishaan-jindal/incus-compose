@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/compose-spec/compose-go/v2/types"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/mattn/go-colorable"
 	"github.com/urfave/cli/v3"
@@ -103,7 +104,7 @@ func healthdRevokeCert(c *client.Client) error {
 func healthdInUseByProject(p *project.Project) bool {
 	for _, svc := range p.Services {
 		// https://github.com/compose-spec/compose-spec/blob/main/05-services.md#restart
-		if svc.Restart != "no" {
+		if svc.Restart != "" && svc.Restart != "no" {
 			return true
 		}
 
@@ -111,11 +112,11 @@ func healthdInUseByProject(p *project.Project) bool {
 			return true
 		}
 
-		// for _, dep := range svc.DependsOn {
-		// 	if dep.Condition == types.ServiceConditionHealthy {
-		// 		return true
-		// 	}
-		// }
+		for _, dep := range svc.DependsOn {
+			if dep.Condition == types.ServiceConditionHealthy {
+				return true
+			}
+		}
 	}
 	return false
 }

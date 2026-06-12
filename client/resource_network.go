@@ -54,6 +54,8 @@ type Network struct {
 	created     bool
 	Config      NetworkConfig
 
+	dnsmasqHosts map[string]string
+
 	// State - nil means not ensured.
 	IncusNetwork *incusApi.Network
 	ETag         string

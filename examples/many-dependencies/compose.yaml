@@ -6,6 +6,8 @@ services:
     restart: unless-stopped
     environment:
       NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
+    x-incus:
+      limits.cpu: 1
     ports:
       - "8080:8080"
     depends_on:
@@ -27,6 +29,8 @@ services:
     environment:
       NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
       API_URL: http://api:8080
+    x-incus:
+      limits.cpu: 1
     depends_on:
       api:
         condition: service_healthy
@@ -49,6 +53,8 @@ services:
       PRODUCTS_URL: http://products:8080
       ORDERS_URL: http://orders:8080
       CACHE_HOST: cache
+    x-incus:
+      limits.cpu: 1
     depends_on:
       auth:
         condition: service_healthy
@@ -80,6 +86,8 @@ services:
       DB_PASSWORD: ${AUTH_DB_PASSWORD}
       CACHE_HOST: cache
       JWT_SECRET: ${JWT_SECRET}
+    x-incus:
+      limits.cpu: 1
     depends_on:
       auth-db:
         condition: service_healthy
@@ -104,6 +112,8 @@ services:
       DB_USER: users_user
       DB_PASSWORD: ${USERS_DB_PASSWORD}
       CACHE_HOST: cache
+    x-incus:
+      limits.cpu: 1
     depends_on:
       users-db:
         condition: service_healthy
@@ -129,6 +139,8 @@ services:
       DB_PASSWORD: ${PRODUCTS_DB_PASSWORD}
       CACHE_HOST: cache
       SEARCH_URL: http://search:8080
+    x-incus:
+      limits.cpu: 1
     depends_on:
       products-db:
         condition: service_healthy
@@ -157,6 +169,8 @@ services:
       USERS_URL: http://users:8080
       PRODUCTS_URL: http://products:8080
       QUEUE_HOST: queue
+    x-incus:
+      limits.cpu: 1
     depends_on:
       orders-db:
         condition: service_healthy
@@ -183,6 +197,8 @@ services:
       USERS_URL: http://users:8080
       QUEUE_HOST: queue
       MAILER_HOST: mailer
+    x-incus:
+      limits.cpu: 1
     depends_on:
       queue:
         condition: service_healthy
@@ -206,6 +222,8 @@ services:
       QUEUE_HOST: queue
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT:-587}
+    x-incus:
+      limits.cpu: 1
     depends_on:
       queue:
         condition: service_healthy
@@ -227,6 +245,8 @@ services:
       DB_NAME: orders
       DB_USER: orders_user
       DB_PASSWORD: ${ORDERS_DB_PASSWORD}
+    x-incus:
+      limits.cpu: 1
     depends_on:
       queue:
         condition: service_healthy
@@ -247,6 +267,8 @@ services:
     environment:
       NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
       DB_HOST: search-db
+    x-incus:
+      limits.cpu: 1
     depends_on:
       search-db:
         condition: service_healthy
@@ -264,6 +286,8 @@ services:
     restart: unless-stopped
     environment:
       NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
+    x-incus:
+      limits.cpu: 1
     volumes:
       - auth-db-data:/var/lib/data
     networks:
@@ -279,6 +303,8 @@ services:
     restart: unless-stopped
     environment:
       NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
+    x-incus:
+      limits.cpu: 1
     volumes:
       - users-db-data:/var/lib/data
     networks:
@@ -294,6 +320,8 @@ services:
     restart: unless-stopped
     environment:
       NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
+    x-incus:
+      limits.cpu: 1
     volumes:
       - products-db-data:/var/lib/data
     networks:
@@ -309,6 +337,8 @@ services:
     restart: unless-stopped
     environment:
       NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
+    x-incus:
+      limits.cpu: 1
     volumes:
       - orders-db-data:/var/lib/data
     networks:
@@ -324,6 +354,8 @@ services:
     restart: unless-stopped
     environment:
       NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
+    x-incus:
+      limits.cpu: 1
     volumes:
       - search-db-data:/var/lib/data
     networks:
@@ -339,6 +371,8 @@ services:
     restart: unless-stopped
     environment:
       NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
+    x-incus:
+      limits.cpu: 1
     volumes:
       - cache-data:/var/lib/data
     networks:
@@ -354,6 +388,8 @@ services:
     restart: unless-stopped
     environment:
       NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
+    x-incus:
+      limits.cpu: 1
     volumes:
       - queue-data:/var/lib/data
     networks:

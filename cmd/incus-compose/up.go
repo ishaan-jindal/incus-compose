@@ -122,7 +122,12 @@ func newUpCommand() *cli.Command {
 			// Render live progress for the ensure phase, where image downloads happen.
 			finish := startProgress(globalClient, c, cmd.Root().Writer)
 
-			if !cmd.Bool("no-healthd") && healthdInUseByProject(p) {
+			usesHealthd := !cmd.Bool("no-healthd")
+			if !healthdInUseByProject(p) {
+				usesHealthd = false
+			}
+
+			if usesHealthd {
 				hparams := healthdParams{
 					projectName: p.Name,
 					binary:      cmd.String("healthd-binary"),
@@ -158,6 +163,7 @@ func newUpCommand() *cli.Command {
 			params := upParams{
 				reCreate:          cmd.Bool("recreate"),
 				start:             !cmd.Bool("no-start"),
+				healthd:           usesHealthd,
 				services:          cmd.Args().Slice(),
 				pull:              cmd.String("pull"),
 				build:             build,
@@ -197,6 +203,7 @@ func newUpCommand() *cli.Command {
 type upParams struct {
 	services          []string
 	start             bool
+	healthd           bool
 	reCreate          bool
 	pull              string
 	build             client.BuildMode
@@ -221,8 +228,10 @@ func parseScale(values []string) map[string]int {
 
 // runUp creates (and optionally starts) the services of a loaded project.
 func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Client, p *project.Project, params upParams) error {
-	timeout := params.timeout
-	pull := params.pull
+	runOptions := []client.Option{client.OptionTimeout(params.timeout)}
+	if !params.healthd {
+		runOptions = append(runOptions, client.OptionNoHealthd())
+	}
 
 	// defer func() {
 	// 	if c.Errors() != nil {
@@ -256,12 +265,14 @@ func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Cli
 
 		c.LogDebug("Ensure", "resources", stack.All())
 
+		recreateOptions := append(runOptions, client.OptionForce())
+
 		// Ensure without create for "recreate" (resolution only, no progress).
 		if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
 			c.LogDebug("Ensuring for reCreate", "error", err)
 		} else {
 			// Stop
-			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout))
+			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, recreateOptions...)
 			if errStop != nil {
 				c.LogDebug("Stopping resources", "error", errStop)
 			}
@@ -269,7 +280,7 @@ func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Cli
 			// Delete
 			deleteStack := stack.ForAction(client.ActionDelete)
 			c.LogDebug("Recreate delete", "resources", deleteStack.All())
-			errDel := deleteStack.Run(ctx, client.ActionDelete, client.OptionForce(), client.OptionTimeout(timeout))
+			errDel := deleteStack.Run(ctx, client.ActionDelete, recreateOptions...)
 			if errDel != nil {
 				c.LogDebug("Deleting resources", "error", errDel)
 			}
@@ -298,15 +309,18 @@ func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Cli
 
 	// Ensure with create. --pull=always refreshes cached images from registry.
 	// policy and missing only use the local cache (pull if not present).
-	ensureOpts := []client.Option{client.OptionCreate()}
-	if pull == "always" {
-		ensureOpts = append(ensureOpts, client.OptionPull())
+	startOptions := append(runOptions, client.OptionCreate())
+	if params.pull == "always" {
+		startOptions = append(startOptions, client.OptionPull())
 	}
 	if params.build != client.BuildAuto {
-		ensureOpts = append(ensureOpts, client.OptionBuild(params.build))
+		startOptions = append(startOptions, client.OptionBuild(params.build))
+	}
+	if params.dependencyTimeout > 0 {
+		startOptions = append(startOptions, client.OptionDependencyTimeout(params.dependencyTimeout))
 	}
 
-	err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, ensureOpts...)
+	err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, startOptions...)
 	if err != nil {
 		c.LogError("Ensuring resources", "error", err)
 		return errLogged.Wrap(err)
@@ -314,11 +328,7 @@ func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Cli
 
 	// Start
 	if params.start {
-		startOpts := []client.Option{client.OptionTimeout(timeout)}
-		if params.dependencyTimeout > 0 {
-			startOpts = append(startOpts, client.OptionDependencyTimeout(params.dependencyTimeout))
-		}
-		if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, startOpts...); err != nil {
+		if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, startOptions...); err != nil {
 			c.LogError("Starting resources", "error", err)
 			return errLogged.Wrap(err)
 		}

@@ -158,8 +158,6 @@ func (c *Client) RegisterDNSWatcher() error {
 					}
 				}
 
-				c.LogDebug("DNSWatcher updating network", "network", network.Name(), "serviceIPs", servicesIPs)
-
 				errs = errors.Join(errs, network.UpdateDNSAliases(owned, servicesIPs))
 			}
 			return errors.Join(err, errs)

@@ -47,6 +47,9 @@ type Options struct {
 
 	// Build controls rebuild behaviour for build-configured images (for ActionEnsure).
 	Build BuildMode
+
+	// Healthd indicates that we use healthd features.
+	Healthd bool
 }
 
 // incusTimeout converts Timeout to the seconds value expected by the Incus
@@ -113,9 +116,16 @@ func OptionBuild(m BuildMode) Option {
 	}
 }
 
+// OptionNoHealthd indicates that we dont use healthd features.
+func OptionNoHealthd() Option {
+	return func(o *Options) {
+		o.Healthd = false
+	}
+}
+
 // NewOptions makes a ActionArgs struct from ActionO* options.
 func NewOptions(opts ...Option) Options {
-	args := Options{}
+	args := Options{Healthd: true}
 
 	for _, o := range opts {
 		o(&args)

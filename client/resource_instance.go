@@ -278,6 +278,8 @@ func (r *Instance) ensured() error {
 }
 
 func (r *Instance) create(ctx context.Context, opts ...Option) error {
+	options := NewOptions(opts...)
+
 	// Can't create an instance without an image
 	if r.Config.Image == "" {
 		return ErrImageRequired
@@ -341,8 +343,10 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 	// Store the image name
 	postConfig["user.image_alias"] = image.IncusName()
 
-	// Healthd should wait until we allow it to work with it.
-	postConfig[HealthStoppedKey] = "true"
+	if options.Healthd {
+		// Healthd should wait until we allow it to work with it.
+		postConfig[HealthStoppedKey] = "true"
+	}
 
 	// Create instance request
 	req := incusApi.InstancesPost{
@@ -358,8 +362,6 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 			Devices:     devices,
 		},
 	}
-
-	options := NewOptions(opts...)
 
 	// Create instance from project image
 	op, err := r.client.incus.CreateInstanceFromImage(r.client.incus, *incusImage, req)
@@ -606,8 +608,10 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 		return nil
 	}
 
-	if err := r.waitForDependencies(ctx, options); err != nil {
-		return err
+	if options.Healthd {
+		if err := r.waitForDependencies(ctx, options); err != nil {
+			return err
+		}
 	}
 
 	if err := r.fetch(); err != nil {
@@ -654,7 +658,11 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 		}
 	}
 
-	return r.setHealthCheckingStopped(false)
+	if options.Healthd {
+		return r.setHealthCheckingStopped(false)
+	}
+
+	return nil
 }
 
 // PushSecrets pushes secrets into the running instance.
@@ -826,8 +834,10 @@ func (r *Instance) Stop(ctx context.Context, opts ...Option) error {
 }
 
 func (r *Instance) stop(ctx context.Context, options Options) error {
-	if err := r.setHealthCheckingStopped(true); err != nil {
-		return err
+	if options.Healthd {
+		if err := r.setHealthCheckingStopped(true); err != nil {
+			return err
+		}
 	}
 
 	// setHealthCheckingStopped refetched the instance; it may have stopped meanwhile.
