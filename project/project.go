@@ -423,9 +423,12 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 
 		switch cVol.Type {
 		case "volume":
+			volDef := p.Volumes[cVol.Source]
 			volConfig := &client.StorageVolumeConfig{
 				Shifted:       true,
 				ImageResource: image,
+				Pool:          volumeXIncusComposePool(volDef),
+				ExtraConfig:   volumeXIncusExtensions(volDef),
 			}
 
 			v, err := c.Resource(client.KindStorageVolume, cVol.Source, volConfig)
@@ -818,6 +821,39 @@ func networkExtensions(networkDef types.NetworkConfig) map[string]string {
 	}
 
 	return result
+}
+
+// volumeXIncusExtensions extracts the x-incus extension map from a compose volume
+// definition and returns it as a flat map[string]string for use as Incus volume
+// config. Keys and values are taken verbatim from the x-incus YAML block.
+func volumeXIncusExtensions(volDef types.VolumeConfig) map[string]string {
+	var raw map[string]any
+	ok, err := volDef.Extensions.Get("x-incus", &raw)
+	if !ok || err != nil || len(raw) == 0 {
+		return nil
+	}
+
+	result := make(map[string]string, len(raw))
+	for k, v := range raw {
+		result[k] = fmt.Sprint(v)
+	}
+
+	return result
+}
+
+// volumeXIncusComposePool extracts the pool name from x-incus-compose.pool on a
+// compose volume definition.
+func volumeXIncusComposePool(volDef types.VolumeConfig) string {
+	var raw map[string]any
+	ok, err := volDef.Extensions.Get("x-incus-compose", &raw)
+	if !ok || err != nil {
+		return ""
+	}
+	pool, ok := raw["pool"].(string)
+	if !ok {
+		return ""
+	}
+	return pool
 }
 
 func projectXIncusComposeExtensions(p *Project) map[string]any {

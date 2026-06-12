@@ -160,7 +160,7 @@ networks:
   frontend:
     external: true
     x-incus-compose:
-      network: my-production-net   # tried as-is first, then sanitized
+      network: my-production-net # tried as-is first, then sanitized
 ```
 
 If none of the candidates match an existing network, `up` fails with a not-found error.
@@ -221,10 +221,61 @@ with DHCP-assigned addresses.
 - Read-only volumes
 - Automatic UID/GID shifting
 - tmpfs mounts (with optional size limit)
+- `x-incus` extension — pass any Incus volume config key directly (see below)
+- `x-incus-compose.pool` — select the storage pool for a named volume (see below)
 
 Not supported:
 
 - Volume driver options
+
+#### x-incus Volume Extensions
+
+Any Incus storage volume config key can be set via the `x-incus` extension block on a volume definition. Keys are passed verbatim to the Incus volume config on creation.
+
+```yaml
+volumes:
+  data:
+    x-incus:
+      size: 10GiB
+      block.filesystem: ext4
+```
+
+Any [Incus storage volume option](https://linuxcontainers.org/incus/docs/main/reference/storage_volumes/) is accepted.
+
+#### x-incus-compose Volume Pool
+
+Set `x-incus-compose.pool` on a named volume to place it in a specific Incus storage pool. Without this the client's default storage pool is used.
+
+```yaml
+volumes:
+  data:
+    x-incus-compose:
+      pool: fast-ssd
+
+services:
+  app:
+    image: docker.io/myapp:latest
+    volumes:
+      - data:/var/lib/app
+```
+
+To move an existing volume to a different pool, stop the project, then use `incus storage volume move` via the `incus-compose incus` passthrough:
+
+```bash
+incus-compose stop
+incus-compose incus storage volume move default/vol-library ext/vol-library
+incus-compose start
+```
+
+Then update `x-incus-compose.pool` in your compose file and run `incus-compose up` to reattach.
+
+Volumes are stored with a `vol-` prefix. Long names are hashed, so `my-very-long-volume-name` may become `vol-a1b2c3d4...`. Use `incus storage volume list` to find the actual name before moving:
+
+```bash
+incus-compose incus storage volume list default
+```
+
+Then update `x-incus-compose.pool` in your compose file and run `incus-compose up` to reattach.
 
 ### Environment
 
