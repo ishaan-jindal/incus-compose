@@ -6,6 +6,8 @@ test/logs/*
 
 .feedback/*
 
+work/
+
 # Its generated with random host only data, still no need to commit.
 /.env
 
