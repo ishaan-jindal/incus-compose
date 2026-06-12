@@ -43,14 +43,6 @@
       "networks": {
         "default": null
       },
-      "ports": [
-        {
-          "mode": "ingress",
-          "target": 80,
-          "published": "8000",
-          "protocol": "tcp"
-        }
-      ],
       "restart": "always",
       "volumes": [
         {

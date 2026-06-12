@@ -31,8 +31,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    ports:
-      - "${API_PORT:-3000}:3000"
     environment:
       DATABASE_URL: postgresql://appuser:apppass@postgres:5432/appdb
       REDIS_URL: redis://redis:6379

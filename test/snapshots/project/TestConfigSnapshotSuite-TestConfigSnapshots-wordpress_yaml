@@ -28,11 +28,6 @@ services:
     image: docker.io/library/wordpress:6.9.0-php8.1-apache
     networks:
       default: null
-    ports:
-      - mode: ingress
-        target: 80
-        published: "8000"
-        protocol: tcp
     restart: always
     volumes:
       - type: volume

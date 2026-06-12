@@ -189,7 +189,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		if service.Build != nil {
 			imageName := service.Image
 			if imageName == "" {
-				imageName = "localhost/" + p.Name + "-" + service.Name
+				imageName = "localhost/" + service.Name
 			}
 			platform, platformErr := buildPlatform(service)
 			if platformErr != nil {
@@ -220,6 +220,13 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		if err != nil {
 			errs = errors.Join(errs, err)
 		}
+
+		img, ok := image.(*client.Image)
+		if !ok {
+			return nil, errors.New("not an image")
+		}
+
+		img.Config.Services = append(img.Config.Services, service.Name)
 
 		resources = append(resources, image)
 	}
@@ -993,6 +1000,8 @@ type ToStackOptions struct {
 	Full           bool
 	NoImages       bool
 	StorageVolumes bool
+	InstancesOnly  bool
+	ImagesOnly     bool
 	Deps           bool
 	Scale          map[string]int // service name -> replica count override
 }
@@ -1045,6 +1054,20 @@ func ToStackWithDeps() ToStackOption {
 func ToStackStorageVolumes() ToStackOption {
 	return func(o *ToStackOptions) {
 		o.StorageVolumes = true
+	}
+}
+
+// ToStackInstancesOnly configures ToStack to only return instances.
+func ToStackInstancesOnly() ToStackOption {
+	return func(o *ToStackOptions) {
+		o.InstancesOnly = true
+	}
+}
+
+// ToStackImagesOnly configures ToStack to only return images.
+func ToStackImagesOnly() ToStackOption {
+	return func(o *ToStackOptions) {
+		o.ImagesOnly = true
 	}
 }
 
@@ -1182,7 +1205,26 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 	}
 
 	stack.Sort(options.Reverse)
-	stack.Add(resources...)
+
+	if options.InstancesOnly {
+		instances, err := client.ByKind[*client.Instance](resources, client.KindInstance)
+		if err != nil {
+			return err
+		}
+		for _, i := range instances {
+			stack.Add(i)
+		}
+	} else if options.ImagesOnly {
+		images, err := client.ByKind[*client.Image](resources, client.KindImage)
+		if err != nil {
+			return err
+		}
+		for _, i := range images {
+			stack.Add(i)
+		}
+	} else {
+		stack.Add(resources...)
+	}
 
 	if !c.IsConnected() {
 		return nil

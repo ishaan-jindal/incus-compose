@@ -8,7 +8,7 @@ services:
       REGISTRY_LOG_LEVEL: "${REGISTRY_LOG_LEVEL:-info}"
       REGISTRY_LOG_FIELDS_ENVIRONMENT: "production"
     volumes:
-      - docker_registry_cache:/var/lib/registry
+      - docker:/var/lib/registry
     restart: unless-stopped
 
   ghcr-registry:
@@ -20,7 +20,7 @@ services:
       REGISTRY_LOG_LEVEL: "${REGISTRY_LOG_LEVEL:-info}"
       REGISTRY_LOG_FIELDS_ENVIRONMENT: "production"
     volumes:
-      - ghcr_registry_cache:/var/lib/registry
+      - ghcr:/var/lib/registry
     restart: unless-stopped
 
   gitlab-registry:
@@ -32,10 +32,10 @@ services:
       REGISTRY_LOG_LEVEL: "${REGISTRY_LOG_LEVEL:-info}"
       REGISTRY_LOG_FIELDS_ENVIRONMENT: "production"
     volumes:
-      - gitlab_registry_cache:/var/lib/registry
+      - gitlab:/var/lib/registry
     restart: unless-stopped
 
 volumes:
-  docker_registry_cache:
-  ghcr_registry_cache:
-  gitlab_registry_cache:
+  docker:
+  ghcr:
+  gitlab:

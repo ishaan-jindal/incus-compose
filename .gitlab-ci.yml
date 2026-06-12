@@ -70,7 +70,7 @@ test:
     - go mod tidy -v -diff
     - go clean -testcache
     - set -o pipefail
-    - go test -v -cover -coverprofile="$REPORTS_DIR/go-test-coverage.txt" ./... 2>&1 | tee "$REPORTS_DIR/go-test-results.txt"
+    - NO_COLOR=1 go test ./... -parallel 1 -v -cover -coverprofile="$REPORTS_DIR/go-test-coverage.txt" 2>&1 | tee "$REPORTS_DIR/go-test-results.txt"
   after_script:
     - |
       if [[ -s "$REPORTS_DIR/go-test-results.txt" ]]; then

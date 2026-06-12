@@ -7,11 +7,6 @@ services:
     image: docker.io/nginx:alpine
     networks:
       default: null
-    ports:
-      - mode: ingress
-        target: 80
-        published: "8080"
-        protocol: tcp
     x-incus:
       limits.cpu: 1
 networks:

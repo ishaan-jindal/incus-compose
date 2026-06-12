@@ -14,11 +14,6 @@ services:
     image: docker.io/library/node:24-alpine
     networks:
       default: null
-    ports:
-      - mode: ingress
-        target: 3000
-        published: "3000"
-        protocol: tcp
     volumes:
       - type: volume
         source: node_modules
@@ -33,11 +28,6 @@ services:
     image: docker.io/library/postgres:18-alpine
     networks:
       default: null
-    ports:
-      - mode: ingress
-        target: 5432
-        published: "5432"
-        protocol: tcp
     volumes:
       - type: volume
         source: db_data
@@ -50,15 +40,6 @@ services:
     image: docker.io/mailhog/mailhog:latest
     networks:
       default: null
-    ports:
-      - mode: ingress
-        target: 1025
-        published: "1025"
-        protocol: tcp
-      - mode: ingress
-        target: 8025
-        published: "8025"
-        protocol: tcp
   pgadmin:
     profiles:
       - debug
@@ -73,11 +54,6 @@ services:
     image: docker.io/dpage/pgadmin4:latest
     networks:
       default: null
-    ports:
-      - mode: ingress
-        target: 80
-        published: "5050"
-        protocol: tcp
 networks:
   default:
     name: dev-environment_default

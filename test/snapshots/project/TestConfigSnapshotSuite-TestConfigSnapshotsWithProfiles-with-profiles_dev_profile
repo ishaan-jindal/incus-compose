@@ -7,11 +7,6 @@ services:
     image: docker.io/library/adminer:latest
     networks:
       default: null
-    ports:
-      - mode: ingress
-        target: 8080
-        published: "8080"
-        protocol: tcp
   hot-reload:
     profiles:
       - dev
@@ -22,22 +17,12 @@ services:
     image: docker.io/library/node:20-alpine
     networks:
       default: null
-    ports:
-      - mode: ingress
-        target: 3000
-        published: "3000"
-        protocol: tcp
   web:
     environment:
       NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
     image: docker.io/library/nginx:alpine
     networks:
       default: null
-    ports:
-      - mode: ingress
-        target: 80
-        published: "80"
-        protocol: tcp
     volumes:
       - type: bind
         source: $FIXTURE_PATH/html

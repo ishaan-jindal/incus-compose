@@ -25,3 +25,14 @@ networks:
     x-incus:
       ipv4.nat: "true"
       ipv4.address: 10.132.32.1/24
+
+volumes:
+  docker:
+    x-incus-compose:
+      pool: ${STORAGE_POOL}
+  ghcr:
+    x-incus-compose:
+      pool: ${STORAGE_POOL}
+  gitlab:
+    x-incus-compose:
+      pool: ${STORAGE_POOL}

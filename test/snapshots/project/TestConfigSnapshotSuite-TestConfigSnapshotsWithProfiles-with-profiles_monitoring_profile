@@ -7,22 +7,12 @@ services:
     image: docker.io/prom/prometheus:latest
     networks:
       default: null
-    ports:
-      - mode: ingress
-        target: 9090
-        published: "9090"
-        protocol: tcp
   web:
     environment:
       NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
     image: docker.io/library/nginx:alpine
     networks:
       default: null
-    ports:
-      - mode: ingress
-        target: 80
-        published: "80"
-        protocol: tcp
     volumes:
       - type: bind
         source: $FIXTURE_PATH/html

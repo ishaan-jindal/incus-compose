@@ -5,8 +5,6 @@ services:
       NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
     x-incus:
       limits.cpu: 1
-    ports:
-      - "80:80"
     volumes:
       - ./html:/usr/share/nginx/html:ro
 
@@ -25,15 +23,11 @@ services:
     profiles:
       - dev
     command: npm run hot-reload
-    ports:
-      - "3000:3000"
 
   selenium:
     image: docker.io/selenium/standalone-chrome:latest
     profiles:
       - test
-    ports:
-      - "4444:4444"
     shm_size: 2gb
 
   test-db:
@@ -56,13 +50,9 @@ services:
     profiles:
       - monitoring
       - prod
-    ports:
-      - "9090:9090"
 
   adminer:
     image: docker.io/library/adminer:latest
     profiles:
       - debug
       - dev
-    ports:
-      - "8080:8080"

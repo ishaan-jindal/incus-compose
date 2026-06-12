@@ -123,7 +123,9 @@ incus-compose restart [SERVICE...]
 
 `up` and `down` follow `depends_on` by default: naming a service pulls in the
 services it links to (its dependencies on `up`, its dependents on `down`). Use
-`--no-deps` to act on exactly the named services.
+`--no-deps` to act on exactly the named services. On `up`, `--no-deps` also
+skips waiting on `depends_on: { condition: service_healthy }` for the
+out-of-scope dependencies, so the named service starts without them.
 
 `start`, `stop`, `restart`, `logs`, and `ps` act on exactly the named services
 by default, matching `docker compose start`/`stop`. The `--with-deps` flag is an

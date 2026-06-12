@@ -8,8 +8,6 @@ services:
       NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
     x-incus:
       limits.cpu: 1
-    ports:
-      - "8080:8080"
     depends_on:
       backend1:
         condition: service_healthy

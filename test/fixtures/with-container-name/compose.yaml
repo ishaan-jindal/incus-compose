@@ -6,5 +6,3 @@ services:
     x-incus:
       limits.cpu: 1
     container_name: my-nginx
-    ports:
-      - "8080:80"
