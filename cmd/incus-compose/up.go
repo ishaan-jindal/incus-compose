@@ -53,7 +53,7 @@ func newUpCommand() *cli.Command {
 				Name:  "build",
 				Usage: "Build images before starting containers",
 			},
-			&cli.BoolFlag{
+			&cli.StringFlag{
 				Name:    "builder",
 				Usage:   "Preferred builder, binary name or absolute path. Empty for auto-detect.",
 				Sources: cli.EnvVars("INCUS_COMPOSE_BUILDER"),
@@ -61,6 +61,10 @@ func newUpCommand() *cli.Command {
 			&cli.BoolFlag{
 				Name:  "no-build",
 				Usage: "Do not build images even if missing",
+			},
+			&cli.BoolFlag{
+				Name:  "no-deps",
+				Usage: "Don't start linked services",
 			},
 			&cli.BoolFlag{
 				Name:    "detach",
@@ -169,6 +173,7 @@ func newUpCommand() *cli.Command {
 				reCreate: cmd.Bool("recreate"),
 				start:    !cmd.Bool("no-start"),
 				healthd:  usesHealthd,
+				deps:     !cmd.Bool("no-deps"),
 				services: cmd.Args().Slice(),
 				pull:     cmd.String("pull"),
 				build: client.BuildInfo{
@@ -195,7 +200,7 @@ func newUpCommand() *cli.Command {
 				}
 
 				finish(err == nil)
-				return runLogs(ctx, globalClient, c, p, params.services, true, out)
+				return runLogs(ctx, globalClient, c, p, params.services, true, params.deps, out)
 			}
 
 			finish(err == nil)
@@ -212,6 +217,7 @@ type upParams struct {
 	services          []string
 	start             bool
 	healthd           bool
+	deps              bool
 	reCreate          bool
 	pull              string
 	build             client.BuildInfo
@@ -259,6 +265,9 @@ func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Cli
 		stack := client.NewStack(c)
 		toStackOpts := []project.ToStackOption{}
 		toStackOpts = append(toStackOpts, project.ToStackNoImages(), project.ToStackReverse(), project.ToStackOnlyServices(params.services))
+		if params.deps {
+			toStackOpts = append(toStackOpts, project.ToStackWithDeps())
+		}
 		if len(params.scale) > 0 {
 			toStackOpts = append(toStackOpts, project.ToStackScale(params.scale))
 		}
@@ -298,6 +307,9 @@ func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Cli
 	stack := client.NewStack(c)
 	toStackOpts := []project.ToStackOption{}
 	toStackOpts = append(toStackOpts, project.ToStackStorageVolumes(), project.ToStackOnlyServices(params.services))
+	if params.deps {
+		toStackOpts = append(toStackOpts, project.ToStackWithDeps())
+	}
 	if len(params.scale) > 0 {
 		toStackOpts = append(toStackOpts, project.ToStackScale(params.scale))
 	}

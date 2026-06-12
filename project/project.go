@@ -993,6 +993,7 @@ type ToStackOptions struct {
 	Full           bool
 	NoImages       bool
 	StorageVolumes bool
+	Deps           bool
 	Scale          map[string]int // service name -> replica count override
 }
 
@@ -1027,6 +1028,16 @@ func ToStackFull() ToStackOption {
 func ToStackNoImages() ToStackOption {
 	return func(o *ToStackOptions) {
 		o.NoImages = true
+	}
+}
+
+// ToStackWithDeps expands the OnlyServices selection to include linked services:
+// in start direction the services a selected one depends on, and in reverse
+// (stop) direction the services that depend on a selected one. Without it the
+// stack is limited to exactly the selected services.
+func ToStackWithDeps() ToStackOption {
+	return func(o *ToStackOptions) {
+		o.Deps = true
 	}
 }
 
@@ -1103,6 +1114,9 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 			for _, on := range options.OnlyServices {
 				if strings.HasPrefix(on+"-", n+"-") {
 					services[n] = svc
+					if !options.Deps {
+						continue
+					}
 					if options.Reverse {
 						// stop direction: include services that depend on this one
 						for otherName, otherSvc := range p.Services {

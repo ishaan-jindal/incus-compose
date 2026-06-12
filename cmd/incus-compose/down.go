@@ -29,6 +29,10 @@ func newDownCommand() *cli.Command {
 				Usage: "Timeout for stopping",
 				Value: 10 * time.Second,
 			},
+			&cli.BoolFlag{
+				Name:  "no-deps",
+				Usage: "Don't stop linked services",
+			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			globalClient, err := clientFromContext(ctx)
@@ -67,6 +71,9 @@ func newDownCommand() *cli.Command {
 			finish := startProgress(globalClient, c, cmd.Root().Writer)
 
 			stackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackReverse()}
+			if !cmd.Bool("no-deps") {
+				stackOpts = append(stackOpts, project.ToStackWithDeps())
+			}
 
 			stack := client.NewStack(c)
 			if err := p.ToStack(c, stack, stackOpts...); err != nil {

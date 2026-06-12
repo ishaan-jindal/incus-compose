@@ -50,6 +50,10 @@ func newPsCommand() *cli.Command {
 					return nil
 				},
 			},
+			&cli.BoolFlag{
+				Name:  "with-deps",
+				Usage: "Also list linked services",
+			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			globalClient, err := clientFromContext(ctx)
@@ -76,8 +80,13 @@ func newPsCommand() *cli.Command {
 			defer func() { _ = c.Done() }()
 
 			// Build stack for the services we're interested in (only services).
+			stackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackFull(), project.ToStackNoImages()}
+			if cmd.Bool("with-deps") {
+				stackOpts = append(stackOpts, project.ToStackWithDeps())
+			}
+
 			stack := client.NewStack(c)
-			if err := p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackFull(), project.ToStackNoImages()); err != nil {
+			if err := p.ToStack(c, stack, stackOpts...); err != nil {
 				c.LogError(err.Error())
 				return errLogged.Wrap(err)
 			}

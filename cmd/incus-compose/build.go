@@ -25,7 +25,7 @@ func newBuildCommand() *cli.Command {
 				Usage: `Pull image before running ("always"|"missing"|"never"|"policy")`,
 				Value: "policy",
 			},
-			&cli.BoolFlag{
+			&cli.StringFlag{
 				Name:    "builder",
 				Usage:   "Preferred builder, binary name or absolute path. Empty for auto-detect.",
 				Sources: cli.EnvVars("INCUS_COMPOSE_BUILDER"),

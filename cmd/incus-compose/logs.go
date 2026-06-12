@@ -143,6 +143,10 @@ func newLogsCommand() *cli.Command {
 				Aliases: []string{"f"},
 				Usage:   "Follow log output",
 			},
+			&cli.BoolFlag{
+				Name:  "with-deps",
+				Usage: "Also show logs from linked services",
+			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			globalClient, err := clientFromContext(ctx)
@@ -178,18 +182,25 @@ func newLogsCommand() *cli.Command {
 				out = cmd.Root().Writer
 			}
 
-			return runLogs(ctx, globalClient, c, p, cmd.Args().Slice(), cmd.Bool("follow"), out)
+			return runLogs(ctx, globalClient, c, p, cmd.Args().Slice(), cmd.Bool("follow"), cmd.Bool("with-deps"), out)
 		},
 	}
 }
 
 // runLogs streams logs from the given services using an already-open client.
-func runLogs(ctx context.Context, globalClient *client.GlobalClient, c *client.Client, p *project.Project, services []string, follow bool, out io.Writer) error {
+// When withDeps is set the selection follows depends_on, matching the linked
+// services that `up` started.
+func runLogs(ctx context.Context, globalClient *client.GlobalClient, c *client.Client, p *project.Project, services []string, follow, withDeps bool, out io.Writer) error {
 	formatter := newLogFormatter(out, noColor)
 	globalClient.SetOutputHandler(formatter.write)
 
+	stackOpts := []project.ToStackOption{project.ToStackOnlyServices(services)}
+	if withDeps {
+		stackOpts = append(stackOpts, project.ToStackWithDeps())
+	}
+
 	stack := client.NewStack(c)
-	if err := p.ToStack(c, stack, project.ToStackOnlyServices(services)); err != nil {
+	if err := p.ToStack(c, stack, stackOpts...); err != nil {
 		c.LogError(err.Error())
 		return errLogged.Wrap(err)
 	}

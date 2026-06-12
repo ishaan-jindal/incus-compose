@@ -33,6 +33,7 @@ incus-compose up [SERVICE...]
 | `--pull`            | Pull policy: `always` (refresh from registry), `missing`/`policy` (use cache if present), `never` (never pull); default: `policy` |
 | `--build`           | Rebuild build-configured service images before starting containers                                                                |
 | `--no-build`        | Do not build images; fail if a required built image is missing                                                                    |
+| `--no-deps`         | Don't start linked services (depends_on)                                                                                          |
 | `--timeout`         | Stop/start timeout seconds (default: 10)                                                                                          |
 | `--scale`           | Scale service: `web=3` (repeatable)                                                                                               |
 | `--no-healthd`      | Don't create healthd sidecar for healthchecks                                                                                     |
@@ -73,6 +74,7 @@ incus-compose down [SERVICE...]
 | -------------- | ---------------------------------- |
 | `--project`    | Remove the project (and volumes)   |
 | `--timeout`    | Stop timeout seconds (default: 10) |
+| `--no-deps`    | Don't stop linked services (depends_on) |
 | `--no-healthd` | Don't stop/remove healthd sidecar  |
 
 ## start
@@ -86,6 +88,7 @@ incus-compose start [SERVICE...]
 | Option         | Description                         |
 | -------------- | ----------------------------------- |
 | `--timeout`    | Start timeout seconds (default: 10) |
+| `--with-deps`  | Also start linked services (depends_on) — incus-compose extension |
 | `--no-healthd` | Don't start healthd sidecar         |
 
 ## stop
@@ -99,6 +102,7 @@ incus-compose stop [SERVICE...]
 | Option         | Description                        |
 | -------------- | ---------------------------------- |
 | `--timeout`    | Stop timeout seconds (default: 10) |
+| `--with-deps`  | Also stop linked services (depends_on) — incus-compose extension |
 | `--no-healthd` | Don't stop healthd sidecar         |
 
 ## restart
@@ -112,7 +116,19 @@ incus-compose restart [SERVICE...]
 | Option         | Description                              |
 | -------------- | ---------------------------------------- |
 | `--timeout`    | Stop/start timeout seconds (default: 10) |
+| `--with-deps`  | Also restart linked services (depends_on) — incus-compose extension |
 | `--no-healthd` | Don't stop/start healthd sidecar         |
+
+### Linked services
+
+`up` and `down` follow `depends_on` by default: naming a service pulls in the
+services it links to (its dependencies on `up`, its dependents on `down`). Use
+`--no-deps` to act on exactly the named services.
+
+`start`, `stop`, `restart`, `logs`, and `ps` act on exactly the named services
+by default, matching `docker compose start`/`stop`. The `--with-deps` flag is an
+incus-compose extension that opts those commands into following `depends_on` the
+same way `up`/`down` do.
 
 ## logs
 
@@ -125,6 +141,7 @@ incus-compose logs [SERVICE...]
 | Option           | Description   |
 | ---------------- | ------------- |
 | `-f`, `--follow` | Follow output |
+| `--with-deps`    | Also show logs from linked services (depends_on) — incus-compose extension |
 
 Missing instances are skipped with a warning; logs from available instances are still shown.
 
@@ -182,6 +199,7 @@ incus-compose ps [SERVICE...]
 | `-q`, `--quiet` | Only display Incus instance names                  |
 | `--services`    | Display compose service names instead of instances |
 | `--format`      | table (default) or json                            |
+| `--with-deps`   | Also list linked services (depends_on) — incus-compose extension |
 
 ## incus
 

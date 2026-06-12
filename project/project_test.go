@@ -666,6 +666,7 @@ func (s *LoadProjectTestSuite) TestOnlyServicesStopIncludesDependants() {
 	s.Require().NoError(proj.ToStack(c, stack,
 		project.ToStackOnlyServices([]string{"db"}),
 		project.ToStackReverse(),
+		project.ToStackWithDeps(),
 		project.ToStackNoImages(),
 	))
 
@@ -683,12 +684,31 @@ func (s *LoadProjectTestSuite) TestOnlyServicesStartIncludesDependencies() {
 	stack := client.NewStack(c)
 	s.Require().NoError(proj.ToStack(c, stack,
 		project.ToStackOnlyServices([]string{"wordpress"}),
+		project.ToStackWithDeps(),
 		project.ToStackNoImages(),
 	))
 
 	names := instanceNamesInStack(stack)
 	s.Contains(names, "wordpress-1", "wordpress instance should be in start stack")
 	s.Contains(names, "db-1", "db must also be started because wordpress depends on it")
+}
+
+// TestOnlyServicesStartWithoutDepsExcludesDependencies verifies that, without
+// ToStackWithDeps, start wordpress does not pull in db.
+func (s *LoadProjectTestSuite) TestOnlyServicesStartWithoutDepsExcludesDependencies() {
+	proj, err := project.New().Load(s.ctx, project.LoadWorkingDir(s.fixturePath("wordpress")))
+	s.Require().NoError(err)
+
+	c := client.NewOfflineClient(s.ctx, proj.Name)
+	stack := client.NewStack(c)
+	s.Require().NoError(proj.ToStack(c, stack,
+		project.ToStackOnlyServices([]string{"wordpress"}),
+		project.ToStackNoImages(),
+	))
+
+	names := instanceNamesInStack(stack)
+	s.Contains(names, "wordpress-1", "wordpress instance should be in start stack")
+	s.NotContains(names, "db-1", "db must not be started without --with-deps")
 }
 
 // TestLoadProjectSuite runs the test suite.

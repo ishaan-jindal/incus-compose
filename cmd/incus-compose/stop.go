@@ -23,9 +23,14 @@ func newStopCommand() *cli.Command {
 				Usage: "Timeout for stopping",
 				Value: 10 * time.Second,
 			},
+			&cli.BoolFlag{
+				Name:  "with-deps",
+				Usage: "Also stop linked services",
+			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			timeout := cmd.Duration("timeout")
+			withDeps := cmd.Bool("with-deps")
 
 			globalClient, err := clientFromContext(ctx)
 			if err != nil {
@@ -59,8 +64,13 @@ func newStopCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
+			stackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackReverse()}
+			if withDeps {
+				stackOpts = append(stackOpts, project.ToStackWithDeps())
+			}
+
 			stack := client.NewStack(c)
-			err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackReverse())
+			err = p.ToStack(c, stack, stackOpts...)
 			if err != nil {
 				c.LogError("Adding the project to a stack", "error", err)
 				return errLogged
@@ -72,8 +82,15 @@ func newStopCommand() *cli.Command {
 				errs = errors.Join(errs, err)
 			}
 
+			// Without --with-deps the linked services are not in scope; skip the
+			// healthd interaction that targets out-of-scope dependencies.
+			stopOpts := []client.Option{client.OptionForce(), client.OptionTimeout(timeout)}
+			if !withDeps {
+				stopOpts = append(stopOpts, client.OptionNoHealthd())
+			}
+
 			finish := startProgress(globalClient, c, cmd.Root().Writer)
-			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout))
+			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, stopOpts...)
 			finish(errStop == nil)
 			if errStop != nil {
 				c.LogWarn("Stopping resources", "error", errStop)

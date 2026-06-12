@@ -23,9 +23,14 @@ func newStartCommand() *cli.Command {
 				Usage: "Timeout for starting",
 				Value: 10 * time.Second,
 			},
+			&cli.BoolFlag{
+				Name:  "with-deps",
+				Usage: "Also start linked services",
+			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			timeout := cmd.Duration("timeout")
+			withDeps := cmd.Bool("with-deps")
 
 			globalClient, err := clientFromContext(ctx)
 			if err != nil {
@@ -59,8 +64,13 @@ func newStartCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
+			stackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice())}
+			if withDeps {
+				stackOpts = append(stackOpts, project.ToStackWithDeps())
+			}
+
 			stack := client.NewStack(c)
-			err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()))
+			err = p.ToStack(c, stack, stackOpts...)
 			if err != nil {
 				c.LogError("Adding the project to a stack", "error", err)
 				return errLogged
@@ -72,8 +82,15 @@ func newStartCommand() *cli.Command {
 				errs = errors.Join(errs, err)
 			}
 
+			// Without --with-deps the linked services are not in scope, so don't
+			// wait on healthd dependency conditions that can never be satisfied.
+			startOpts := []client.Option{client.OptionTimeout(timeout)}
+			if !withDeps {
+				startOpts = append(startOpts, client.OptionNoHealthd())
+			}
+
 			finish := startProgress(globalClient, c, cmd.Root().Writer)
-			errStart := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, client.OptionTimeout(timeout))
+			errStart := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, startOpts...)
 			finish(errStart == nil)
 			if errStart != nil {
 				c.LogError("Starting resources", "error", errStart)

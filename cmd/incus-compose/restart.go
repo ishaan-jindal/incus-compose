@@ -23,9 +23,14 @@ func newRestartCommand() *cli.Command {
 				Usage: "Timeout for stopping and starting",
 				Value: 10 * time.Second,
 			},
+			&cli.BoolFlag{
+				Name:  "with-deps",
+				Usage: "Also restart linked services",
+			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			timeout := cmd.Duration("timeout")
+			withDeps := cmd.Bool("with-deps")
 
 			globalClient, err := clientFromContext(ctx)
 			if err != nil {
@@ -59,8 +64,20 @@ func newRestartCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
+			// Without --with-deps the linked services are not in scope; skip the
+			// healthd interaction/dependency waits that target out-of-scope services.
+			runOpts := []client.Option{client.OptionTimeout(timeout)}
+			if !withDeps {
+				runOpts = append(runOpts, client.OptionNoHealthd())
+			}
+
+			stopStackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackReverse()}
+			if withDeps {
+				stopStackOpts = append(stopStackOpts, project.ToStackWithDeps())
+			}
+
 			stack := client.NewStack(c)
-			err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackReverse())
+			err = p.ToStack(c, stack, stopStackOpts...)
 			if err != nil {
 				c.LogError("Adding the project to a stack", "error", err)
 				return errLogged
@@ -74,7 +91,7 @@ func newRestartCommand() *cli.Command {
 
 			finish := startProgress(globalClient, c, cmd.Root().Writer)
 
-			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout))
+			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, append([]client.Option{client.OptionForce()}, runOpts...)...)
 			if errStop != nil {
 				c.LogWarn("Stopping resources", "error", errStop)
 				errs = errors.Join(errs, errStop)
@@ -83,8 +100,13 @@ func newRestartCommand() *cli.Command {
 			// Start fresh after stop
 			c.ResetResources()
 
+			startStackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice())} // No reverse here
+			if withDeps {
+				startStackOpts = append(startStackOpts, project.ToStackWithDeps())
+			}
+
 			stack = client.NewStack(c)
-			err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice())) // No reverse here
+			err = p.ToStack(c, stack, startStackOpts...)
 			if err != nil {
 				c.LogError("Adding the project to a stack", "error", err)
 				errs = errors.Join(errs, errStop)
@@ -95,7 +117,7 @@ func newRestartCommand() *cli.Command {
 				errs = errors.Join(errs, err)
 			}
 
-			errStart := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, client.OptionTimeout(timeout))
+			errStart := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, runOpts...)
 			if errStart != nil {
 				c.LogError("Starting resources", "error", errStart)
 				errs = errors.Join(errs, errStart)
