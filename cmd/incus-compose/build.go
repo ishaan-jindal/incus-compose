@@ -11,124 +11,129 @@ import (
 	"gitlab.com/r3j0/incus-compose/project"
 )
 
-var buildCommand = &cli.Command{
-	Name:      "build",
-	Usage:     "Build or rebuild service images",
-	Category:  "compose",
-	ArgsUsage: "[SERVICE...]",
-	Flags: []cli.Flag{
-		&cli.BoolFlag{
-			Name:  "no-cache",
-			Usage: "Do not use cache when building the image",
+func newBuildCommand() *cli.Command {
+	return &cli.Command{
+		Name:      "build",
+		Usage:     "Build or rebuild service images",
+		Category:  "compose",
+		ArgsUsage: "[SERVICE...]",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:  "no-cache",
+				Usage: "Do not use cache when building the image",
+			},
+			&cli.BoolFlag{
+				Name:  "pull",
+				Usage: "Always attempt to pull a newer version of the base image",
+			},
 		},
-		&cli.BoolFlag{
-			Name:  "pull",
-			Usage: "Always attempt to pull a newer version of the base image",
-		},
-	},
-	Action: func(ctx context.Context, cmd *cli.Command) error {
-		globalClient, err := clientFromContext(ctx)
-		if err != nil {
-			return err
-		}
-
-		p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
-		if err != nil {
-			globalClient.LogError("Loading the project", "error", err)
-			return errLogged.Wrap(err)
-		}
-
-		c, err := globalClient.EnsureProject(
-			p.Name,
-			client.EnsureProjectWithCreate(),
-			client.EnsureProjectWithConfig(p.ProjectConfig()),
-		)
-		if err != nil {
-			globalClient.LogError("Getting the incus project", "error", err)
-			return errLogged.Wrap(err)
-		}
-		defer func() { _ = c.Done() }()
-
-		if err := c.Open(); err != nil {
-			globalClient.LogError("Opening the project client", "error", err)
-			return errLogged.Wrap(err)
-		}
-
-		filterServices := cmd.Args().Slice()
-
-		// Collect only build-configured images from the compose project.
-		noCache := cmd.Bool("no-cache")
-		pull := cmd.Bool("pull")
-
-		builtAny := false
-		for name, svc := range p.Services {
-			if svc.Build == nil {
-				continue
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			globalClient, err := clientFromContext(ctx)
+			if err != nil {
+				return err
 			}
-			if len(filterServices) > 0 && !slices.Contains(filterServices, name) {
-				continue
+			if err := globalClient.Connect(); err != nil {
+				return err
 			}
 
-			imageName := svc.Image
-			if imageName == "" {
-				imageName = "localhost/" + p.Name + "-" + name
+			p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
+			if err != nil {
+				globalClient.LogError("Loading the project", "error", err)
+				return errLogged.Wrap(err)
 			}
 
-			platform := svc.Platform
-			if len(svc.Build.Platforms) > 1 {
-				c.LogError("Multiple build platforms are not supported", "service", name)
-				return errLogged.Wrap(fmt.Errorf("build.platforms with multiple platforms is not supported"))
+			c, err := globalClient.EnsureProject(
+				p.Name,
+				client.EnsureProjectWithCreate(),
+				client.EnsureProjectWithConfig(p.ProjectConfig()),
+			)
+			if err != nil {
+				globalClient.LogError("Getting the incus project", "error", err)
+				return errLogged.Wrap(err)
 			}
-			if len(svc.Build.Platforms) == 1 {
-				platform = svc.Build.Platforms[0]
+			defer func() { _ = c.Done() }()
+
+			if err := c.Open(); err != nil {
+				globalClient.LogError("Opening the project client", "error", err)
+				return errLogged.Wrap(err)
 			}
 
-			buildCfg := &client.BuildConfig{
-				Context:          svc.Build.Context,
-				Dockerfile:       svc.Build.Dockerfile,
-				DockerfileInline: svc.Build.DockerfileInline,
-				Target:           svc.Build.Target,
-				Platform:         platform,
-				NoCache:          noCache || svc.Build.NoCache,
-				Pull:             pull || svc.Build.Pull,
-			}
-			if len(svc.Build.Args) > 0 {
-				buildCfg.Args = make(map[string]string, len(svc.Build.Args))
-				for k, v := range svc.Build.Args {
-					if v != nil {
-						buildCfg.Args[k] = *v
+			filterServices := cmd.Args().Slice()
+
+			// Collect only build-configured images from the compose project.
+			noCache := cmd.Bool("no-cache")
+			pull := cmd.Bool("pull")
+
+			builtAny := false
+			for name, svc := range p.Services {
+				if svc.Build == nil {
+					continue
+				}
+				if len(filterServices) > 0 && !slices.Contains(filterServices, name) {
+					continue
+				}
+
+				imageName := svc.Image
+				if imageName == "" {
+					imageName = "localhost/" + p.Name + "-" + name
+				}
+
+				platform := svc.Platform
+				if len(svc.Build.Platforms) > 1 {
+					c.LogError("Multiple build platforms are not supported", "service", name)
+					return errLogged.Wrap(fmt.Errorf("build.platforms with multiple platforms is not supported"))
+				}
+				if len(svc.Build.Platforms) == 1 {
+					platform = svc.Build.Platforms[0]
+				}
+
+				buildCfg := &client.BuildConfig{
+					Context:          svc.Build.Context,
+					Dockerfile:       svc.Build.Dockerfile,
+					DockerfileInline: svc.Build.DockerfileInline,
+					Target:           svc.Build.Target,
+					Platform:         platform,
+					NoCache:          noCache || svc.Build.NoCache,
+					Pull:             pull || svc.Build.Pull,
+				}
+				if len(svc.Build.Args) > 0 {
+					buildCfg.Args = make(map[string]string, len(svc.Build.Args))
+					for k, v := range svc.Build.Args {
+						if v != nil {
+							buildCfg.Args[k] = *v
+						}
 					}
+				}
+
+				img, err := c.Resource(client.KindImage, imageName, &client.ImageConfig{Build: buildCfg})
+				if err != nil {
+					c.LogError("Configuring image resource", "service", name, "error", err)
+					return errLogged.Wrap(err)
+				}
+
+				ensurable, ok := img.(client.EnsureAble)
+				if !ok {
+					c.LogError("Image resource does not support Ensure", "service", name)
+					return errLogged.Wrap(fmt.Errorf("image resource for %q is not ensurable", name))
+				}
+				if err := ensurable.Ensure(ctx, client.OptionCreate(), client.OptionBuild(client.BuildForce)); err != nil {
+					c.LogError("Building image", "service", name, "error", err)
+					return errLogged.Wrap(err)
+				}
+
+				builtAny = true
+				_, _ = fmt.Fprintf(cmd.Root().Writer, "Built image for service %q: %s\n", name, imageName)
+			}
+
+			if !builtAny {
+				if len(filterServices) > 0 {
+					_, _ = fmt.Fprintf(cmd.Root().Writer, "No build-configured services matched the filter.\n")
+				} else {
+					_, _ = fmt.Fprintf(cmd.Root().Writer, "No services have a build: configuration.\n")
 				}
 			}
 
-			img, err := c.Resource(client.KindImage, imageName, &client.ImageConfig{Build: buildCfg})
-			if err != nil {
-				c.LogError("Configuring image resource", "service", name, "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			ensurable, ok := img.(client.EnsureAble)
-			if !ok {
-				c.LogError("Image resource does not support Ensure", "service", name)
-				return errLogged.Wrap(fmt.Errorf("image resource for %q is not ensurable", name))
-			}
-			if err := ensurable.Ensure(ctx, client.OptionCreate(), client.OptionBuild(client.BuildForce)); err != nil {
-				c.LogError("Building image", "service", name, "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			builtAny = true
-			_, _ = fmt.Fprintf(cmd.Root().Writer, "Built image for service %q: %s\n", name, imageName)
-		}
-
-		if !builtAny {
-			if len(filterServices) > 0 {
-				_, _ = fmt.Fprintf(cmd.Root().Writer, "No build-configured services matched the filter.\n")
-			} else {
-				_, _ = fmt.Fprintf(cmd.Root().Writer, "No services have a build: configuration.\n")
-			}
-		}
-
-		return nil
-	},
+			return nil
+		},
+	}
 }

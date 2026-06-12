@@ -131,51 +131,56 @@ func (f *logFormatter) flush() {
 	}
 }
 
-var logsCommand = &cli.Command{
-	Name:      "logs",
-	Usage:     "View output from containers",
-	Category:  "compose",
-	ArgsUsage: "[SERVICE...]",
-	Flags: []cli.Flag{
-		&cli.BoolFlag{
-			Name:    "follow",
-			Aliases: []string{"f"},
-			Usage:   "Follow log output",
+func newLogsCommand() *cli.Command {
+	return &cli.Command{
+		Name:      "logs",
+		Usage:     "View output from containers",
+		Category:  "compose",
+		ArgsUsage: "[SERVICE...]",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:    "follow",
+				Aliases: []string{"f"},
+				Usage:   "Follow log output",
+			},
 		},
-	},
-	Action: func(ctx context.Context, cmd *cli.Command) error {
-		globalClient, err := clientFromContext(ctx)
-		if err != nil {
-			return err
-		}
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			globalClient, err := clientFromContext(ctx)
+			if err != nil {
+				return err
+			}
+			if err := globalClient.Connect(); err != nil {
+				return err
+			}
 
-		p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
-		if err != nil {
-			globalClient.LogError("Configuring the project", "error", err)
-			return errLogged.Wrap(err)
-		}
+			p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
+			if err != nil {
+				globalClient.LogError("Configuring the project", "error", err)
+				return errLogged.Wrap(err)
+			}
 
-		// Get the per Project client - don't create if it doesn't exist
-		c, err := globalClient.EnsureProject(p.Name)
-		if err != nil {
-			globalClient.LogError("Getting the incus project", "error", err)
-			return errLogged.Wrap(err)
-		}
-		if err := c.Open(); err != nil {
-			globalClient.LogError("Opening the project client", "error", err)
-			return errLogged.Wrap(err)
-		}
-		defer func() { _ = c.Done() }()
+			// Get the per Project client - don't create if it doesn't exist
+			c, err := globalClient.EnsureProject(p.Name)
+			if err != nil {
+				globalClient.LogError("Getting the incus project", "error", err)
+				return errLogged.Wrap(err)
+			}
+			if err := c.Open(); err != nil {
+				globalClient.LogError("Opening the project client", "error", err)
+				return errLogged.Wrap(err)
+			}
+			defer func() { _ = c.Done() }()
 
-		var out io.Writer
-		if f, ok := cmd.Root().Writer.(*os.File); ok {
-			out = colorable.NewColorable(f)
-		} else {
-			out = cmd.Root().Writer
-		}
+			var out io.Writer
+			if f, ok := cmd.Root().Writer.(*os.File); ok {
+				out = colorable.NewColorable(f)
+			} else {
+				out = cmd.Root().Writer
+			}
 
-		return runLogs(ctx, globalClient, c, p, cmd.Args().Slice(), cmd.Bool("follow"), out)
-	},
+			return runLogs(ctx, globalClient, c, p, cmd.Args().Slice(), cmd.Bool("follow"), out)
+		},
+	}
 }
 
 // runLogs streams logs from the given services using an already-open client.

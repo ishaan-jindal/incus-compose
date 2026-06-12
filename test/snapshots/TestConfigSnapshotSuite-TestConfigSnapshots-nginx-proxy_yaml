@@ -2,7 +2,7 @@ name: nginx-proxy
 services:
   backend1:
     environment:
-      NGINX_WORKER_PROCESSES: "1"
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
     healthcheck:
       test:
         - CMD
@@ -17,9 +17,11 @@ services:
     networks:
       backend: null
     restart: unless-stopped
+    x-incus:
+      limits.cpu: 1
   backend2:
     environment:
-      NGINX_WORKER_PROCESSES: "1"
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
     healthcheck:
       test:
         - CMD
@@ -34,6 +36,8 @@ services:
     networks:
       backend: null
     restart: unless-stopped
+    x-incus:
+      limits.cpu: 1
   nginx:
     depends_on:
       backend1:
@@ -43,7 +47,7 @@ services:
         condition: service_healthy
         required: true
     environment:
-      NGINX_WORKER_PROCESSES: "1"
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
     healthcheck:
       test:
         - CMD
@@ -64,6 +68,8 @@ services:
         published: "8080"
         protocol: tcp
     restart: unless-stopped
+    x-incus:
+      limits.cpu: 1
 networks:
   backend:
     name: nginx-proxy_backend

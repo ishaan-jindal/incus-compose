@@ -20,7 +20,7 @@ func (s *UpCommandSuite) TestVersionCommand() {
 	defer func() { version.Version = oldVersion }()
 
 	out := &bytes.Buffer{}
-	s.Require().NoError(versionCommand.Action(s.T().Context(), &cli.Command{Writer: out}))
+	s.Require().NoError(newVersionCommand().Action(s.T().Context(), &cli.Command{Writer: out}))
 	s.Equal("incus-compose version v1.2.3\n", out.String())
 }
 

@@ -1,56 +1,20 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/require"
 )
 
-type E2EBuildSuite struct {
-	suite.Suite
-	ctx    context.Context
-	stdout *bytes.Buffer
-	stderr *bytes.Buffer
-}
-
-func TestE2EBuildSuite(t *testing.T) {
-	if os.Getenv("INCUS_COMPOSE_TEST_SLOW") == "" {
-		t.Skip("Skipping: env INCUS_COMPOSE_TEST_SLOW is not set")
-	}
-
-	suite.Run(t, new(E2EBuildSuite))
-}
-
-func (s *E2EBuildSuite) SetupSuite() {
-	s.ctx = context.Background()
-	s.stdout = &bytes.Buffer{}
-	s.stderr = &bytes.Buffer{}
-}
-
-func (s *E2EBuildSuite) run(args ...string) error {
-	s.stdout.Reset()
-	s.stderr.Reset()
-	cmd := newRootCommand()
-	cmd.Writer = s.stdout
-	cmd.ErrWriter = s.stderr
-	return cmd.Run(s.ctx, append([]string{"incus-compose"}, args...))
-}
-
-func (s *E2EBuildSuite) skipIfLocal() {
-	if os.Getenv("INCUS_COMPOSE_TEST_LOCAL") != "" {
-		s.T().Skip("Skipping: env INCUS_COMPOSE_TEST_LOCAL is set")
-	}
-}
-
-func (s *E2EBuildSuite) skipIfNoBuilder() {
+func skipIfNoBuilder(t *testing.T) {
+	t.Helper()
 	if override := os.Getenv("INCUS_COMPOSE_BUILDER"); override != "" {
 		if _, err := exec.LookPath(override); err != nil {
-			s.T().Skipf("Skipping: INCUS_COMPOSE_BUILDER=%q not found", override)
+			t.Skipf("Skipping: INCUS_COMPOSE_BUILDER=%q not found", override)
 		}
 		return
 	}
@@ -60,79 +24,104 @@ func (s *E2EBuildSuite) skipIfNoBuilder() {
 	if _, err := exec.LookPath("docker"); err == nil {
 		return
 	}
-	s.T().Skip("Skipping: podman or docker not found")
+	t.Skip("Skipping: podman or docker not found")
 }
 
-func (s *E2EBuildSuite) writeCompose(files map[string]string) string {
-	dir := s.T().TempDir()
+func writeCompose(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
 	for name, content := range files {
 		path := filepath.Join(dir, name)
-		s.Require().NoError(os.MkdirAll(filepath.Dir(path), 0o700))
-		s.Require().NoError(os.WriteFile(path, []byte(content), 0o600))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 	}
 	return filepath.Join(dir, "compose.yaml")
 }
 
-func (s *E2EBuildSuite) TestBuildCommandWithBuildFixture() {
-	s.skipIfLocal()
-	s.skipIfNoBuilder()
+func TestBuildCommandWithBuildFixture(t *testing.T) {
+	skipSlow(t)
+	skipLocal(t)
+	skipIfNoBuilder(t)
+	t.Parallel()
 
+	ctx := context.Background()
+	pn := t.Name()
 	fixture := "../../test/fixtures/with-build/compose.yaml"
-	defer func() {
-		_ = s.run("-f", fixture, "down", "--project")
-	}()
 
-	err := s.run("-f", fixture, "build")
-	s.NoError(err)
-	s.Contains(s.stdout.String(), "Built image for service \"app\": localhost/with-build-app")
-	s.Contains(s.stdout.String(), "Built image for service \"app2\": localhost/app2:latest")
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
+	})
+
+	stdout, _, err := runCommand(t, ctx, pn, "-f", fixture, "build")
+	require.NoError(t, err)
+	require.Contains(t, stdout, "Built image for service \"app\": localhost/with-build-app")
+	require.Contains(t, stdout, "Built image for service \"app2\": localhost/app2:latest")
 }
 
-func (s *E2EBuildSuite) TestBuildCommandWithServiceFilter() {
-	s.skipIfLocal()
-	s.skipIfNoBuilder()
+func TestBuildCommandWithServiceFilter(t *testing.T) {
+	skipSlow(t)
+	skipLocal(t)
+	skipIfNoBuilder(t)
+	t.Parallel()
 
+	ctx := context.Background()
+	pn := t.Name()
 	fixture := "../../test/fixtures/with-build/compose.yaml"
-	defer func() {
-		_ = s.run("-f", fixture, "down", "--project")
-	}()
 
-	err := s.run("-f", fixture, "build", "app")
-	s.NoError(err)
-	s.Contains(s.stdout.String(), "Built image for service \"app\": localhost/with-build-app")
-	s.NotContains(s.stdout.String(), "Built image for service \"app2\"")
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
+	})
+
+	stdout, _, err := runCommand(t, ctx, pn, "-f", fixture, "build", "app")
+	require.NoError(t, err)
+	require.Contains(t, stdout, "Built image for service \"app\": localhost/with-build-app")
+	require.NotContains(t, stdout, "Built image for service \"app2\"")
 }
 
-func (s *E2EBuildSuite) TestBuildCommandWithNoBuildServices() {
-	s.skipIfLocal()
+func TestBuildCommandWithNoBuildServices(t *testing.T) {
+	skipSlow(t)
+	skipLocal(t)
+	t.Parallel()
 
+	ctx := context.Background()
+	pn := t.Name()
 	fixture := "../../test/fixtures/simple-nginx/compose.yaml"
-	defer func() {
-		_ = s.run("-f", fixture, "down", "--project")
-	}()
 
-	err := s.run("-f", fixture, "build")
-	s.NoError(err)
-	s.Contains(s.stdout.String(), "No services have a build: configuration.")
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
+	})
+
+	stdout, _, err := runCommand(t, ctx, pn, "-f", fixture, "build")
+	require.NoError(t, err)
+	require.Contains(t, stdout, "No services have a build: configuration.")
 }
 
-func (s *E2EBuildSuite) TestBuildCommandWithNoMatchingBuildServices() {
-	s.skipIfLocal()
+func TestBuildCommandWithNoMatchingBuildServices(t *testing.T) {
+	skipSlow(t)
+	skipLocal(t)
+	t.Parallel()
 
+	ctx := context.Background()
+	pn := t.Name()
 	fixture := "../../test/fixtures/with-build/compose.yaml"
-	defer func() {
-		_ = s.run("-f", fixture, "down", "--project")
-	}()
 
-	err := s.run("-f", fixture, "build", "missing")
-	s.NoError(err)
-	s.Contains(s.stdout.String(), "No build-configured services matched the filter.")
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
+	})
+
+	stdout, _, err := runCommand(t, ctx, pn, "-f", fixture, "build", "missing")
+	require.NoError(t, err)
+	require.Contains(t, stdout, "No build-configured services matched the filter.")
 }
 
-func (s *E2EBuildSuite) TestBuildCommandWithNonBuildServiceFilter() {
-	s.skipIfLocal()
+func TestBuildCommandWithNonBuildServiceFilter(t *testing.T) {
+	skipSlow(t)
+	skipLocal(t)
+	t.Parallel()
 
-	fixture := s.writeCompose(map[string]string{
+	ctx := context.Background()
+	pn := t.Name()
+	fixture := writeCompose(t, map[string]string{
 		"compose.yaml": `services:
   app:
     build: .
@@ -141,19 +130,24 @@ func (s *E2EBuildSuite) TestBuildCommandWithNonBuildServiceFilter() {
 `,
 		"Dockerfile": "FROM docker.io/alpine:latest\n",
 	})
-	defer func() {
-		_ = s.run("-f", fixture, "down", "--project")
-	}()
 
-	err := s.run("-f", fixture, "build", "sidecar")
-	s.NoError(err)
-	s.Contains(s.stdout.String(), "No build-configured services matched the filter.")
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
+	})
+
+	stdout, _, err := runCommand(t, ctx, pn, "-f", fixture, "build", "sidecar")
+	require.NoError(t, err)
+	require.Contains(t, stdout, "No build-configured services matched the filter.")
 }
 
-func (s *E2EBuildSuite) TestBuildCommandRejectsMultiplePlatforms() {
-	s.skipIfLocal()
+func TestBuildCommandRejectsMultiplePlatforms(t *testing.T) {
+	skipSlow(t)
+	skipLocal(t)
+	t.Parallel()
 
-	fixture := s.writeCompose(map[string]string{
+	ctx := context.Background()
+	pn := t.Name()
+	fixture := writeCompose(t, map[string]string{
 		"compose.yaml": `services:
   app:
     build:
@@ -164,19 +158,24 @@ func (s *E2EBuildSuite) TestBuildCommandRejectsMultiplePlatforms() {
 `,
 		"Dockerfile": "FROM docker.io/alpine:latest\n",
 	})
-	defer func() {
-		_ = s.run("-f", fixture, "down", "--project")
-	}()
 
-	err := s.run("-f", fixture, "build")
-	s.Error(err)
-	s.Contains(err.Error(), "build.platforms with multiple platforms is not supported")
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
+	})
+
+	_, _, err := runCommand(t, ctx, pn, "-f", fixture, "build")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "build.platforms with multiple platforms is not supported")
 }
 
-func (s *E2EBuildSuite) TestBuildCommandRejectsUnsupportedPlatform() {
-	s.skipIfLocal()
+func TestBuildCommandRejectsUnsupportedPlatform(t *testing.T) {
+	skipSlow(t)
+	skipLocal(t)
+	t.Parallel()
 
-	fixture := s.writeCompose(map[string]string{
+	ctx := context.Background()
+	pn := t.Name()
+	fixture := writeCompose(t, map[string]string{
 		"compose.yaml": `services:
   app:
     build:
@@ -186,31 +185,36 @@ func (s *E2EBuildSuite) TestBuildCommandRejectsUnsupportedPlatform() {
 `,
 		"Dockerfile": "FROM docker.io/alpine:latest\n",
 	})
-	defer func() {
-		_ = s.run("-f", fixture, "down", "--project")
-	}()
 
-	err := s.run("-f", fixture, "build")
-	s.Error(err)
-	s.Contains(err.Error(), "unsupported build platform linux/unsupported")
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
+	})
+
+	_, _, err := runCommand(t, ctx, pn, "-f", fixture, "build")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported build platform linux/unsupported")
 }
 
-func (s *E2EBuildSuite) TestBuildCommandReportsMissingBuilder() {
-	s.skipIfLocal()
-	s.T().Setenv("INCUS_COMPOSE_BUILDER", "this-builder-does-not-exist-incus-compose-test")
+func TestBuildCommandReportsMissingBuilder(t *testing.T) {
+	skipSlow(t)
+	skipLocal(t)
+	t.Setenv("INCUS_COMPOSE_BUILDER", "this-builder-does-not-exist-incus-compose-test")
 
-	fixture := s.writeCompose(map[string]string{
+	ctx := context.Background()
+	pn := t.Name()
+	fixture := writeCompose(t, map[string]string{
 		"compose.yaml": `services:
   app:
     build: .
 `,
 		"Dockerfile": "FROM docker.io/alpine:latest\n",
 	})
-	defer func() {
-		_ = s.run("-f", fixture, "down", "--project")
-	}()
 
-	err := s.run("-f", fixture, "build")
-	s.Error(err)
-	s.Contains(err.Error(), "no container builder")
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
+	})
+
+	_, _, err := runCommand(t, ctx, pn, "-f", fixture, "build")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no container builder")
 }

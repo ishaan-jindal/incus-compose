@@ -2,7 +2,7 @@ services:
   web:
     image: docker.io/nginx:alpine
     environment:
-      NGINX_WORKER_PROCESSES: 1
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
     x-incus:
       limits.memory: 1024MB
       limits.cpu: "2"
@@ -11,7 +11,7 @@ services:
   database:
     image: docker.io/nginx:alpine
     environment:
-      NGINX_WORKER_PROCESSES: 1
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
     x-incus:
       limits.memory: 1GB
       limits.cpu: "4"

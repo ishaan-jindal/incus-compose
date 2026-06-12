@@ -331,8 +331,9 @@ func (c *GlobalClient) Connect() error {
 	}
 
 	c.incus = pIncus
-	c.logger = c.logger.With("url", c.Config.URL)
 	c.connected = true
+
+	c.logger.Debug("Connected")
 
 	if c.Config.DefaultStoragePool == "detect" {
 		if err = c.detectStoragePool(); err != nil {

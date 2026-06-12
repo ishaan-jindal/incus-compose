@@ -1,22 +1,32 @@
 package main
 
 import (
+	"context"
 	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestExecSelectsCorrectInstance is a regression test for the exec command
 // dispatching to the wrong instance when multiple services share a stack.
 // It runs `hostname` in each service of a multi-service project and asserts
 // the output matches the expected Incus instance name.
-func (s *E2ESuite) TestExecSelectsCorrectInstance() {
+func TestExecSelectsCorrectInstance(t *testing.T) {
+	skipLocal(t)
+	skipSlow(t)
+	t.Parallel()
+
+	ctx := context.Background()
+	pn := t.Name()
 	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
 
-	defer func() {
-		_, _, _ = s.run("-f", compose, "down", "--project")
-	}()
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
 
-	_, _, err := s.run("-f", compose, "up", "--detach")
-	s.Require().NoError(err)
+	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
 
 	tests := []struct {
 		service  string
@@ -28,10 +38,12 @@ func (s *E2ESuite) TestExecSelectsCorrectInstance() {
 	}
 
 	for _, tt := range tests {
-		s.Run(tt.service, func() {
-			stdout, _, err := s.run("-f", compose, "exec", "--no-tty", tt.service, "hostname")
-			s.Require().NoError(err)
-			s.Equal(tt.wantHost, strings.TrimSpace(stdout))
+		t.Run(tt.service, func(t *testing.T) {
+			stdout, _, err := runCommand(t, ctx, pn, "-f", compose, "exec", "--no-tty", tt.service, "hostname")
+			require.NoError(t, err)
+			if strings.TrimSpace(stdout.String()) != tt.wantHost {
+				t.Errorf("got hostname %q, want %q", strings.TrimSpace(stdout.String()), tt.wantHost)
+			}
 		})
 	}
 }

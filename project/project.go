@@ -203,6 +203,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 				Platform:         platform,
 				NoCache:          service.Build.NoCache,
 				Pull:             service.Build.Pull,
+				Args:             service.Build.Args.ToMapping(),
 			}
 			if len(service.Build.Args) > 0 {
 				buildCfg.Args = make(map[string]string, len(service.Build.Args))

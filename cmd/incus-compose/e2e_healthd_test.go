@@ -1,11 +1,26 @@
 package main
 
-func (s *E2ESuite) TestLifecycleHealthd() {
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"gitlab.com/r3j0/incus-compose/client"
+)
+
+func TestLifecycleHealthd(t *testing.T) {
+	skipLocal(t)
+	skipSlow(t)
+	t.Parallel()
+
+	ctx := context.Background()
+	pn := t.Name()
 	compose := "../../test/fixtures/healthd-debug/compose.yaml"
 
-	defer func() {
-		_, _, _ = s.run("-f", compose, "down", "--project")
-	}()
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
 
 	tests := []struct {
 		name string
@@ -46,9 +61,36 @@ func (s *E2ESuite) TestLifecycleHealthd() {
 	}
 
 	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			_, _, err := s.run(tt.args...)
-			s.Require().NoError(err)
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			require.NoError(t, err)
 		})
 	}
+}
+
+func TestUpNoHealthdSkipsHealthdInstance(t *testing.T) {
+	skipLocal(t)
+	skipSlow(t)
+	t.Parallel()
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--no-healthd")
+	require.NoError(t, err)
+
+	gc, err := client.NewTestClient(ctx)
+	require.NoError(t, err)
+
+	c, err := gc.EnsureProject(pn)
+	require.NoError(t, err)
+
+	h, err := healthdResolve(c)
+	require.Nil(t, h)
+	require.Error(t, err)
 }

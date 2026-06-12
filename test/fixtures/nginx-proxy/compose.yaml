@@ -5,7 +5,9 @@ services:
     image: docker.io/nginxinc/nginx-unprivileged:alpine
     restart: unless-stopped
     environment:
-      NGINX_WORKER_PROCESSES: 1
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    x-incus:
+      limits.cpu: 1
     ports:
       - "8080:8080"
     depends_on:
@@ -26,7 +28,9 @@ services:
     image: docker.io/nginxinc/nginx-unprivileged:alpine
     restart: unless-stopped
     environment:
-      NGINX_WORKER_PROCESSES: 1
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    x-incus:
+      limits.cpu: 1
     networks:
       - backend
     healthcheck:
@@ -39,7 +43,9 @@ services:
     image: docker.io/nginxinc/nginx-unprivileged:alpine
     restart: unless-stopped
     environment:
-      NGINX_WORKER_PROCESSES: 1
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    x-incus:
+      limits.cpu: 1
     networks:
       - backend
     healthcheck:

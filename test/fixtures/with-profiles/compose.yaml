@@ -2,7 +2,9 @@ services:
   web:
     image: docker.io/library/nginx:alpine
     environment:
-      NGINX_WORKER_PROCESSES: 1
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    x-incus:
+      limits.cpu: 1
     ports:
       - "80:80"
     volumes:

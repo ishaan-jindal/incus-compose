@@ -2,10 +2,12 @@ name: test-external-network
 services:
   web:
     environment:
-      NGINX_WORKER_PROCESSES: "1"
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
     image: docker.io/nginx:alpine
     networks:
       br0: null
+    x-incus:
+      limits.cpu: 1
 networks:
   br0:
     name: br0

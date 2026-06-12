@@ -12,20 +12,17 @@
 set dotenv-load
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
+v_test_procs := env("TEST_PROCS", `expr $(nproc) / 2`)
+
 [private]
 default:
     @just --list
 
-# Run `incus-compose` via `go run` against your local incus (ignores .env)
-run-local *args:
-    env -u INCUS_COMPOSE_URL -u INCUS_COMPOSE_CERT -u INCUS_COMPOSE_KEY -u INCUS_REMOTE -u INCUS_PROJECT go run ./cmd/incus-compose --debug {{ args }}
-
 # Run local unit-tests, incus-facing tests are skipped.
 test-local folder="./..." *args:
     LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-test-local.log; \
-        INCUS_COMPOSE_TEST_LOCAL=1 go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} | tee ${LOGFILE} || EXIT_CODE=$?; \
+        INCUS_COMPOSE_TEST_LOCAL=1 time go test {{ folder }} -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} 2>&1 | tee ${LOGFILE} || EXIT_CODE=$?; \
         echo "Log: ${LOGFILE}"; \
-        echo `date +%Y%m%d-%H%M%S` >> "${LOGFILE}"; \
         exit ${EXIT_CODE:-0}
 
 # Lint all files.
@@ -40,16 +37,14 @@ fix folder="./...":
 update-local-snapshots folder="./..." *args:
     go clean -testcache
     LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-update-local-snapshots.log; \
-        NO_COLOR=1 INCUS_COMPOSE_TEST_LOCAL=1 UPDATE_SNAPSHOTS=true go test {{ folder }} -v {{ args }} | tee ${LOGFILE} || true; \
-        echo `date +%Y%m%d-%H%M%S` >> "${LOGFILE}"; \
+        NO_COLOR=1 INCUS_COMPOSE_TEST_LOCAL=1 UPDATE_SNAPSHOTS=true time go test {{ folder }} -parallel {{ v_test_procs }} -v {{ args }} 2>&1 | tee ${LOGFILE} || true; \
         echo "Log: ${LOGFILE}"
 
 # Update snapshot test files that require a remote
 update-snapshots folder="./..." *args:
     go clean -testcache
     LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-update-snapshots.log; \
-        NO_COLOR=1 UPDATE_SNAPSHOTS=true go test {{ folder }} -v {{ args }} | tee ${LOGFILE} || true; \
-        echo `date +%Y%m%d-%H%M%S` >> "${LOGFILE}"; \
+        NO_COLOR=1 UPDATE_SNAPSHOTS=true time go test {{ folder }} -parallel {{ v_test_procs }} -v {{ args }} 2>&1 | tee ${LOGFILE} || true; \
         echo "Log: ${LOGFILE}"
 
 # Dev install creates your dev environment: `just dev-install [container] [listen] [project] [image]`
@@ -119,44 +114,30 @@ release tag="0.0.1-dev0" healthd_image="registry.gitlab.com/r3j0/incus-compose/i
 
 # Run with local healthd binary (for testing without an explicit OCI image) (ex. just run-healthd -f test/healthd/debug/compose.yaml up )
 run-healthd compose="examples/immich/compose.yaml" name="immich": build-healthd
-    @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
     go run ./cmd/incus-compose --debug -f {{ compose }} healthd up --recreate --binary bin/ic-healthd
     go run ./cmd/incus-compose -f {{ compose }} incus exec {{ name }}-ic-healthd -- tail -n 1000 -f /var/log/ic-healthd.log
 
 # Usage: just run -f test/fixtures/simple-nginx/compose.yaml config
 run *args:
-    @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
-    @go run ./cmd/incus-compose --remote "${INCUS_REMOTE:-"local"}" {{ args }}
+    @go run ./cmd/incus-compose {{ args }}
 
 # Usage: just run-debug -f test/fixtures/simple-nginx/compose.yaml config
 run-debug *args:
-    @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
-    @go run ./cmd/incus-compose --debug --remote "${INCUS_REMOTE:-"local"}" {{ args }}
+    @go run ./cmd/incus-compose --debug {{ args }}
 
 # Run tests against nested Incus, includes direct incus tests.
 test folder="./..." *args:
-    @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
     LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-test.log; \
-        NO_COLOR=1 go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} | tee ${LOGFILE} || EXIT_CODE=$?; \
+        NO_COLOR=1 time go test {{ folder }} -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} 2>&1 | tee -a ${LOGFILE} || EXIT_CODE=$?; \
         echo "Log: ${LOGFILE}"; \
-        echo `date +%Y%m%d-%H%M%S` >> "${LOGFILE}"; \
         exit ${EXIT_CODE:-0}
 
 # Run all tests against nested Incus, includes direct incus as well as slow tests.
 test-slow folder="./..." *args:
-    @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
     LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-test-slow.log; \
-        NO_COLOR=1 INCUS_COMPOSE_TEST_SLOW=1 go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} | tee ${LOGFILE} || EXIT_CODE=$?; \
+        NO_COLOR=1 INCUS_COMPOSE_TEST_SLOW=1 time go test {{ folder }} -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} 2>&1 | tee -a ${LOGFILE} || EXIT_CODE=$?; \
         echo "Log: ${LOGFILE}"; \
-        echo `date +%Y%m%d-%H%M%S` >> "${LOGFILE}"; \
         exit ${EXIT_CODE:-0}
-
-# Run tests with coverage report
-test-coverage folder="./..." *args:
-    just test {{ folder }} {{ args }}
-    go tool cover -func=coverage.out
-    echo ""
-    echo "For detailed HTML report, run: go tool cover -html=coverage.out"
 
 # Purge all dangling networks (managed and 0 users) from the configured remote
 purge-networks:

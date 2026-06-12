@@ -3,7 +3,7 @@ services:
   web:
     container_name: my-nginx
     environment:
-      NGINX_WORKER_PROCESSES: "1"
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
     image: docker.io/nginx:alpine
     networks:
       default: null
@@ -12,6 +12,8 @@ services:
         target: 80
         published: "8080"
         protocol: tcp
+    x-incus:
+      limits.cpu: 1
 networks:
   default:
     name: with-container-name_default

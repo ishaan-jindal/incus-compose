@@ -198,20 +198,20 @@ func newRootCommand() *cli.Command {
 			},
 		},
 		Commands: []*cli.Command{
-			upCommand,
-			downCommand,
-			buildCommand,
-			startCommand,
-			stopCommand,
-			restartCommand,
-			listCommand,
-			psCommand,
-			configCommand,
-			execCommand,
-			logsCommand,
-			incusCommand,
-			healthdCommand,
-			versionCommand,
+			newUpCommand(),
+			newDownCommand(),
+			newBuildCommand(),
+			newStartCommand(),
+			newStopCommand(),
+			newRestartCommand(),
+			newListCommand(),
+			newPsCommand(),
+			newConfigCommand(),
+			newExecCommand(),
+			newLogsCommand(),
+			newIncusCommand(),
+			newHealthdCommand(),
+			newVersionCommand(),
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			// NO_COLOR takes precedence (https://no-color.org/)
@@ -246,8 +246,6 @@ func newRootCommand() *cli.Command {
 				remote = conf.DefaultRemote
 			}
 
-			slog.Debug("Using connection", "remote", remote)
-
 			server, err := conf.GetInstanceServer(remote)
 			if err != nil {
 				return ctx, err
@@ -261,10 +259,6 @@ func newRootCommand() *cli.Command {
 			}
 
 			c := client.New(ctx, opts...)
-			if err := c.Connect(); err != nil {
-				return ctx, err
-			}
-
 			return context.WithValue(ctx, clientKey{}, c), nil
 		},
 		After: func(ctx context.Context, cmd *cli.Command) error {

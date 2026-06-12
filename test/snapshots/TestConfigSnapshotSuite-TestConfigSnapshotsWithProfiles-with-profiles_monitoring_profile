@@ -14,7 +14,7 @@ services:
         protocol: tcp
   web:
     environment:
-      NGINX_WORKER_PROCESSES: "1"
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
     image: docker.io/library/nginx:alpine
     networks:
       default: null
@@ -29,6 +29,8 @@ services:
         target: /usr/share/nginx/html
         read_only: true
         bind: {}
+    x-incus:
+      limits.cpu: 1
 networks:
   default:
     name: with-profiles_default

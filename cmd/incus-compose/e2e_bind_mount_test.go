@@ -15,47 +15,40 @@ import (
 	"gitlab.com/r3j0/incus-compose/client"
 )
 
-const (
-	bindMountsCompose     = "../../test/fixtures/with-bind-mounts/compose.yaml"
-	bindMountsProjectName = "with-bind-mounts"
-)
-
 func TestBindMounts(t *testing.T) {
+	skipLocal(t)
+
+	t.Parallel()
+
+	pn := "with-bind-mounts"
+	compose := "../../test/fixtures/with-bind-mounts/compose.yaml"
 	ctx := context.Background()
+
 	gc, err := client.NewTestClient(ctx)
 	if err != nil {
 		t.Skip(err.Error())
 	}
 
-	run := func(args ...string) error {
-		var stdout, stderr bytes.Buffer
-		cmd := newRootCommand()
-		cmd.Writer = &stdout
-		cmd.ErrWriter = &stderr
-		return cmd.Run(ctx, append([]string{"incus-compose"}, args...))
-	}
-
 	t.Cleanup(func() {
-		_ = run("-f", bindMountsCompose, "down", "--project")
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	if err := run("-f", bindMountsCompose, "up", "--detach"); err != nil {
-		t.Fatalf("up: %v", err)
-	}
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
 
-	c, err := gc.EnsureProject(bindMountsProjectName)
+	c, err := gc.EnsureProject(pn)
 	require.NoError(t, err)
 
 	t.Run("file bind-mount", func(t *testing.T) {
-		if err := pollContainerHTTP(c, "file-web-1", "file-bind-mount-ok", 60*time.Second); err != nil {
-			t.Fatal(err)
-		}
+		t.Parallel()
+		err := pollContainerHTTP(c, "file-web-1", "file-bind-mount-ok", 60*time.Second)
+		require.NoError(t, err)
 	})
 
 	t.Run("dir bind-mount", func(t *testing.T) {
-		if err := pollContainerHTTP(c, "dir-web-1", "dir-bind-mount-ok", 60*time.Second); err != nil {
-			t.Fatal(err)
-		}
+		t.Parallel()
+		err := pollContainerHTTP(c, "dir-web-1", "dir-bind-mount-ok", 60*time.Second)
+		require.NoError(t, err)
 	})
 }
 
@@ -80,7 +73,7 @@ func pollContainerHTTP(c *client.Client, instance, want string, timeout time.Dur
 		time.Sleep(time.Second)
 	}
 
-	return fmt.Errorf("timed out after %s: err=%v last output=%q", timeout, lastErr, lastOut)
+	return fmt.Errorf("timed out after %s: last output=%q: %w", timeout, lastOut, lastErr)
 }
 
 // containerGet runs wget inside the container and returns stdout.

@@ -3,10 +3,8 @@ package client
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
@@ -83,40 +81,10 @@ func TestSanitizeProjectName(t *testing.T) {
 // Test Helpers
 // ----------------------------------------------------------------------------
 
-const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
-const (
-	letterIdxBits = 6                    // 6 bits to represent a letter index
-	letterIdxMask = 1<<letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
-	letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
-)
-
-var src = rand.NewSource(time.Now().UnixNano())
-
-// https://stackoverflow.com/a/31832326 -- RandStringBytesMaskImprSrcSB
-func randString(n int) string {
-	sb := strings.Builder{}
-	sb.Grow(n)
-	// A src.Int63() generates 63 random bits, enough for letterIdxMax characters!
-	for i, cache, remain := n-1, src.Int63(), letterIdxMax; i >= 0; {
-		if remain == 0 {
-			cache, remain = src.Int63(), letterIdxMax
-		}
-		if idx := int(cache & letterIdxMask); idx < len(letterBytes) {
-			sb.WriteByte(letterBytes[idx])
-			i--
-		}
-		cache >>= letterIdxBits
-		remain--
-	}
-
-	return sb.String()
-}
-
 // createProjectClient creates a project-scoped client with logging hooks.
 func createProjectClient(gc *GlobalClient, name string) (*Client, error) {
 	if name == "" {
-		name = "test-" + randString(10)
+		name = "test-" + strings.ToLower(RandString(12))
 	}
 
 	_ = gc.DeleteProject(name, true)

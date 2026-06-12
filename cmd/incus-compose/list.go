@@ -106,213 +106,218 @@ func (c *ContainerStatuses) Table() error {
 	return errors.Join(errs, tw.Flush())
 }
 
-var listCommand = &cli.Command{
-	Name:      "list",
-	Usage:     "List resources",
-	Category:  "extensions",
-	ArgsUsage: "[SERVICE...]",
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:  "format",
-			Usage: "Format the output. Values: [table | yaml | json]",
-			Value: "table",
-			Action: func(ctx context.Context, cmd *cli.Command, v string) error {
-				if !slices.Contains([]string{"table", "yaml", "json"}, v) {
-					return fmt.Errorf("invalid format: %s (must be table, yaml or json)", v)
-				}
-				return nil
+func newListCommand() *cli.Command {
+	return &cli.Command{
+		Name:      "list",
+		Usage:     "List resources",
+		Category:  "extensions",
+		ArgsUsage: "[SERVICE...]",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "format",
+				Usage: "Format the output. Values: [table | yaml | json]",
+				Value: "table",
+				Action: func(ctx context.Context, cmd *cli.Command, v string) error {
+					if !slices.Contains([]string{"table", "yaml", "json"}, v) {
+						return fmt.Errorf("invalid format: %s (must be table, yaml or json)", v)
+					}
+					return nil
+				},
+			},
+			&cli.BoolFlag{
+				Name:  "healthd",
+				Usage: "List the healthd sidecar",
 			},
 		},
-		&cli.BoolFlag{
-			Name:  "healthd",
-			Usage: "List the healthd sidecar",
-		},
-	},
-	Action: func(ctx context.Context, cmd *cli.Command) error {
-		globalClient, err := clientFromContext(ctx)
-		if err != nil {
-			return err
-		}
-
-		p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
-		if err != nil {
-			globalClient.LogError("Configuring the project", "error", err)
-			return errLogged.Wrap(err)
-		}
-
-		// Get the per Project client early, gives early errors if the project does not exists
-		c, err := globalClient.EnsureProject(p.Name)
-		if err != nil {
-			globalClient.LogError("Getting the incus project", "error", err)
-			return errLogged.Wrap(err)
-		}
-		if err := c.Open(); err != nil {
-			globalClient.LogError("Opening the project client", "error", err)
-			return errLogged.Wrap(err)
-		}
-		defer func() { _ = c.Done() }()
-
-		stack := client.NewStack(c)
-		err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackFull(), project.ToStackNoImages())
-		if err != nil {
-			c.LogError(err.Error())
-			return errLogged.Wrap(err)
-		}
-
-		if cmd.Bool("healthd") {
-			if name, err := c.FindHealthdName(); err == nil && name != "" {
-				c.LogDebug("Found healthd name", "name", name)
-
-				inst, err := c.Resource(client.KindInstance, name, &client.InstanceConfig{Full: true})
-				if err != nil {
-					c.LogWarn(err.Error())
-					return errLogged.Wrap(err)
-				}
-
-				stack.Add(inst)
-			} else {
-				c.LogWarn("Couldn't find healthd")
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			globalClient, err := clientFromContext(ctx)
+			if err != nil {
+				return err
 			}
-		}
+			if err := globalClient.Connect(); err != nil {
+				return err
+			}
 
-		err = stack.Run(ctx, client.ActionEnsure)
-		if err != nil {
-			c.LogWarn(err.Error())
-		}
+			p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
+			if err != nil {
+				globalClient.LogError("Configuring the project", "error", err)
+				return errLogged.Wrap(err)
+			}
 
-		var rErr error
+			// Get the per Project client early, gives early errors if the project does not exists
+			c, err := globalClient.EnsureProject(p.Name)
+			if err != nil {
+				globalClient.LogError("Getting the incus project", "error", err)
+				return errLogged.Wrap(err)
+			}
+			if err := c.Open(); err != nil {
+				globalClient.LogError("Opening the project client", "error", err)
+				return errLogged.Wrap(err)
+			}
+			defer func() { _ = c.Done() }()
 
-		w := cmd.Root().Writer
-		if w == nil {
-			w = os.Stdout
-		}
-		if cmd.String("output") != "" {
-			fd, err := os.OpenFile(cmd.String("output"), os.O_APPEND|os.O_CREATE, 0o644)
+			stack := client.NewStack(c)
+			err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackFull(), project.ToStackNoImages())
 			if err != nil {
 				c.LogError(err.Error())
 				return errLogged.Wrap(err)
 			}
-			defer fd.Close()
-			w = fd
-		}
 
-		err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure)
-		if err != nil {
-			c.LogWarn("Ensuring the stack", "error", "err")
-		}
+			if cmd.Bool("healthd") {
+				if name, err := c.FindHealthdName(); err == nil && name != "" {
+					c.LogDebug("Found healthd name", "name", name)
 
-		titleCaser := cases.Title(language.English)
+					inst, err := c.Resource(client.KindInstance, name, &client.InstanceConfig{Full: true})
+					if err != nil {
+						c.LogWarn(err.Error())
+						return errLogged.Wrap(err)
+					}
 
-		statuses := NewContainerStatuses(w)
-
-		for _, r := range sortResources(stack.All()) {
-			if r == nil {
-				c.LogDebug("Found a nil resource")
-				continue
-			}
-
-			s := "Unknown"
-			if r.IsEnsured() {
-				s = "Exists"
-			}
-
-			// Images have 3-stage status: Unknown -> Cached -> Exists
-			if r.Kind() == client.KindImage {
-				if img, ok := r.(*client.Image); ok {
-					s = img.Status()
+					stack.Add(inst)
+				} else {
+					c.LogWarn("Couldn't find healthd")
 				}
 			}
 
-			status := ProjectStatus{
-				Kind:        string(r.Kind()),
-				Name:        r.Name(),
-				Description: "",
-				IncusName:   r.IncusName(),
-				Image:       "",
-				Status:      s,
-				Addresses:   []string{},
+			err = stack.Run(ctx, client.ActionEnsure)
+			if err != nil {
+				c.LogWarn(err.Error())
 			}
 
-			if r.Kind() == client.KindImage {
-				continue
+			var rErr error
+
+			w := cmd.Root().Writer
+			if w == nil {
+				w = os.Stdout
+			}
+			if cmd.String("output") != "" {
+				fd, err := os.OpenFile(cmd.String("output"), os.O_APPEND|os.O_CREATE, 0o644)
+				if err != nil {
+					c.LogError(err.Error())
+					return errLogged.Wrap(err)
+				}
+				defer fd.Close()
+				w = fd
 			}
 
-			if r.Kind() == client.KindInstance {
-				if !r.IsEnsured() {
-					c.LogDebug("Getting an instance", "error", client.NewError("not ensured").WithResource(r))
-					statuses.Add(status)
+			err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure)
+			if err != nil {
+				c.LogWarn("Ensuring the stack", "error", "err")
+			}
+
+			titleCaser := cases.Title(language.English)
+
+			statuses := NewContainerStatuses(w)
+
+			for _, r := range sortResources(stack.All()) {
+				if r == nil {
+					c.LogDebug("Found a nil resource")
 					continue
 				}
 
-				instance, ok := r.(*client.Instance)
-				if !ok {
-					err = client.ErrUnknown.WithResource(r)
-					c.LogError("Getting an instance", err)
-					rErr = errors.Join(rErr, err)
-					statuses.Add(status)
-					continue
+				s := "Unknown"
+				if r.IsEnsured() {
+					s = "Exists"
 				}
 
-				if !instance.HasFull() {
-					c.LogWarn("Skipping", "error", client.NewError("not all instance details provided").WithResource(r))
-					statuses.Add(status)
-					continue
-				}
-
-				instFull := instance.IncusInstanceFull
-
-				status.Name = instance.ServiceName()
-				status.Status = instFull.State.Status
-				status.Image = instance.Config.Image
-				status.Description = instFull.Description
-
-				// Get IP addresses
-				for _, network := range instFull.State.Network {
-					for _, addr := range network.Addresses {
-						if addr.Family == "inet" && addr.Scope == "global" {
-							status.Addresses = append(status.Addresses, addr.Address)
-						}
+				// Images have 3-stage status: Unknown -> Cached -> Exists
+				if r.Kind() == client.KindImage {
+					if img, ok := r.(*client.Image); ok {
+						s = img.Status()
 					}
 				}
 
-				// Use the healthcheck status if available.
-				if val, ok := instFull.Config["user.healthcheck.status"]; ok {
-					status.Status = status.Status + " / " + titleCaser.String(val)
+				status := ProjectStatus{
+					Kind:        string(r.Kind()),
+					Name:        r.Name(),
+					Description: "",
+					IncusName:   r.IncusName(),
+					Image:       "",
+					Status:      s,
+					Addresses:   []string{},
 				}
+
+				if r.Kind() == client.KindImage {
+					continue
+				}
+
+				if r.Kind() == client.KindInstance {
+					if !r.IsEnsured() {
+						c.LogDebug("Getting an instance", "error", client.NewError("not ensured").WithResource(r))
+						statuses.Add(status)
+						continue
+					}
+
+					instance, ok := r.(*client.Instance)
+					if !ok {
+						err = client.ErrUnknown.WithResource(r)
+						c.LogError("Getting an instance", err)
+						rErr = errors.Join(rErr, err)
+						statuses.Add(status)
+						continue
+					}
+
+					if !instance.HasFull() {
+						c.LogWarn("Skipping", "error", client.NewError("not all instance details provided").WithResource(r))
+						statuses.Add(status)
+						continue
+					}
+
+					instFull := instance.IncusInstanceFull
+
+					status.Name = instance.ServiceName()
+					status.Status = instFull.State.Status
+					status.Image = instance.Config.Image
+					status.Description = instFull.Description
+
+					// Get IP addresses
+					for _, network := range instFull.State.Network {
+						for _, addr := range network.Addresses {
+							if addr.Family == "inet" && addr.Scope == "global" {
+								status.Addresses = append(status.Addresses, addr.Address)
+							}
+						}
+					}
+
+					// Use the healthcheck status if available.
+					if val, ok := instFull.Config["user.healthcheck.status"]; ok {
+						status.Status = status.Status + " / " + titleCaser.String(val)
+					}
+				}
+
+				statuses.Add(status)
 			}
 
-			statuses.Add(status)
-		}
+			if rErr != nil {
+				return rErr
+			}
 
-		if rErr != nil {
-			return rErr
-		}
-
-		switch cmd.String("format") {
-		case "table":
-			err := statuses.Table()
-			if err != nil {
-				c.LogError(err.Error())
+			switch cmd.String("format") {
+			case "table":
+				err := statuses.Table()
+				if err != nil {
+					c.LogError(err.Error())
+					return errLogged.Wrap(err)
+				}
+			case "yaml":
+				err := statuses.Yaml()
+				if err != nil {
+					c.LogError(err.Error())
+					return errLogged.Wrap(err)
+				}
+			case "json":
+				err := statuses.JSON()
+				if err != nil {
+					c.LogError(err.Error())
+					return errLogged.Wrap(err)
+				}
+			default:
+				// This should never happen.
+				c.LogError("Unknown format", "format", cmd.String("format"))
 				return errLogged.Wrap(err)
 			}
-		case "yaml":
-			err := statuses.Yaml()
-			if err != nil {
-				c.LogError(err.Error())
-				return errLogged.Wrap(err)
-			}
-		case "json":
-			err := statuses.JSON()
-			if err != nil {
-				c.LogError(err.Error())
-				return errLogged.Wrap(err)
-			}
-		default:
-			// This should never happen.
-			c.LogError("Unknown format", "format", cmd.String("format"))
-			return errLogged.Wrap(err)
-		}
 
-		return nil
-	},
+			return nil
+		},
+	}
 }

@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/compose-spec/compose-go/v2/types"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/mattn/go-colorable"
 	"github.com/urfave/cli/v3"
@@ -112,11 +111,11 @@ func healthdInUseByProject(p *project.Project) bool {
 			return true
 		}
 
-		for _, dep := range svc.DependsOn {
-			if dep.Condition == types.ServiceConditionHealthy {
-				return true
-			}
-		}
+		// for _, dep := range svc.DependsOn {
+		// 	if dep.Condition == types.ServiceConditionHealthy {
+		// 		return true
+		// 	}
+		// }
 	}
 	return false
 }
@@ -453,376 +452,400 @@ func healthdReload(c *client.Client, h *client.Instance) error {
 	return op.Wait()
 }
 
-var healthdCommand = &cli.Command{
-	Name:     "healthd",
-	Usage:    "Manage the ic-healthd sidecar",
-	Category: "extensions",
-	Commands: []*cli.Command{
-		healthdLogsCommand,
-		healthdReloadCommand,
-		healthdRestartCommand,
-		healthdUpCommand,
-		healthdDownCommand,
-	},
+func newHealthdCommand() *cli.Command {
+	return &cli.Command{
+		Name:     "healthd",
+		Usage:    "Manage the ic-healthd sidecar",
+		Category: "extensions",
+		Commands: []*cli.Command{
+			newHealthdLogsCommand(),
+			newHealthdReloadCommand(),
+			newHealthdRestartCommand(),
+			newHealthdUpCommand(),
+			newHealthdDownCommand(),
+		},
+	}
 }
 
-var healthdLogsCommand = &cli.Command{
-	Name:  "logs",
-	Usage: "View output from the healthd sidecar",
-	Flags: []cli.Flag{
-		&cli.BoolFlag{
-			Name:    "follow",
-			Aliases: []string{"f"},
-			Usage:   "Follow log output",
+func newHealthdLogsCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "logs",
+		Usage: "View output from the healthd sidecar",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:    "follow",
+				Aliases: []string{"f"},
+				Usage:   "Follow log output",
+			},
 		},
-	},
-	Action: func(ctx context.Context, cmd *cli.Command) error {
-		globalClient, err := clientFromContext(ctx)
-		if err != nil {
-			return err
-		}
-
-		p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
-		if err != nil {
-			globalClient.LogError("Configuring the project", "error", err)
-			return errLogged.Wrap(err)
-		}
-
-		c, err := globalClient.EnsureProject(p.Name)
-		if err != nil {
-			globalClient.LogError("Getting the incus project", "error", err)
-			return errLogged.Wrap(err)
-		}
-		if err := c.Open(); err != nil {
-			globalClient.LogError("Opening the project client", "error", err)
-			return errLogged.Wrap(err)
-		}
-		defer func() { _ = c.Done() }()
-
-		h, err := healthdResolve(c)
-		if err != nil {
-			c.LogError(err.Error())
-			return errLogged.Wrap(err)
-		}
-
-		var out io.Writer
-		if f, ok := cmd.Root().Writer.(*os.File); ok {
-			out = colorable.NewColorable(f)
-		} else {
-			out = cmd.Root().Writer
-		}
-		formatter := newLogFormatter(out, noColor)
-		formatter.registerService(h.IncusName())
-		globalClient.SetOutputHandler(formatter.write)
-
-		var opts []client.Option
-		if cmd.Bool("follow") {
-			opts = append(opts, client.OptionFollow())
-		}
-
-		if err := h.Ensure(ctx); err != nil {
-			c.LogError("Ensuring healthd", "error", err)
-			return errLogged.Wrap(err)
-		}
-
-		if err := h.Log(ctx, opts...); err != nil {
-			c.LogError("Getting healthd logs", "error", err)
-			return errLogged.Wrap(err)
-		}
-
-		formatter.flush()
-		return nil
-	},
-}
-
-var healthdReloadCommand = &cli.Command{
-	Name:  "reload",
-	Usage: "Send SIGHUP to the ic-healthd process",
-	Action: func(ctx context.Context, cmd *cli.Command) error {
-		globalClient, err := clientFromContext(ctx)
-		if err != nil {
-			return err
-		}
-
-		p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
-		if err != nil {
-			globalClient.LogError("Configuring the project", "error", err)
-			return errLogged.Wrap(err)
-		}
-
-		c, err := globalClient.EnsureProject(p.Name)
-		if err != nil {
-			globalClient.LogError("Getting the incus project", "error", err)
-			return errLogged.Wrap(err)
-		}
-		if err := c.Open(); err != nil {
-			globalClient.LogError("Opening the project client", "error", err)
-			return errLogged.Wrap(err)
-		}
-		defer func() { _ = c.Done() }()
-
-		// Render live progress for the ensure phase, where image downloads happen.
-		finish := startProgress(globalClient, c, cmd.Root().Writer)
-
-		h, err := healthdResolve(c)
-		if err != nil {
-			c.LogError(err.Error())
-			finish(false)
-			return errLogged.Wrap(err)
-		}
-
-		if err := h.Ensure(ctx); err != nil {
-			c.LogError("Ensuring healthd", "error", err)
-			finish(false)
-			return errLogged.Wrap(err)
-		}
-
-		if err := healthdReload(c, h); err != nil {
-			c.LogError("Reloading healthd", "error", err)
-			finish(false)
-			return errLogged.Wrap(err)
-		}
-
-		finish(true)
-		return nil
-	},
-}
-
-var healthdRestartCommand = &cli.Command{
-	Name:  "restart",
-	Usage: "Restart the ic-healthd sidecar",
-	Flags: []cli.Flag{
-		&cli.DurationFlag{
-			Name:  "timeout",
-			Usage: "Timeout for stopping",
-			Value: 10 * time.Second,
-		},
-	},
-	Action: func(ctx context.Context, cmd *cli.Command) error {
-		globalClient, err := clientFromContext(ctx)
-		if err != nil {
-			return err
-		}
-
-		p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
-		if err != nil {
-			globalClient.LogError("Configuring the project", "error", err)
-			return errLogged.Wrap(err)
-		}
-
-		c, err := globalClient.EnsureProject(p.Name)
-		if err != nil {
-			globalClient.LogError("Getting the incus project", "error", err)
-			return errLogged.Wrap(err)
-		}
-		if err := c.Open(); err != nil {
-			globalClient.LogError("Opening the project client", "error", err)
-			return errLogged.Wrap(err)
-		}
-		defer func() { _ = c.Done() }()
-
-		// Render live progress for the ensure phase, where image downloads happen.
-		finish := startProgress(globalClient, c, cmd.Root().Writer)
-
-		h, err := healthdResolve(c)
-		if err != nil {
-			c.LogError(err.Error())
-			finish(false)
-			return errLogged.Wrap(err)
-		}
-
-		if err := h.Ensure(ctx); err != nil {
-			c.LogError("Ensuring healthd", "error", err)
-			finish(false)
-			return errLogged.Wrap(err)
-		}
-
-		timeout := cmd.Duration("timeout")
-		if err := h.Stop(ctx, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
-			c.LogWarn("Stopping healthd", "error", err)
-		}
-
-		if err := h.Start(ctx); err != nil {
-			c.LogError("Starting healthd", "error", err)
-			finish(false)
-			return errLogged.Wrap(err)
-		}
-
-		if err := healthdRegisterReloader(c, h); err != nil {
-			c.LogError("Registering healthd reloader", "error", err)
-			finish(false)
-			return errLogged.Wrap(err)
-		}
-
-		finish(true)
-		return nil
-	},
-}
-
-var healthdUpCommand = &cli.Command{
-	Name:  "up",
-	Usage: "Create or recreate the ic-healthd sidecar",
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "image",
-			Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
-			Value:   defaultHealthdImage,
-			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
-		},
-		&cli.StringFlag{
-			Name:    "binary",
-			Usage:   "Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)",
-			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_BINARY"),
-		},
-		&cli.StringFlag{
-			Name:    "network",
-			Usage:   "Incus bridge for healthd to use (default: auto-detect)",
-			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_NETWORK"),
-		},
-		&cli.BoolFlag{
-			Name:  "recreate",
-			Usage: "Recreate the sidecar even if it already exists",
-		},
-		&cli.StringFlag{
-			Name:  "pull",
-			Usage: `Pull image before running ("always"|"missing"|"never"|"policy")`,
-			Value: "policy",
-		},
-		&cli.DurationFlag{
-			Name:  "timeout",
-			Usage: "Timeout for stopping",
-			Value: 10 * time.Second,
-		},
-	},
-	Action: func(ctx context.Context, cmd *cli.Command) error {
-		globalClient, err := clientFromContext(ctx)
-		if err != nil {
-			return err
-		}
-
-		p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
-		if err != nil {
-			globalClient.LogError("Configuring the project", "error", err)
-			return errLogged.Wrap(err)
-		}
-
-		if !healthdInUseByProject(p) {
-			return fmt.Errorf("no service in this project declares a healthcheck")
-		}
-
-		params := healthdParams{
-			projectName: p.Name,
-			binary:      cmd.String("binary"),
-			image:       resolveHealthdImage(cmd.String("image")),
-			pull:        cmd.String("pull"),
-			reCreate:    cmd.Bool("recreate"),
-			network:     cmd.String("network"),
-			timeout:     cmd.Duration("timeout"),
-		}
-
-		c, err := globalClient.EnsureProject(
-			p.Name,
-			client.EnsureProjectWithConfig(p.ProjectConfig()),
-		)
-		if err != nil {
-			globalClient.LogError("Getting the incus project", "error", err)
-			return errLogged.Wrap(err)
-		}
-		if err := c.Open(); err != nil {
-			globalClient.LogError("Opening the project client", "error", err)
-			return errLogged.Wrap(err)
-		}
-		defer func() { _ = c.Done() }()
-
-		// Render live progress for the ensure phase, where image downloads happen.
-		finish := startProgress(globalClient, c, cmd.Root().Writer)
-
-		if params.reCreate {
-			if existing, resources, err := healthdGetResources(c, params); err == nil {
-				healthdDown(ctx, c, existing, resources, params.timeout)
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			globalClient, err := clientFromContext(ctx)
+			if err != nil {
+				return err
 			}
 
-			c.ResetResources()
-		}
+			p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
+			if err != nil {
+				globalClient.LogError("Configuring the project", "error", err)
+				return errLogged.Wrap(err)
+			}
 
-		inst, resources, err := healthdGetResources(c, params)
-		if err != nil {
-			globalClient.LogError("Creating healthd resources", "error", err)
-			finish(false)
-			return errLogged.Wrap(err)
-		}
+			c, err := globalClient.EnsureProject(p.Name)
+			if err != nil {
+				globalClient.LogError("Getting the incus project", "error", err)
+				return errLogged.Wrap(err)
+			}
+			if err := c.Open(); err != nil {
+				globalClient.LogError("Opening the project client", "error", err)
+				return errLogged.Wrap(err)
+			}
+			defer func() { _ = c.Done() }()
 
-		if err := healthdUp(ctx, c, inst, resources, params); err != nil {
-			globalClient.LogError("Starting healthd", "error", err)
-			finish(false)
-			return errLogged.Wrap(err)
-		}
+			h, err := healthdResolve(c)
+			if err != nil {
+				c.LogError(err.Error())
+				return errLogged.Wrap(err)
+			}
 
-		finish(true)
-		return nil
-	},
+			var out io.Writer
+			if f, ok := cmd.Root().Writer.(*os.File); ok {
+				out = colorable.NewColorable(f)
+			} else {
+				out = cmd.Root().Writer
+			}
+			formatter := newLogFormatter(out, noColor)
+			formatter.registerService(h.IncusName())
+			globalClient.SetOutputHandler(formatter.write)
+
+			var opts []client.Option
+			if cmd.Bool("follow") {
+				opts = append(opts, client.OptionFollow())
+			}
+
+			if err := h.Ensure(ctx); err != nil {
+				c.LogError("Ensuring healthd", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			if err := h.Log(ctx, opts...); err != nil {
+				c.LogError("Getting healthd logs", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			formatter.flush()
+			return nil
+		},
+	}
 }
 
-var healthdDownCommand = &cli.Command{
-	Name:  "down",
-	Usage: "Stop and remove the ic-healthd sidecar",
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "image",
-			Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
-			Value:   defaultHealthdImage,
-			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
+func newHealthdReloadCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "reload",
+		Usage: "Send SIGHUP to the ic-healthd process",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			globalClient, err := clientFromContext(ctx)
+			if err != nil {
+				return err
+			}
+			if err := globalClient.Connect(); err != nil {
+				return err
+			}
+
+			p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
+			if err != nil {
+				globalClient.LogError("Configuring the project", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			c, err := globalClient.EnsureProject(p.Name)
+			if err != nil {
+				globalClient.LogError("Getting the incus project", "error", err)
+				return errLogged.Wrap(err)
+			}
+			if err := c.Open(); err != nil {
+				globalClient.LogError("Opening the project client", "error", err)
+				return errLogged.Wrap(err)
+			}
+			defer func() { _ = c.Done() }()
+
+			// Render live progress for the ensure phase, where image downloads happen.
+			finish := startProgress(globalClient, c, cmd.Root().Writer)
+
+			h, err := healthdResolve(c)
+			if err != nil {
+				c.LogError(err.Error())
+				finish(false)
+				return errLogged.Wrap(err)
+			}
+
+			if err := h.Ensure(ctx); err != nil {
+				c.LogError("Ensuring healthd", "error", err)
+				finish(false)
+				return errLogged.Wrap(err)
+			}
+
+			if err := healthdReload(c, h); err != nil {
+				c.LogError("Reloading healthd", "error", err)
+				finish(false)
+				return errLogged.Wrap(err)
+			}
+
+			finish(true)
+			return nil
 		},
-		&cli.DurationFlag{
-			Name:  "timeout",
-			Usage: "Timeout for stopping",
-			Value: 10 * time.Second,
+	}
+}
+
+func newHealthdRestartCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "restart",
+		Usage: "Restart the ic-healthd sidecar",
+		Flags: []cli.Flag{
+			&cli.DurationFlag{
+				Name:  "timeout",
+				Usage: "Timeout for stopping",
+				Value: 10 * time.Second,
+			},
 		},
-	},
-	Action: func(ctx context.Context, cmd *cli.Command) error {
-		globalClient, err := clientFromContext(ctx)
-		if err != nil {
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			globalClient, err := clientFromContext(ctx)
+			if err != nil {
+				return err
+			}
+			if err := globalClient.Connect(); err != nil {
+				return err
+			}
+
+			p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
+			if err != nil {
+				globalClient.LogError("Configuring the project", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			c, err := globalClient.EnsureProject(p.Name)
+			if err != nil {
+				globalClient.LogError("Getting the incus project", "error", err)
+				return errLogged.Wrap(err)
+			}
+			if err := c.Open(); err != nil {
+				globalClient.LogError("Opening the project client", "error", err)
+				return errLogged.Wrap(err)
+			}
+			defer func() { _ = c.Done() }()
+
+			// Render live progress for the ensure phase, where image downloads happen.
+			finish := startProgress(globalClient, c, cmd.Root().Writer)
+
+			h, err := healthdResolve(c)
+			if err != nil {
+				c.LogError(err.Error())
+				finish(false)
+				return errLogged.Wrap(err)
+			}
+
+			if err := h.Ensure(ctx); err != nil {
+				c.LogError("Ensuring healthd", "error", err)
+				finish(false)
+				return errLogged.Wrap(err)
+			}
+
+			timeout := cmd.Duration("timeout")
+			if err := h.Stop(ctx, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
+				c.LogWarn("Stopping healthd", "error", err)
+			}
+
+			if err := h.Start(ctx); err != nil {
+				c.LogError("Starting healthd", "error", err)
+				finish(false)
+				return errLogged.Wrap(err)
+			}
+
+			if err := healthdRegisterReloader(c, h); err != nil {
+				c.LogError("Registering healthd reloader", "error", err)
+				finish(false)
+				return errLogged.Wrap(err)
+			}
+
+			finish(true)
+			return nil
+		},
+	}
+}
+
+func newHealthdUpCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "up",
+		Usage: "Create or recreate the ic-healthd sidecar",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "image",
+				Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
+				Value:   defaultHealthdImage,
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
+			},
+			&cli.StringFlag{
+				Name:    "binary",
+				Usage:   "Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)",
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_BINARY"),
+			},
+			&cli.StringFlag{
+				Name:    "network",
+				Usage:   "Incus bridge for healthd to use (default: auto-detect)",
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_NETWORK"),
+			},
+			&cli.BoolFlag{
+				Name:  "recreate",
+				Usage: "Recreate the sidecar even if it already exists",
+			},
+			&cli.StringFlag{
+				Name:  "pull",
+				Usage: `Pull image before running ("always"|"missing"|"never"|"policy")`,
+				Value: "policy",
+			},
+			&cli.DurationFlag{
+				Name:  "timeout",
+				Usage: "Timeout for stopping",
+				Value: 10 * time.Second,
+			},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			globalClient, err := clientFromContext(ctx)
+			if err != nil {
+				return err
+			}
+			if err := globalClient.Connect(); err != nil {
+				return err
+			}
+
+			p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
+			if err != nil {
+				globalClient.LogError("Configuring the project", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			if !healthdInUseByProject(p) {
+				return fmt.Errorf("no service in this project declares a healthcheck")
+			}
+
+			params := healthdParams{
+				projectName: p.Name,
+				binary:      cmd.String("binary"),
+				image:       resolveHealthdImage(cmd.String("image")),
+				pull:        cmd.String("pull"),
+				reCreate:    cmd.Bool("recreate"),
+				network:     cmd.String("network"),
+				timeout:     cmd.Duration("timeout"),
+			}
+
+			c, err := globalClient.EnsureProject(
+				p.Name,
+				client.EnsureProjectWithConfig(p.ProjectConfig()),
+			)
+			if err != nil {
+				globalClient.LogError("Getting the incus project", "error", err)
+				return errLogged.Wrap(err)
+			}
+			if err := c.Open(); err != nil {
+				globalClient.LogError("Opening the project client", "error", err)
+				return errLogged.Wrap(err)
+			}
+			defer func() { _ = c.Done() }()
+
+			// Render live progress for the ensure phase, where image downloads happen.
+			finish := startProgress(globalClient, c, cmd.Root().Writer)
+
+			if params.reCreate {
+				if existing, resources, err := healthdGetResources(c, params); err == nil {
+					healthdDown(ctx, c, existing, resources, params.timeout)
+				}
+
+				c.ResetResources()
+			}
+
+			inst, resources, err := healthdGetResources(c, params)
+			if err != nil {
+				globalClient.LogError("Creating healthd resources", "error", err)
+				finish(false)
+				return errLogged.Wrap(err)
+			}
+
+			if err := healthdUp(ctx, c, inst, resources, params); err != nil {
+				globalClient.LogError("Starting healthd", "error", err)
+				finish(false)
+				return errLogged.Wrap(err)
+			}
+
+			finish(true)
+			return nil
+		},
+	}
+}
+
+func newHealthdDownCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "down",
+		Usage: "Stop and remove the ic-healthd sidecar",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "image",
+				Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
+				Value:   defaultHealthdImage,
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
+			},
+			&cli.DurationFlag{
+				Name:  "timeout",
+				Usage: "Timeout for stopping",
+				Value: 10 * time.Second,
+			},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			globalClient, err := clientFromContext(ctx)
+			if err != nil {
+				return err
+			}
+			if err := globalClient.Connect(); err != nil {
+				return err
+			}
+
+			p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
+			if err != nil {
+				globalClient.LogError("Configuring the project", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			params := healthdParams{
+				projectName: p.Name,
+				binary:      "",
+				image:       resolveHealthdImage(cmd.String("image")),
+				reCreate:    false,
+				network:     "auto",
+				timeout:     cmd.Duration("timeout"),
+			}
+
+			c, err := globalClient.EnsureProject(p.Name)
+			if err != nil {
+				globalClient.LogError("Getting the incus project", "error", err)
+				return errLogged.Wrap(err)
+			}
+			if err := c.Open(); err != nil {
+				globalClient.LogError("Opening the project client", "error", err)
+				return errLogged.Wrap(err)
+			}
+			defer func() { _ = c.Done() }()
+
+			// Render live progress for the ensure phase, where image downloads happen.
+			finish := startProgress(globalClient, c, cmd.Root().Writer)
+
+			inst, resources, err := healthdGetResources(c, params)
+			if err != nil {
+				globalClient.LogError("Getting healthd resources", "error", err)
+				finish(false)
+				return errLogged.Wrap(err)
+			}
+
+			healthdDown(ctx, c, inst, resources, params.timeout)
+			finish(true)
 			return err
-		}
-
-		p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
-		if err != nil {
-			globalClient.LogError("Configuring the project", "error", err)
-			return errLogged.Wrap(err)
-		}
-
-		params := healthdParams{
-			projectName: p.Name,
-			binary:      "",
-			image:       resolveHealthdImage(cmd.String("image")),
-			reCreate:    false,
-			network:     "auto",
-			timeout:     cmd.Duration("timeout"),
-		}
-
-		c, err := globalClient.EnsureProject(p.Name)
-		if err != nil {
-			globalClient.LogError("Getting the incus project", "error", err)
-			return errLogged.Wrap(err)
-		}
-		if err := c.Open(); err != nil {
-			globalClient.LogError("Opening the project client", "error", err)
-			return errLogged.Wrap(err)
-		}
-		defer func() { _ = c.Done() }()
-
-		// Render live progress for the ensure phase, where image downloads happen.
-		finish := startProgress(globalClient, c, cmd.Root().Writer)
-
-		inst, resources, err := healthdGetResources(c, params)
-		if err != nil {
-			globalClient.LogError("Getting healthd resources", "error", err)
-			finish(false)
-			return errLogged.Wrap(err)
-		}
-
-		healthdDown(ctx, c, inst, resources, params.timeout)
-		finish(true)
-		return err
-	},
+		},
+	}
 }
