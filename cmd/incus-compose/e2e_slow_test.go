@@ -2,12 +2,240 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"gitlab.com/r3j0/incus-compose/client"
 )
+
+func cleanLines(t *testing.T, in string) []string {
+	var out []string
+	for _, line := range strings.Split(strings.TrimSpace(in), "\n") {
+		if s := strings.TrimSpace(line); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// TestUpNoDeps verifies `up <service> --no-deps` starts only the named service
+// and does not wait on its (unstarted) service_healthy dependencies.
+func TestUpNoDeps(t *testing.T) {
+	skipLocal(t)
+	skipSlow(t)
+	t.Parallel()
+
+	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+
+	ctx := context.Background()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--no-deps", "nginx")
+	require.NoError(t, err)
+
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "ps", "--quiet")
+	require.NoError(t, err)
+
+	c := projectClient(t, ctx, pn)
+	require.NoError(t, ensureInstance(t, ctx, c, "nginx-1"))
+	require.Error(t, ensureInstance(t, ctx, c, "backend1-1"))
+	require.Error(t, ensureInstance(t, ctx, c, "backend2-1"))
+}
+
+// TestUpDeps verifies `up <service>` (default) follows depends_on and starts the
+// linked services too.
+func TestUpDeps(t *testing.T) {
+	skipLocal(t)
+	skipSlow(t)
+	t.Parallel()
+
+	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+
+	ctx := context.Background()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "nginx")
+	require.NoError(t, err)
+
+	c := projectClient(t, ctx, pn)
+	require.NoError(t, ensureInstance(t, ctx, c, "nginx-1"))
+	require.NoError(t, ensureInstance(t, ctx, c, "backend1-1"))
+	require.NoError(t, ensureInstance(t, ctx, c, "backend2-1"))
+}
+
+// TestDownNoDeps verifies `down <service> --no-deps` removes only the named
+// service and leaves its dependants running.
+func TestDownNoDeps(t *testing.T) {
+	skipLocal(t)
+	skipSlow(t)
+	t.Parallel()
+
+	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+
+	ctx := context.Background()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "down", "--no-deps", "backend1")
+	require.NoError(t, err)
+
+	c := projectClient(t, ctx, pn)
+	require.NoError(t, ensureInstance(t, ctx, c, "nginx-1"))
+	require.NoError(t, ensureInstance(t, ctx, c, "backend2-1"))
+	require.Error(t, ensureInstance(t, ctx, c, "backend1-1"))
+}
+
+// TestDownDeps verifies `down <service>` (default) follows depends_on in reverse
+// and also removes the services that depend on the named one.
+func TestDownDeps(t *testing.T) {
+	skipLocal(t)
+	skipSlow(t)
+	t.Parallel()
+
+	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+
+	ctx := context.Background()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "down", "backend1")
+	require.NoError(t, err)
+
+	c := projectClient(t, ctx, pn)
+	require.NoError(t, ensureInstance(t, ctx, c, "backend2-1"))
+	require.NoError(t, ensureInstance(t, ctx, c, "nginx-1"))
+	require.Error(t, ensureInstance(t, ctx, c, "backend1-1"))
+}
+
+// TestPsDeps verifies that `ps <service> --with-deps` includes the linked
+// services as real services, whereas the default scopes to the named service
+// (other running instances show up only as <orphan>).
+func TestPsDeps(t *testing.T) {
+	skipLocal(t)
+	skipSlow(t)
+	t.Parallel()
+
+	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+
+	ctx := context.Background()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	stdoutNoDeps, _, err := runCommand(t, ctx, pn, "-f", compose, "ps", "--services", "nginx")
+	require.NoError(t, err)
+
+	noDeps := cleanLines(t, stdoutNoDeps.String())
+	require.Contains(t, noDeps, "nginx")
+	require.NotContains(t, noDeps, "backend1")
+	require.NotContains(t, noDeps, "backend2")
+
+	stdoutDeps, _, err := runCommand(t, ctx, pn, "-f", compose, "ps", "--services", "--with-deps", "nginx")
+	require.NoError(t, err)
+
+	withDeps := cleanLines(t, stdoutDeps.String())
+	require.Contains(t, withDeps, "nginx")
+	require.Contains(t, withDeps, "backend1")
+	require.Contains(t, withDeps, "backend2")
+}
+
+// TestStartStopRestartLogsWithDeps exercises start/stop/restart/logs with and
+// without --with-deps. The default keeps each command scoped to the named
+// service (and, crucially, start does not block on out-of-scope healthd
+// dependency conditions); --with-deps follows depends_on like up/down.
+func TestStartStopRestartLogsWithDeps(t *testing.T) {
+	skipLocal(t)
+	skipSlow(t)
+	t.Parallel()
+
+	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+
+	ctx := context.Background()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	// Bring everything up and healthy.
+	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	// restart --with-deps is a smoke check while everything is running.
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "restart", "--with-deps", "nginx")
+	require.NoError(t, err)
+
+	// logs accepts --with-deps and the default form while running.
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "logs", "--with-deps", "nginx")
+	require.NoError(t, err)
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "logs", "nginx")
+	require.NoError(t, err)
+
+	// Stop all services (no cascade requested) -> nothing running.
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "stop", "nginx", "backend1", "backend2")
+	require.NoError(t, err)
+	stdout, _, err := runCommand(t, ctx, pn, "-f", compose, "ps", "--quiet")
+	require.NoError(t, err)
+	require.Empty(t, cleanLines(t, stdout.String()))
+
+	// start nginx without --with-deps must start only nginx and must not block
+	// waiting for the (still stopped) backends to become healthy.
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "start", "nginx")
+	require.NoError(t, err)
+	stdout, _, err = runCommand(t, ctx, pn, "-f", compose, "ps", "--quiet")
+	require.NoError(t, err)
+	names := cleanLines(t, stdout.String())
+	require.Contains(t, names, "nginx-1")
+	require.NotContains(t, names, "backend1-1")
+	require.NotContains(t, names, "backend2-1")
+
+	// start nginx --with-deps brings its dependencies up too.
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "start", "--with-deps", "nginx")
+	require.NoError(t, err)
+	stdout, _, err = runCommand(t, ctx, pn, "-f", compose, "ps", "--quiet")
+	require.NoError(t, err)
+	names = cleanLines(t, stdout.String())
+	require.Contains(t, names, "nginx-1")
+	require.Contains(t, names, "backend1-1")
+	require.Contains(t, names, "backend2-1")
+
+	// stop backend1 --with-deps also stops its dependant (nginx); backend2 stays.
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "stop", "--with-deps", "backend1")
+	require.NoError(t, err)
+	stdout, _, err = runCommand(t, ctx, pn, "-f", compose, "ps", "--quiet")
+	require.NoError(t, err)
+	names = cleanLines(t, stdout.String())
+	require.Contains(t, names, "backend2-1")
+	require.NotContains(t, names, "nginx-1")
+	require.NotContains(t, names, "backend1-1")
+}
 
 func TestUpDownGrafana(t *testing.T) {
 	skipLocal(t)
@@ -60,9 +288,6 @@ func TestDownProjectDeletesNetworks(t *testing.T) {
 	pn := t.Name()
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
-	gc, err := client.NewTestClient(ctx)
-	require.NoError(t, err)
-
 	networks := plannedNetworkNames(t, ctx, pn, compose)
 	require.NotEmpty(t, networks)
 
@@ -73,15 +298,14 @@ func TestDownProjectDeletesNetworks(t *testing.T) {
 		}
 	})
 
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
-	c, err := gc.EnsureProject(pn)
-	require.NoError(t, err)
+	c := projectClient(t, ctx, pn)
 
 	for _, name := range networks {
 		_, _, err := c.Connection().GetNetwork(name)
-		require.NoError(t, err)
+		require.NoError(t, err, "for network %q", name)
 	}
 
 	_, _, err = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
@@ -90,7 +314,7 @@ func TestDownProjectDeletesNetworks(t *testing.T) {
 
 	for _, name := range networks {
 		_, _, err := c.Connection().GetNetwork(name)
-		require.Error(t, err)
+		require.Error(t, err, "for network %q", name)
 	}
 }
 
@@ -766,6 +990,41 @@ func TestUpDownWithSecrets(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDownImages(t *testing.T) {
+	skipLocal(t)
+	skipSlow(t)
+	t.Parallel()
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "down")
+	require.NoError(t, err)
+
+	c := projectClient(t, ctx, pn)
+	r, err := c.Resource(client.KindImage, "docker.io/nginx:alpine", &client.ImageConfig{})
+	require.NoError(t, err)
+	require.NoError(t, client.RunAction(ctx, r, client.ActionEnsure), "image should survive plain down")
+
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "down", "--images")
+	require.NoError(t, err)
+
+	r, err = c.Resource(client.KindImage, "docker.io/nginx:alpine", &client.ImageConfig{})
+	require.NoError(t, err)
+	require.Error(t, client.RunAction(ctx, r, client.ActionEnsure), "image should be removed by down --images")
 }
 
 func TestUpDownWithVolume(t *testing.T) {

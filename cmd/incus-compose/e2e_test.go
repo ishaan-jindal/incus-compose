@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -35,17 +36,16 @@ func runCommand(t *testing.T, ctx context.Context, projectName string, args ...s
 
 	projectName = strings.ToLower(strings.ReplaceAll(projectName, "/", "-"))
 
+	mArgs := []string{"incus-compose", "--debug", "--project-name", projectName}
+	mArgs = append(mArgs, args...)
+	slog.DebugContext(ctx, "Running", "args", mArgs)
+
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	cmd := newRootCommand()
 	cmd.Writer = stdout
 	cmd.ErrWriter = stderr
-	err := cmd.Run(ctx, append([]string{
-		"incus-compose",
-		"--debug",
-		"--project-name ", projectName,
-	}, args...),
-	)
+	err := cmd.Run(ctx, mArgs)
 
 	return stdout, stderr, err
 }
@@ -60,13 +60,15 @@ func normalizeListOutput(t *testing.T, output *bytes.Buffer) string {
 	return outStr
 }
 
-func plannedNetworkNames(t *testing.T, ctx context.Context, pn, compose string) []string {
+func plannedNetworkNames(t *testing.T, ctx context.Context, projectName, compose string) []string {
 	t.Helper()
+
+	projectName = strings.ToLower(strings.ReplaceAll(projectName, "/", "-"))
 
 	proj, err := project.New().Load(ctx, project.LoadFiles([]string{compose}))
 	require.NoError(t, err)
 
-	c := client.NewOfflineClient(ctx, pn)
+	c := client.NewOfflineClient(ctx, projectName)
 	stack := client.NewStack(c)
 	require.NoError(t, proj.ToStack(c, stack))
 
@@ -77,6 +79,32 @@ func plannedNetworkNames(t *testing.T, ctx context.Context, pn, compose string) 
 		}
 	}
 	return names
+}
+
+func projectClient(t *testing.T, ctx context.Context, projectName string, opts ...client.EnsureProjectOption) *client.Client {
+	t.Helper()
+
+	gc, err := client.NewTestClient(ctx)
+	require.NoError(t, err)
+
+	err = gc.Connect()
+	require.NoError(t, err)
+
+	c, err := gc.EnsureProject(projectName, opts...)
+	require.NoError(t, err)
+
+	return c
+}
+
+func ensureInstance(t *testing.T, ctx context.Context, c *client.Client, name string, opts ...client.Option) error {
+	t.Helper()
+
+	r, err := c.Resource(client.KindInstance, name, &client.InstanceConfig{})
+	if err != nil {
+		return err
+	}
+
+	return client.RunAction(ctx, r, client.ActionEnsure, opts...)
 }
 
 func TestConfigCommand(t *testing.T) {

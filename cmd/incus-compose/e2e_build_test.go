@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"gitlab.com/r3j0/incus-compose/client"
 )
 
 func skipIfNoBuilder(t *testing.T) {
@@ -52,10 +54,18 @@ func TestBuildCommandWithBuildFixture(t *testing.T) {
 		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
 	})
 
-	stdout, _, err := runCommand(t, ctx, pn, "-f", fixture, "build")
+	_, _, err := runCommand(t, ctx, pn, "-f", fixture, "build")
 	require.NoError(t, err)
-	require.Contains(t, stdout.String(), "Built image for service \"app\": localhost/with-build-app")
-	require.Contains(t, stdout.String(), "Built image for service \"app2\": localhost/app2:latest")
+
+	c := projectClient(t, ctx, pn)
+
+	r, err := c.Resource(client.KindImage, "localhost/app:latest", &client.ImageConfig{})
+	require.NoError(t, err)
+	require.NoError(t, client.RunAction(ctx, r, client.ActionEnsure))
+
+	r, err = c.Resource(client.KindImage, "localhost/app2:latest", &client.ImageConfig{})
+	require.NoError(t, err)
+	require.NoError(t, client.RunAction(ctx, r, client.ActionEnsure))
 }
 
 func TestBuildCommandWithServiceFilter(t *testing.T) {
@@ -72,10 +82,17 @@ func TestBuildCommandWithServiceFilter(t *testing.T) {
 		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
 	})
 
-	stdout, _, err := runCommand(t, ctx, pn, "-f", fixture, "build", "app")
+	_, _, err := runCommand(t, ctx, pn, "-f", fixture, "build", "app")
 	require.NoError(t, err)
-	require.Contains(t, stdout.String(), "Built image for service \"app\": localhost/with-build-app")
-	require.NotContains(t, stdout.String(), "Built image for service \"app2\"")
+
+	c := projectClient(t, ctx, pn)
+	r, err := c.Resource(client.KindImage, "localhost/app:latest", &client.ImageConfig{})
+	require.NoError(t, err)
+	require.NoError(t, client.RunAction(ctx, r, client.ActionEnsure))
+
+	r, err = c.Resource(client.KindImage, "localhost/app2:latest", &client.ImageConfig{})
+	require.NoError(t, err)
+	require.Error(t, client.RunAction(ctx, r, client.ActionEnsure))
 }
 
 func TestBuildCommandWithNoBuildServices(t *testing.T) {
@@ -90,9 +107,8 @@ func TestBuildCommandWithNoBuildServices(t *testing.T) {
 		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
 	})
 
-	stdout, _, err := runCommand(t, ctx, pn, "-f", fixture, "build")
+	_, _, err := runCommand(t, ctx, pn, "-f", fixture, "build")
 	require.NoError(t, err)
-	require.Contains(t, stdout.String(), "No services have a build: configuration.")
 }
 
 func TestBuildCommandWithNoMatchingBuildServices(t *testing.T) {
@@ -107,9 +123,8 @@ func TestBuildCommandWithNoMatchingBuildServices(t *testing.T) {
 		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
 	})
 
-	stdout, _, err := runCommand(t, ctx, pn, "-f", fixture, "build", "missing")
-	require.NoError(t, err)
-	require.Contains(t, stdout.String(), "No build-configured services matched the filter.")
+	_, _, err := runCommand(t, ctx, pn, "-f", fixture, "build", "missing")
+	require.Error(t, err)
 }
 
 func TestBuildCommandWithNonBuildServiceFilter(t *testing.T) {
@@ -132,9 +147,8 @@ func TestBuildCommandWithNonBuildServiceFilter(t *testing.T) {
 		_, _, _ = runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
 	})
 
-	stdout, _, err := runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "build", "sidecar")
-	require.NoError(t, err)
-	require.Contains(t, stdout.String(), "No build-configured services matched the filter.")
+	_, _, err := runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "build", "sidecar")
+	require.Error(t, err)
 }
 
 func TestBuildCommandRejectsMultiplePlatforms(t *testing.T) {
