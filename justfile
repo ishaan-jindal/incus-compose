@@ -188,7 +188,6 @@ pre-commit:
 
 push: pre-commit
     git push
-    git push gitlab
 
 [private]
 make-nested container='local:ict' image='images:debian/trixie' listen="127.0.0.1:1443" project="default" storagepool="default":
