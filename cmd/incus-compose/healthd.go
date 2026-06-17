@@ -198,23 +198,12 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 // into the instance via InstanceConfig.Files, ensures (creates) the instance, and starts it.
 func healthdUp(ctx context.Context, c *client.Client, inst *client.Instance, resources []client.Resource, params healthdParams) error {
 	if params.network == "" {
-		if _, _, err := c.Connection().GetNetwork("incusbr0"); err == nil {
-			params.network = "incusbr0"
-		} else {
-			ip, err := c.Global().ConnectionIP()
-			if err != nil {
-				c.LogError("Getting the connection IP", "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			network, err := c.Global().NetworkForIP(ip)
-			if err != nil {
-				c.LogError("Getting the connection network", "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			params.network = network
+		network, err := c.Global().DefaultNetwork()
+		if err != nil {
+			return err
 		}
+
+		params.network = network
 	}
 
 	token, err := healthdCreateToken(c)

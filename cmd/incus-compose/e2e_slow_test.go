@@ -318,53 +318,6 @@ func TestDownProjectDeletesNetworks(t *testing.T) {
 	}
 }
 
-func TestUpSimpleNginx(t *testing.T) {
-	skipLocal(t)
-	skipSlow(t)
-	t.Parallel()
-
-	ctx := context.Background()
-	pn := t.Name()
-	compose := "../../test/fixtures/simple-nginx/compose.yaml"
-
-	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
-	})
-
-	tests := []struct {
-		name     string
-		args     []string
-		wantErr  bool
-		snapshot bool
-	}{
-		{
-			name:    "up simple-nginx",
-			args:    []string{"-f", compose, "up", "--detach"},
-			wantErr: false,
-		},
-		{
-			name:     "list simple-nginx",
-			args:     []string{"-f", compose, "list"},
-			wantErr:  false,
-			snapshot: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			stdout, _, err := runCommand(t, ctx, pn, tt.args...)
-			if tt.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
-			if tt.snapshot {
-				snapshotter.SnapshotT(t, normalizeListOutput(t, stdout))
-			}
-		})
-	}
-}
-
 func TestUpDownUpSimpleNginx(t *testing.T) {
 	skipLocal(t)
 	skipSlow(t)

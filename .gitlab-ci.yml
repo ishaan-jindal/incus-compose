@@ -36,6 +36,7 @@ variables:
 stages:
   - lint
   - test
+  - test-custom
   - release
 
 .non_release_rules:
@@ -65,6 +66,43 @@ test:
   rules: *non_release_rules
   variables:
     INCUS_REMOTE: ict
+  script:
+    - mkdir -p "$REPORTS_DIR"
+    - go mod tidy -v -diff
+    - go clean -testcache
+    - set -o pipefail
+    - NO_COLOR=1 go test ./... -parallel 1 -v -cover -coverprofile="$REPORTS_DIR/go-test-coverage.txt" 2>&1 | tee "$REPORTS_DIR/go-test-results.txt"
+  after_script:
+    - |
+      if [[ -s "$REPORTS_DIR/go-test-results.txt" ]]; then
+        go install github.com/jstemmer/go-junit-report/v2@latest
+        "$GOBIN/go-junit-report" -in "$REPORTS_DIR/go-test-results.txt" -out "$REPORTS_DIR/junit.xml"
+      fi
+    - |
+      if [[ -s "$REPORTS_DIR/go-test-coverage.txt" ]]; then
+        go install gitlab.com/adiproject/gocover-report@latest
+        "$GOBIN/gocover-report" -cobertura="$REPORTS_DIR/cobertura.xml" "$REPORTS_DIR/go-test-coverage.txt"
+      fi
+  coverage: '/^Total statement coverage: \d+(?:\.\d+)%/'
+  artifacts:
+    when: always
+    expose_as: "go test reports"
+    paths:
+      - "$REPORTS_DIR"
+    reports:
+      junit: "$REPORTS_DIR/junit.xml"
+      coverage_report:
+        coverage_format: cobertura
+        path: "$REPORTS_DIR/cobertura.xml"
+
+test-custom:
+  stage: test-custom
+  tags:
+    - incus-compose-shell
+
+  rules: *non_release_rules
+  variables:
+    INCUS_REMOTE: ict-custom
   script:
     - mkdir -p "$REPORTS_DIR"
     - go mod tidy -v -diff

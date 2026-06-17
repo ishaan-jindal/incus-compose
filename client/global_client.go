@@ -38,6 +38,12 @@ type ClientConfig struct {
 	// CacheProject is the project name to use as image cache.
 	// If set, the project will be created if it doesn't exist.
 	CacheProject string
+
+	// NetworkProject defines `project` to the get the profile below from.
+	NetworkProject string
+
+	// NetworkProfile defines the `profile` to get the `network` property from a device named eth0.
+	NetworkProfile string
 }
 
 // ClientOption is a functional option for configuring the Client.
@@ -87,6 +93,14 @@ func ClientCacheProject(n string) ClientOption {
 	return func(c *ClientConfig) { c.CacheProject = n }
 }
 
+// ClientNetworkProjectProfile sets the project and profile to get the network from.
+func ClientNetworkProjectProfile(project, profile string) ClientOption {
+	return func(c *ClientConfig) {
+		c.NetworkProject = project
+		c.NetworkProfile = profile
+	}
+}
+
 // GlobalClient provides a high-level interface to Incus operations.
 type GlobalClient struct {
 	ctx    context.Context
@@ -103,6 +117,9 @@ type GlobalClient struct {
 
 	// Cache for ConnectionIP()
 	connectionIP string
+
+	// Cache for DefaultNetwork()
+	defaultNetwork string
 
 	// hookBefore is called hookBefore any action.
 	hookBefore func(ctx context.Context, action Action, r Resource, args Options, err error) error
@@ -126,6 +143,8 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 		DefaultStoragePool: "detect",
 		NetworkPrefix:      "ic-",
 		DescriptionFormat:  "incus-compose: %s",
+		NetworkProject:     "default",
+		NetworkProfile:     "default",
 	}
 
 	for _, o := range opts {
@@ -735,4 +754,47 @@ func (c *GlobalClient) NetworkForIP(ip string) (string, error) {
 	}
 
 	return "", fmt.Errorf("network with ip %q not found", ip)
+}
+
+// DefaultNetwork returns the network from the profile in the configured project.
+func (c *GlobalClient) DefaultNetwork() (string, error) {
+	if c.defaultNetwork != "" {
+		return c.defaultNetwork, nil
+	}
+
+	conn := c.incus
+
+	// Gets the info for the current used project, we could skip that as this is always "default".
+	info, err := conn.GetConnectionInfo()
+	if err != nil {
+		return "", err
+	}
+
+	if c.Config.NetworkProject != info.Project {
+		pc, err := c.getProject(c.Config.NetworkProject)
+		if err != nil {
+			return "", err
+		}
+
+		conn = pc.Connection()
+	}
+
+	p, _, err := conn.GetProfile("default")
+	if err != nil {
+		return "", err
+	}
+
+	eth0, ok := p.Devices["eth0"]
+	if !ok {
+		return "", ErrNotFound.WithText(fmt.Sprintf("no eth0 in profile %s", "default"))
+	}
+
+	network, ok := eth0["network"]
+	if !ok {
+		return "", ErrNotFound.WithText(fmt.Sprintf("no network in device eth0 of profile %s", "default"))
+	}
+
+	c.defaultNetwork = network
+
+	return network, nil
 }

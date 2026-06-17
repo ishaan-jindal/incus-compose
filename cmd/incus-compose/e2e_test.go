@@ -126,6 +126,11 @@ func TestConfigCommand(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:    "two-services yaml",
+			args:    []string{"-f", "../../test/fixtures/two-services/compose.yaml", "config"},
+			wantErr: false,
+		},
+		{
 			name:    "wordpress",
 			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config"},
 			wantErr: false,
@@ -228,6 +233,52 @@ func TestConfigFilterByService(t *testing.T) {
 				if err != nil {
 					t.Errorf("unexpected error: %v", err)
 				}
+			}
+		})
+	}
+}
+
+func TestNormalLifecycle(t *testing.T) {
+	skipLocal(t)
+	t.Parallel()
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/two-services/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []struct {
+		name     string
+		args     []string
+		wantErr  bool
+		snapshot bool
+	}{
+		{
+			name:    "up",
+			args:    []string{"-f", compose, "up", "--detach"},
+			wantErr: false,
+		},
+		{
+			name:     "list",
+			args:     []string{"-f", compose, "list"},
+			wantErr:  false,
+			snapshot: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout, _, err := runCommand(t, ctx, pn, tt.args...)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			if tt.snapshot {
+				snapshotter.SnapshotT(t, normalizeListOutput(t, stdout))
 			}
 		})
 	}

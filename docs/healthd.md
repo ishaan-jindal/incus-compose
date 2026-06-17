@@ -76,13 +76,13 @@ environments.
 
 ```yaml
 services:
-  db:
-    image: docker.io/postgres:16-alpine
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    db:
+        image: docker.io/postgres:16-alpine
+        healthcheck:
+            test: ["CMD", "pg_isready", "-U", "postgres"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
 ```
 
 ## Restart Without a Test
@@ -115,14 +115,16 @@ Set via CLI flag, environment variable, or compose-file extension.
 CLI/env takes priority over the compose file.
 
 ```bash
-incus-compose up --healthd-network incusbr0
+incus-compose up --network-project my-project --network-profile my-profile
 # or
-INCUS_COMPOSE_HEALTHD_NETWORK=incusbr0 incus-compose up
+INCUS_COMPOSE_NETWORK_PROJECT=my-project INCUS_COMPOSE_NETWORK_PROFILE=my-profile incus-compose up
 ```
 
 ```yaml
 x-incus-compose:
-  healthd-network: incusbr0
+    network:
+        project: my-project
+        profile: my-profile
 ```
 
 When set explicitly, the named network must exist - incus-compose errors out if not found.

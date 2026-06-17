@@ -70,6 +70,7 @@ func TestLifecycleHealthd(t *testing.T) {
 
 func TestNoHealthdSkipsHealthdInstance(t *testing.T) {
 	skipLocal(t)
+	skipSlow(t)
 	t.Parallel()
 
 	ctx := context.Background()
@@ -96,6 +97,7 @@ func TestNoHealthdSkipsHealthdInstance(t *testing.T) {
 
 func TestNoHealthdWhenNotNeeded(t *testing.T) {
 	skipLocal(t)
+	skipSlow(t)
 	t.Parallel()
 
 	ctx := context.Background()
