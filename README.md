@@ -49,11 +49,9 @@ Requires `skopeo` for image downloads, `podman` or `docker` for image building,
 and an Incus https remote (needed for healthchecking) with OCI registries added.
 See [Getting Started](docs/getting-started.md) for the full setup walkthrough.
 
-Install from the [releases page](https://gitlab.com/r3j0/incus-compose/-/releases) or:
+Install from the
 
-```bash
-go install gitlab.com/r3j0/incus-compose/cmd/incus-compose@latest
-```
+[Releases Page](https://gitlab.com/r3j0/incus-compose/-/releases)
 
 Then point it at your existing `compose.yaml`:
 
