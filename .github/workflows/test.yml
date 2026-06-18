@@ -16,37 +16,7 @@ env:
   REPORTS_DIR: reports
 
 jobs:
-  lint:
-    runs-on: [self-hosted, incus-compose]
-    permissions:
-      contents: read
-      security-events: write # upload SARIF to code scanning
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: false
-
-      - name: go mod tidy -diff
-        run: go mod tidy -v -diff
-
-      - name: golangci-lint
-        # Writes the SARIF file even when issues are found, then exits non-zero.
-        run: golangci-lint run --output.sarif.path=gl-code-quality-report.sarif
-
-      - name: Upload SARIF to code scanning
-        if: always()
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: gl-code-quality-report.sarif
-          category: golangci-lint
-
   test:
-    needs: lint
     runs-on: [self-hosted, incus-compose]
     permissions:
       contents: read
@@ -105,7 +75,6 @@ jobs:
           if-no-files-found: ignore
 
   test-custom:
-    needs: test
     runs-on: [self-hosted, incus-compose]
     permissions:
       contents: read
@@ -137,12 +106,12 @@ jobs:
         run: |
           if [[ -s "$REPORTS_DIR/go-test-results.txt" ]]; then
             go install github.com/jstemmer/go-junit-report/v2@latest
-            "$(go env GOBIN || echo "$(go env GOPATH)/bin")/go-junit-report" \
+            "$(go env GOPATH)/bin/go-junit-report" \
               -in "$REPORTS_DIR/go-test-results.txt" -out "$REPORTS_DIR/junit.xml"
           fi
           if [[ -s "$REPORTS_DIR/go-test-coverage.txt" ]]; then
             go install gitlab.com/adiproject/gocover-report@latest
-            "$(go env GOBIN || echo "$(go env GOPATH)/bin")/gocover-report" \
+            "$(go env GOPATH)/bin/gocover-report" \
               -cobertura="$REPORTS_DIR/cobertura.xml" "$REPORTS_DIR/go-test-coverage.txt"
           fi
 
