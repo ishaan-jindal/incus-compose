@@ -347,12 +347,9 @@ func healthdDown(ctx context.Context, c *client.Client, inst *client.Instance, r
 // healthdResolve returns the existing healthd Instance or errors if the sidecar
 // is not running. Used by management sub-commands that require ic-healthd to exist.
 func healthdResolve(c *client.Client) (*client.Instance, error) {
-	name, err := c.FindHealthdName()
+	name, err := c.FindHealthd()
 	if err != nil {
 		return nil, fmt.Errorf("finding healthd: %w", err)
-	}
-	if name == "" {
-		return nil, errors.New("healthd is not running")
 	}
 
 	res, err := c.Resource(client.KindInstance, name, &client.InstanceConfig{})

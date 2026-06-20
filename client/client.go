@@ -288,16 +288,16 @@ func (c *Client) Done() error {
 	return c.hookDone(nil)
 }
 
-// FindHealthdName returns the name of the healthd instance in the project,
-// identified by user.healthcheck.daemon=true. Returns ("", nil) if not found.
-func (c *Client) FindHealthdName() (string, error) {
+// FindHealthd returns the name of the healthd instance in the project,
+// identified by user.healthcheck.daemon=true.
+func (c *Client) FindHealthd() (string, error) {
 	if c.incus == nil {
-		return "", nil
+		return "", ErrNotFound
 	}
 
 	instances, err := c.incus.GetInstances("")
 	if err != nil {
-		return "", fmt.Errorf("listing instances: %w", err)
+		return "", ErrUnknown.Wrap(fmt.Errorf("listing instances: %w", err))
 	}
 
 	for _, inst := range instances {
@@ -306,7 +306,7 @@ func (c *Client) FindHealthdName() (string, error) {
 		}
 	}
 
-	return "", nil
+	return "", ErrNotFound
 }
 
 // InstanceExists reports whether an instance with the given name exists in Incus.

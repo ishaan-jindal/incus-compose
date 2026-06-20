@@ -164,7 +164,7 @@ func newListCommand() *cli.Command {
 			}
 
 			if cmd.Bool("healthd") {
-				if name, err := c.FindHealthdName(); err == nil && name != "" {
+				if name, err := c.FindHealthd(); err == nil {
 					c.LogDebug("Found healthd name", "name", name)
 
 					inst, err := c.Resource(client.KindInstance, name, &client.InstanceConfig{Full: true})
