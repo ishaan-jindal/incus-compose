@@ -169,9 +169,12 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 		if err == nil {
 			return nil
 		}
-		if cError, ok := err.(*Error); ok {
+
+		cError := &Error{}
+		if ok := errors.As(err, &cError); ok {
 			return cError.WithResource(r)
 		}
+
 		return ErrUnknown.WithResource(r).Wrap(err)
 	}
 
