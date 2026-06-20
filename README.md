@@ -31,6 +31,7 @@ Status: **Beta** - testing the beta release of incus-compose.
 - Compose project parsing via compose-go
 - OCI image pulling from docker.io, ghcr.io, and other registries
 - Bridge networks with automatic name sanitization
+- Static IP Addresses for your containers [doc](docs/compose-compatibility.md#automatic-dhcp-ranges)
 - Storage volumes with UID/GID shifting for proper permissions
 - Bind mounts (one-way copy to container/storage volume)
 - Port forwarding via proxy devices and kernel nat mode.
@@ -45,8 +46,7 @@ incus-compose uses a **resource-first design**, see [Architecture Documentation]
 
 ## Quick Start
 
-Requires `skopeo` for image downloads, `podman` or `docker` for image building,
-and an Incus https remote (needed for healthchecking) with OCI registries added.
+Requires `podman` or `docker` for image building and an Incus https remote (needed for healthchecking) with OCI registries added.
 See [Getting Started](docs/getting-started.md) for the full setup walkthrough.
 
 Install from the

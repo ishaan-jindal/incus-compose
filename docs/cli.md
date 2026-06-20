@@ -2,18 +2,18 @@
 
 ## Global Options
 
-| Option                      | Description                                            |
-| --------------------------- | ------------------------------------------------------ |
-| `-f`, `--file`              | Compose files (repeatable)                             |
-| `-p`, `--project-name`      | Project name                                           |
-| `--project-directory`       | Working directory                                      |
-| `--profile`                 | Compose profiles (repeatable)                          |
-| `--env-file`                | Environment files (repeatable)                         |
-| `-E`, `--os-env`            | Include OS env vars                                    |
-| `--remote`                  | Incus remote (`INCUS_REMOTE`)                                              |
-| `--ansi`                    | Color output: never/always/auto (`INCUS_COMPOSE_ANSI`)                     |
-| `--image-cache`             | Incus project used as image cache (`INCUS_COMPOSE_IMAGE_CACHE`, default: `default`), see [Environment Variables](environment-variables.md#incus-connection) |
-| `--debug`                   | Debug logging                                                              |
+| Option                 | Description                                                                                                                                                 |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-f`, `--file`         | Compose files (repeatable)                                                                                                                                  |
+| `-p`, `--project-name` | Project name                                                                                                                                                |
+| `--project-directory`  | Working directory                                                                                                                                           |
+| `--profile`            | Compose profiles (repeatable)                                                                                                                               |
+| `--env-file`           | Environment files (repeatable)                                                                                                                              |
+| `-E`, `--os-env`       | Include OS env vars                                                                                                                                         |
+| `--remote`             | Incus remote (`INCUS_REMOTE`)                                                                                                                               |
+| `--ansi`               | Color output: never/always/auto (`INCUS_COMPOSE_ANSI`)                                                                                                      |
+| `--image-cache`        | Incus project used as image cache (`INCUS_COMPOSE_IMAGE_CACHE`, default: `default`), see [Environment Variables](environment-variables.md#incus-connection) |
+| `--debug`              | Debug logging                                                                                                                                               |
 
 Supports [no-color.org](https://no-color.org/) via `NO_COLOR` env var.
 
@@ -70,14 +70,14 @@ the image cache are kept (use `--project` to remove everything, including volume
 incus-compose down [SERVICE...]
 ```
 
-| Option         | Description                                                                 |
-| -------------- | --------------------------------------------------------------------------- |
-| `--project`    | Remove the project (and volumes)                                            |
-| `--rmi`        | Remove images used by services: `local` or `all` (docker compose compat)   |
-| `--images`     | Remove known images from the project (equivalent to `--rmi local`)         |
-| `--timeout`    | Stop timeout seconds (default: 10)                                          |
-| `--no-deps`    | Don't stop linked services (depends_on)                                     |
-| `--no-healthd` | Don't stop/remove healthd sidecar                                           |
+| Option         | Description                                                              |
+| -------------- | ------------------------------------------------------------------------ |
+| `--project`    | Remove the project (and volumes)                                         |
+| `--rmi`        | Remove images used by services: `local` or `all` (docker compose compat) |
+| `--images`     | Remove known images from the project (equivalent to `--rmi local`)       |
+| `--timeout`    | Stop timeout seconds (default: 10)                                       |
+| `--no-deps`    | Don't stop linked services (depends_on)                                  |
+| `--no-healthd` | Don't stop/remove healthd sidecar                                        |
 
 ## start
 
@@ -87,11 +87,11 @@ Start stopped services.
 incus-compose start [SERVICE...]
 ```
 
-| Option         | Description                         |
-| -------------- | ----------------------------------- |
-| `--timeout`    | Start timeout seconds (default: 10) |
+| Option         | Description                                                       |
+| -------------- | ----------------------------------------------------------------- |
+| `--timeout`    | Start timeout seconds (default: 10)                               |
 | `--with-deps`  | Also start linked services (depends_on) — incus-compose extension |
-| `--no-healthd` | Don't start healthd sidecar         |
+| `--no-healthd` | Don't start healthd sidecar                                       |
 
 ## stop
 
@@ -101,11 +101,11 @@ Stop running services.
 incus-compose stop [SERVICE...]
 ```
 
-| Option         | Description                        |
-| -------------- | ---------------------------------- |
-| `--timeout`    | Stop timeout seconds (default: 10) |
+| Option         | Description                                                      |
+| -------------- | ---------------------------------------------------------------- |
+| `--timeout`    | Stop timeout seconds (default: 10)                               |
 | `--with-deps`  | Also stop linked services (depends_on) — incus-compose extension |
-| `--no-healthd` | Don't stop healthd sidecar         |
+| `--no-healthd` | Don't stop healthd sidecar                                       |
 
 ## restart
 
@@ -115,11 +115,11 @@ Restart running services.
 incus-compose restart [SERVICE...]
 ```
 
-| Option         | Description                              |
-| -------------- | ---------------------------------------- |
-| `--timeout`    | Stop/start timeout seconds (default: 10) |
+| Option         | Description                                                         |
+| -------------- | ------------------------------------------------------------------- |
+| `--timeout`    | Stop/start timeout seconds (default: 10)                            |
 | `--with-deps`  | Also restart linked services (depends_on) — incus-compose extension |
-| `--no-healthd` | Don't stop/start healthd sidecar         |
+| `--no-healthd` | Don't stop/start healthd sidecar                                    |
 
 ### Linked services
 
@@ -142,9 +142,9 @@ View container output.
 incus-compose logs [SERVICE...]
 ```
 
-| Option           | Description   |
-| ---------------- | ------------- |
-| `-f`, `--follow` | Follow output |
+| Option           | Description                                                                |
+| ---------------- | -------------------------------------------------------------------------- |
+| `-f`, `--follow` | Follow output                                                              |
 | `--with-deps`    | Also show logs from linked services (depends_on) — incus-compose extension |
 
 Missing instances are skipped with a warning; logs from available instances are still shown.
@@ -197,12 +197,12 @@ List containers (instances).
 incus-compose ps [SERVICE...]
 ```
 
-| Option          | Description                                        |
-| --------------- | -------------------------------------------------- |
-| `-a`, `--all`   | Show all containers (including stopped ones)       |
-| `-q`, `--quiet` | Only display Incus instance names                  |
-| `--services`    | Display compose service names instead of instances |
-| `--format`      | table (default) or json                            |
+| Option          | Description                                                      |
+| --------------- | ---------------------------------------------------------------- |
+| `-a`, `--all`   | Show all containers (including stopped ones)                     |
+| `-q`, `--quiet` | Only display Incus instance names                                |
+| `--services`    | Display compose service names instead of instances               |
+| `--format`      | table (default) or json                                          |
 | `--with-deps`   | Also list linked services (depends_on) — incus-compose extension |
 
 ## incus

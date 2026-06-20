@@ -2,6 +2,47 @@
 
 This guide covers testing patterns, fixtures, and best practices for incus-compose.
 
+## Running Tests
+
+Use `just --list` to see all available commands. Below is the complete reference:
+
+### Test Commands
+
+| Command                                         | Description                                                    |
+| ----------------------------------------------- | -------------------------------------------------------------- |
+| `just test`                                     | Run all tests against nested Incus (preferred also runs in CI) |
+| `just test ./client/...`                        | Run tests for specific package                                 |
+| `just test -v -run TestName`                    | Run specific test with verbose output                          |
+| `just test-local`                               | Run unit tests only (no Incus connection required)             |
+| `just test-slow`                                | Run tests that take long to run                                |
+| `just update-snapshots`                         | Update all snapshot test files                                 |
+| `just update-snapshots ./cmd/incus-compose/...` | Update snapshots for specific package                          |
+| `just update-slow-snapshots`                    | Update snapshot for slow test files                            |
+
+### Development Commands
+
+| Command                 | Description                                  |
+| ----------------------- | -------------------------------------------- |
+| `just build`            | Build the binary                             |
+| `just run <args>`       | Run incus-compose via `go run` (uses `.env`) |
+| `just run-debug <args>` | Run with debug output enabled                |
+| `just run-local <args>` | Run against local Incus (ignores `.env`)     |
+| `just incus <args>`     | Run commands in the nested Incus container   |
+
+### Code Quality
+
+| Command           | Description                              |
+| ----------------- | ---------------------------------------- |
+| `just lint`       | Lint all files with golangci-lint        |
+| `just fix`        | Fix lint issues with golangci-lint       |
+| `just pre-commit` | Run before committing (tidy, lint, test) |
+
+### Setup & Maintenance
+
+| Command            | Description                         |
+| ------------------ | ----------------------------------- |
+| `just dev-install` | Create nested Incus dev environment |
+
 ## Overview
 
 We use `testify/suite` for all tests. Tests are organized into two categories:
@@ -102,82 +143,6 @@ Theres also `just test-slow` this includes slow as in long running tests.
 just dev-install
 ```
 
-## Compose Stack Test Pattern
-
-For tests needing multiple resources (profiles, images, networks, volumes, instances), use the `ComposeStack` pattern.
-
-### ComposeStack Structure
-
-```go
-type ComposeStack struct {
-    Profiles       []client.ResourceOperation
-    Images         []client.ResourceOperation
-    Networks       []client.ResourceOperation
-    StorageVolumes []client.ResourceOperation
-    Instances      []client.ResourceOperation
-}
-```
-
-### Using ComposeStack in Tests
-
-**In SetupTest** - create fresh stack per test:
-
-```go
-func (s *TestSuite) SetupTest() {
-    s.stack, err = createComposeStack(nil)  // nil = mocks
-    s.Require().NoError(err)
-}
-```
-
-**In test cases**:
-
-```go
-// All resources in priority order
-resources: s.stack.AllResources()
-
-// Just instances
-resources: s.stack.Instances
-
-// Specific resource types
-resources: append(s.stack.Networks, s.stack.Instances...)
-```
-
-### Mock vs Real Stacks
-
-**Mock stack** (for unit tests):
-
-```go
-s.stack, err = createComposeStack(nil)  // nil parameter = mocks
-```
-
-**Real stack** (for integration tests):
-
-```go
-s.stack, err = createComposeStack(project)  // real project = actual resources
-```
-
-The same test code works for both because both implement `client.ResourceOperation`.
-
-### When to Use ComposeStack
-
-**Use ComposeStack when**:
-
-- Testing resource creation order
-- Testing rollback behavior across multiple resources
-- Simulating full compose-like scenarios
-
-**Use inline mocks when**:
-
-- Testing single operations
-- Focused error handling tests
-- Simple validation logic
-
-```go
-resources: []client.ResourceOperation{
-    NewMockInstance("web", errors.New("handle failed")).Ensure(true),
-}
-```
-
 ## Test Fixtures
 
 Located in `test/fixtures/`. Each fixture is a minimal compose scenario.
@@ -228,47 +193,6 @@ just update-snapshots
 
 **Snapshot naming**: `TestFunctionName_TestCase.yaml`
 
-## Running Tests
-
-Use `just --list` to see all available commands. Below is the complete reference:
-
-### Test Commands
-
-| Command                                         | Description                                        |
-| ----------------------------------------------- | -------------------------------------------------- |
-| `just test`                                     | Run all tests against nested Incus                 |
-| `just test ./client/...`                        | Run tests for specific package                     |
-| `just test -v -run TestName`                    | Run specific test with verbose output              |
-| `just test-local`                               | Run unit tests only (no Incus connection required) |
-| `just test-coverage`                            | Run tests with coverage report                     |
-| `just update-snapshots`                         | Update all snapshot test files                     |
-| `just update-snapshots ./cmd/incus-compose/...` | Update snapshots for specific package              |
-| `just update-local-snapshots`                   | Update local snapshot test files (no Incus ones)   |
-
-### Development Commands
-
-| Command                 | Description                                  |
-| ----------------------- | -------------------------------------------- |
-| `just build`            | Build the binary                             |
-| `just run <args>`       | Run incus-compose via `go run` (uses `.env`) |
-| `just run-debug <args>` | Run with debug output enabled                |
-| `just run-local <args>` | Run against local Incus (ignores `.env`)     |
-| `just incus <args>`     | Run commands in the nested Incus container   |
-
-### Code Quality
-
-| Command           | Description                                    |
-| ----------------- | ---------------------------------------------- |
-| `just lint`       | Lint all files with golangci-lint              |
-| `just pre-commit` | Run before committing (tidy, lint, test-local) |
-
-### Setup & Maintenance
-
-| Command            | Description                         |
-| ------------------ | ----------------------------------- |
-| `just dev-install` | Create nested Incus dev environment |
-| `just clean`       | Remove generated data               |
-
 ### Common Workflows
 
 ```bash
@@ -293,58 +217,6 @@ just run -f test/fixtures/simple-nginx/compose.yaml config
 4. **Mock consistency** - Mocks should behave like real resources
 5. **Fixture reuse** - Share fixtures across tests but keep them minimal
 6. **Snapshot hygiene** - Review snapshot diffs carefully during updates
-
-## Common Patterns
-
-### Table-Driven Tests
-
-```go
-type operationTest struct {
-    name      string
-    operation *client.Operation
-    wantDone  bool
-    wantErr   bool
-    validate  func(*testing.T, *client.Operation)
-}
-
-func (s *TestSuite) TestOperation() {
-    tests := []operationTest{
-        {
-            name: "successful operation",
-            operation: client.NewDoneOperation(context.Background()),
-            wantDone: true,
-            wantErr: false,
-        },
-    }
-
-    for _, tt := range tests {
-        s.Run(tt.name, func() {
-            if tt.validate != nil {
-                tt.validate(s.T(), tt.operation)
-            }
-        })
-    }
-}
-```
-
-### Error Testing
-
-```go
-err := operation.Handle()
-s.Error(err)
-s.ErrorIs(err, client.ErrDisconnected)
-```
-
-### Context Testing
-
-```go
-ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-defer cancel()
-
-op := client.NewOperation(ctx, handler)
-err := op.Handle()
-s.ErrorIs(err, context.DeadlineExceeded)
-```
 
 ## See Also
 

@@ -6,7 +6,6 @@ incus-compose lets you run your existing `compose.yaml` files directly on Incus 
 
 - Incus 6.3+ installed and running
 - Access to an Incus server (local or remote)
-- `skopeo` on the client for image downloads
 - `podman` or `docker` for image building (see [Builds](build.md))
 
 ### HTTPS Remote
@@ -175,20 +174,6 @@ The file follows normal [Compose merge rules](https://docs.docker.com/reference/
 
 ## Common Workflows
 
-### Development with live code
-
-```yaml
-services:
-  app:
-    image: docker.io/python:3.11
-    volumes:
-      - ./src:/app
-    working_dir: /app
-    command: python -m http.server 8000
-```
-
-Edits to `./src` are immediately visible inside the container.
-
 ### Multi-service application
 
 ```yaml
@@ -322,6 +307,8 @@ This means:
 - Subsequent runs copy from local cache (fast)
 - No Docker Hub rate limits after initial pull
 - `incus-compose down` only removes project images, cache persists
+
+For a technical background about images see [architecture/client/image.md](docs/architecture/client/image.md)
 
 The cache project is created automatically on first use.
 

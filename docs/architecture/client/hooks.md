@@ -11,18 +11,26 @@ Every resource action (ensure, delete, start, stop) can be intercepted with hook
 
 Hooks receive the action context and can modify errors, abort actions, or add logging.
 
-## Hook Signature
+Two more hooks fire once per client lifecycle rather than per action:
+
+- **Connected hooks** - Run once when the client opens, before any action
+- **Done hooks** - Run once when the client's work is complete, for cleanup
+
+## Action Hook Signature
 
 ```go
-func(action Action, r Resource, args Options, err error) error
+func(ctx context.Context, action Action, r Resource, args Options, err error) error
 ```
 
 **Parameters:**
 
+- `ctx` - The context for the action
 - `action` - The action being performed (ensure, delete, start, stop)
 - `r` - The resource being operated on
 - `args` - Action options (create, force, timeout)
 - `err` - Error from previous hooks or the action
+
+Connected and Done hooks use a smaller signature; see [Lifecycle Hooks](#lifecycle-hooks).
 
 **Return:**
 
@@ -36,7 +44,7 @@ Before hooks run in FIFO order (first added runs first). Use them for validation
 ### Abort an Action
 
 ```go
-client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
     if action == ActionDelete && !confirmed {
         return errors.New("deletion not confirmed")
     }
@@ -49,7 +57,7 @@ client.AddHookBefore(func(action Action, r Resource, args Options, err error) er
 ```go
 logger := slog.Default()
 
-client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
     logger.Info("Starting action",
         "action", action,
         "resource", r.Name(),
@@ -64,7 +72,7 @@ Before hooks can see errors from earlier before hooks in the chain:
 
 ```go
 client.AddHookBefore(validateResources)  // Might return error
-client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
     if err != nil {
         // Previous validation failed, skip this hook
         return err
@@ -83,7 +91,7 @@ After hooks run in LIFO order (last added runs first). Use them for logging resu
 ```go
 logger := slog.Default()
 
-client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
     if err != nil {
         logger.Error("Action failed",
             "action", action,
@@ -104,7 +112,7 @@ client.AddHookAfter(func(action Action, r Resource, args Options, err error) err
 ### Wrap Errors with Context
 
 ```go
-client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
     if err != nil {
         return fmt.Errorf("%s %s failed: %w", r.Kind(), r.Name(), err)
     }
@@ -117,13 +125,70 @@ client.AddHookAfter(func(action Action, r Resource, args Options, err error) err
 If your hook encounters its own error, append it to the action error:
 
 ```go
-client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
     if cleanupErr := cleanup(); cleanupErr != nil {
         return errors.Join(err, cleanupErr)
     }
     return err
 })
 ```
+
+## Lifecycle Hooks
+
+Connected and Done hooks bracket the client's whole run instead of a single
+action. They share a smaller signature, since there is no action or resource yet:
+
+```go
+func(err error) error
+```
+
+They do not fire on their own. `client.Open()` fires the connected hooks (call it
+once after registering all hooks, before running any stack actions), and
+`client.Done()` fires the done hooks (call it when the client's work is complete,
+usually deferred):
+
+```go
+if err := client.Open(); err != nil {
+    return err
+}
+defer func() { _ = client.Done() }()
+```
+
+### Connected Hooks
+
+Connected hooks run in FIFO order (first added runs first). Use them for one-time
+setup: starting a progress renderer, acquiring a connection-scoped resource, or
+validating preconditions. Each hook starts a fresh chain (it always receives a nil
+error); the only propagation is abort-on-error.
+
+```go
+client.AddHookConnected(func(err error) error {
+    return progress.Start()  // Returning an error aborts Open()
+})
+```
+
+If any connected hook returns an error, the remaining connected hooks are skipped
+and `Open()` returns that error — mirroring how a before hook aborts an action.
+
+### Done Hooks
+
+Done hooks run in LIFO order (last added runs first). Use them for teardown:
+stopping a progress renderer, releasing resources, or wrapping the final error.
+Every done hook always runs (there is no short-circuit), so cleanup is never
+skipped. Each hook receives the current error and may transform it.
+
+```go
+client.AddHookDone(func(err error) error {
+    progress.Stop()
+    return err
+})
+```
+
+### Scope
+
+Unlike before and after hooks, connected and done hooks are **not** inherited from
+GlobalClient. Each project Client starts with no-op connected/done hooks, so
+register them on the specific project Client whose lifecycle you want to bracket.
 
 ## Execution Order
 
@@ -153,6 +218,20 @@ client.AddHookAfter(sendToMonitoring)  // Runs 1st (outer)
 
 Order: sendToMonitoring -> wrapWithContext -> logBasicInfo
 
+### Connected (FIFO) and Done (LIFO)
+
+Lifecycle hooks follow the same ordering rules, fired once each:
+
+```go
+client.AddHookConnected(openRenderer)  // Open():  runs 1st
+client.AddHookConnected(announceStart) // Open():  runs 2nd
+
+client.AddHookDone(flushRenderer)      // Done():  runs 2nd (inner)
+client.AddHookDone(stopRenderer)       // Done():  runs 1st (outer)
+```
+
+A connected hook that returns an error aborts `Open()`; done hooks always all run.
+
 ## Common Patterns
 
 ### Dry Run Mode
@@ -160,7 +239,7 @@ Order: sendToMonitoring -> wrapWithContext -> logBasicInfo
 ```go
 dryRun := true
 
-client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
     if dryRun && (action == ActionEnsure || action == ActionDelete) {
         log.Printf("Would %s %s %s", action, r.Kind(), r.Name())
         return errors.New("dry run mode")
@@ -174,22 +253,25 @@ client.AddHookBefore(func(action Action, r Resource, args Options, err error) er
 ```go
 var completed, total int
 
-client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
     total++
     return err
 })
 
-client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
     completed++
     fmt.Printf("Progress: %d/%d\n", completed, total)
     return err
 })
 ```
 
+For live, per-operation progress (image pulls, lifecycle), see
+[Progress](progress.md) - the after-hook is what marks each line done.
+
 ### Conditional Error Suppression
 
 ```go
-client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
     if errors.Is(err, ErrNotFound) && action == ActionDelete {
         // Already deleted, not an error
         return nil
@@ -213,16 +295,21 @@ projectA, _ := globalClient.EnsureProject("projectA", true)
 projectA.AddHookBefore(projectALogger)  // Only projectA
 ```
 
+Connected and Done hooks are the exception: they are never inherited from
+GlobalClient and must be registered on the project Client directly (see
+[Lifecycle Hooks](#lifecycle-hooks)).
+
 ## Concurrency
 
-Hooks run inside the WorkerPool — multiple hooks may fire concurrently for
-different resources. Any state shared between hook invocations must be protected:
+Before and After hooks run inside the WorkerPool — multiple hooks may fire
+concurrently for different resources. Any state shared between hook invocations
+must be protected:
 
 ```go
 var mu sync.Mutex
 counts := map[string]int{}
 
-client.AddHookAfter(func(action Action, r Resource, _ Options, err error) error {
+client.AddHookAfter(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
     mu.Lock()
     defer mu.Unlock()
 
@@ -233,6 +320,10 @@ client.AddHookAfter(func(action Action, r Resource, _ Options, err error) error 
 
 Read-only closures that capture only immutable values (string literals, slices
 built before registration) are safe without a mutex.
+
+Connected and Done hooks do not run in the WorkerPool. `Open()` and `Done()` fire
+them synchronously on the calling goroutine, once each, so they need no mutex for
+their own state.
 
 ## Best Practices
 

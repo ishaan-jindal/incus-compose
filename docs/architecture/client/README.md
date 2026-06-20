@@ -64,6 +64,7 @@ func main() {
 - [Hooks](hooks.md) - Hook system details
 - [Image](image.md) - Image resource
 - [Instance](instance.md) - Instance resource
+- [Progress](progress.md) - Live operation progress and the terminal renderer
 
 See also [Architecture Overview](../../architecture.md).
 
