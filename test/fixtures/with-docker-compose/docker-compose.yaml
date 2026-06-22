@@ -1,0 +1,15 @@
+services:
+  web:
+    image: docker.io/nginxinc/nginx-unprivileged:alpine
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    x-incus:
+      limits.cpu: 1
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

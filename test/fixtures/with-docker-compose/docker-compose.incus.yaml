@@ -1,0 +1,12 @@
+services:
+  web:
+    ports: !reset []
+    networks:
+      default:
+        ipv4_address: 10.131.35.17
+
+networks:
+  default:
+    x-incus:
+      ipv4.nat: "true"
+      ipv4.address: 10.131.35.1/24

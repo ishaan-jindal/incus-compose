@@ -38,20 +38,22 @@ func buildLoadOptions(cmd *cli.Command) []project.LoadOption {
 	files := cmd.StringSlice("file")
 	dir := cmd.String("project-directory")
 
+	composeFileNames := []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"}
+
 	cfile := ""
 	if len(files) == 0 {
-		cfile = "compose.yaml"
-		if dir != "" {
-			cfile = filepath.Join(dir, cfile)
-		} else {
-			cfile, _ = filepath.Abs(cfile)
-		}
-		if _, err := os.Stat(cfile); err == nil {
-			files = append(files, cfile)
+		for _, name := range composeFileNames {
+			if candidate, err := filepath.Abs(name); err != nil {
+				if _, err := os.Stat(candidate); err != nil {
+					cfile = candidate
+					files = append(files, candidate)
+					break
+				}
+			}
 		}
 	} else {
 		for _, f := range files {
-			if filepath.Base(f) == "compose.yaml" {
+			if slices.Contains(composeFileNames, filepath.Base(f)) {
 				cfile = f
 				break
 			}
@@ -59,7 +61,7 @@ func buildLoadOptions(cmd *cli.Command) []project.LoadOption {
 	}
 
 	if cfile != "" {
-		incusCFile := filepath.Join(filepath.Dir(cfile), strings.TrimSuffix(filepath.Base(cfile), filepath.Ext(cfile))+".incus.yaml")
+		incusCFile := filepath.Join(filepath.Dir(cfile), strings.TrimSuffix(filepath.Base(cfile), filepath.Ext(cfile))+".incus"+filepath.Ext(cfile))
 		if _, err := os.Stat(incusCFile); err == nil {
 			files = append(files, incusCFile)
 		}
@@ -180,6 +182,10 @@ func newRootCommand() *cli.Command {
 				Name:        "project-directory",
 				Usage:       `Specify an alternate working directory`,
 				DefaultText: `current directory or parent of first compose file`,
+			},
+			&cli.StringFlag{
+				Name:  "project-directory",
+				Usage: `Specify an alternate working directory (default: the path of the, first specified, Compose file)`,
 			},
 			&cli.StringFlag{
 				Name:    "project-name",

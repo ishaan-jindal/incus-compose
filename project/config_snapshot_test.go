@@ -40,12 +40,20 @@ func runConfigTest(t *testing.T, tc ConfigTestCase) {
 		fixture := fixturePath(tc.Fixture)
 
 		loadOpts := []project.LoadOption{
-			project.LoadWorkingDir(fixture),
+			project.LoadWorkingDir(filepath.Dir(fixture)),
 		}
 
-		if _, err := os.Stat(filepath.Join(fixture, "compose.incus.yaml")); err == nil {
-			loadOpts = append(loadOpts, project.LoadFiles([]string{filepath.Join(fixture, "compose.yaml"), filepath.Join(fixture, "compose.incus.yaml")}))
+		files := []string{fixture}
+		if tc.Fixture != "" {
+			fDir := filepath.Dir(fixture)
+			fExt := filepath.Ext(fixture)
+			fNoExt := strings.TrimSuffix(filepath.Base(fixture), fExt)
+			incusCFile := filepath.Join(fDir, fNoExt+".incus"+fExt)
+			if _, err := os.Stat(incusCFile); err == nil {
+				files = append(files, incusCFile)
+			}
 		}
+		loadOpts = append(loadOpts, project.LoadFiles(files))
 
 		if len(tc.Profiles) > 0 {
 			loadOpts = append(loadOpts, project.LoadProfiles(tc.Profiles))
@@ -54,7 +62,7 @@ func runConfigTest(t *testing.T, tc ConfigTestCase) {
 		if len(tc.EnvFiles) > 0 {
 			absEnvFiles := make([]string, len(tc.EnvFiles))
 			for i, f := range tc.EnvFiles {
-				absEnvFiles[i] = filepath.Join(fixture, f)
+				absEnvFiles[i] = filepath.Join(filepath.Dir(fixture), f)
 			}
 			loadOpts = append(loadOpts, project.LoadEnvFiles(absEnvFiles))
 		}
@@ -108,7 +116,7 @@ func runConfigTest(t *testing.T, tc ConfigTestCase) {
 		}
 
 		// Normalize paths for portability.
-		absFixturePath, _ := filepath.Abs(fixture)
+		absFixturePath, _ := filepath.Abs(filepath.Dir(fixture))
 		output = strings.ReplaceAll(output, absFixturePath, "$FIXTURE_PATH")
 
 		newSnapshotter().SnapshotT(t, output)
@@ -120,78 +128,90 @@ func TestConfigSnapshots(t *testing.T) {
 
 	testCases := []ConfigTestCase{
 		{
+			Name:    "dev-environment_yaml",
+			Fixture: "dev-environment/compose.yaml",
+		},
+		{
+			Name:    "grafana_yaml",
+			Fixture: "grafana/compose.yaml",
+		},
+		{
 			Name:    "simple-nginx_yaml",
-			Fixture: "simple-nginx",
+			Fixture: "simple-nginx/compose.yaml",
 		},
 		{
 			Name:    "simple-nginx_json",
-			Fixture: "simple-nginx",
+			Fixture: "simple-nginx/compose.yaml",
 			Format:  "json",
 		},
 		{
 			Name:    "test-external-network_yaml",
-			Fixture: "test-external-network",
+			Fixture: "test-external-network/compose.yaml",
 		},
 		{
-			Name:    "grafana_yaml",
-			Fixture: "grafana",
-		},
-		{
-			Name:    "wordpress_yaml",
-			Fixture: "wordpress",
-		},
-		{
-			Name:     "wordpress_filter_by_service",
-			Fixture:  "wordpress",
-			Services: []string{"wordpress"},
+			Name:    "two-services_yaml",
+			Fixture: "two-services/compose.yaml",
 		},
 		{
 			Name:    "nginx-proxy_yaml",
-			Fixture: "nginx-proxy",
+			Fixture: "nginx-proxy/compose.yaml",
 		},
 		{
 			Name:    "nginx-scale_yaml",
-			Fixture: "nginx-scale",
-		},
-		{
-			Name:    "dev-environment_yaml",
-			Fixture: "dev-environment",
+			Fixture: "nginx-scale/compose.yaml",
 		},
 		{
 			Name:    "with-bind-mounts_yaml",
-			Fixture: "with-bind-mounts",
+			Fixture: "with-bind-mounts/compose.yaml",
+		},
+		{
+			Name:    "with-docker-compose_yaml",
+			Fixture: "with-docker-compose/docker-compose.yaml",
+		},
+		{
+			Name:    "with-env_yaml",
+			Fixture: "with-env/compose.yaml",
 		},
 		{
 			Name:    "with-tmpfs_yaml",
-			Fixture: "with-tmpfs",
+			Fixture: "with-tmpfs/compose.yaml",
 		},
 		{
 			Name:    "with-resources_yaml",
-			Fixture: "with-resources",
+			Fixture: "with-resources/compose.yaml",
 		},
 		{
 			Name:    "with-network-ranges_yaml",
-			Fixture: "with-network-ranges",
+			Fixture: "with-network-ranges/compose.yaml",
 		},
 		{
 			Name:    "with-nat-proxy_yaml",
-			Fixture: "with-nat-proxy",
+			Fixture: "with-nat-proxy/compose.yaml",
 		},
 		{
 			Name:    "with-build_yaml",
-			Fixture: "with-build",
+			Fixture: "with-build/compose.yaml",
 		},
 		{
 			Name:    "with-container-name_yaml",
-			Fixture: "with-container-name",
+			Fixture: "with-container-name/compose.yaml",
 		},
 		{
 			Name:    "with-seeded-bind-mounts_yaml",
-			Fixture: "with-seeded-bind-mounts",
+			Fixture: "with-seeded-bind-mounts/compose.yaml",
 		},
 		{
 			Name:    "with-shm-size_yaml",
-			Fixture: "with-shm-size",
+			Fixture: "with-shm-size/compose.yaml",
+		},
+		{
+			Name:    "wordpress_yaml",
+			Fixture: "wordpress/compose.yaml",
+		},
+		{
+			Name:     "wordpress_filter_by_service",
+			Fixture:  "wordpress/compose.yaml",
+			Services: []string{"wordpress"},
 		},
 	}
 
@@ -206,22 +226,22 @@ func TestConfigSnapshotsWithProfiles(t *testing.T) {
 	testCases := []ConfigTestCase{
 		{
 			Name:     "with-profiles_dev_profile",
-			Fixture:  "with-profiles",
+			Fixture:  "with-profiles/compose.yaml",
 			Profiles: []string{"dev"},
 		},
 		{
 			Name:     "with-profiles_monitoring_profile",
-			Fixture:  "with-profiles",
+			Fixture:  "with-profiles/compose.yaml",
 			Profiles: []string{"monitoring"},
 		},
 		{
 			Name:     "with-profiles_dev_and_monitoring",
-			Fixture:  "with-profiles",
+			Fixture:  "with-profiles/compose.yaml",
 			Profiles: []string{"dev", "monitoring"},
 		},
 		{
 			Name:     "dev-environment_debug_profile",
-			Fixture:  "dev-environment",
+			Fixture:  "dev-environment/compose.yaml",
 			Profiles: []string{"debug"},
 		},
 	}
@@ -237,16 +257,16 @@ func TestConfigSnapshotsWithEnv(t *testing.T) {
 	testCases := []ConfigTestCase{
 		{
 			Name:    "with-env_default_yaml",
-			Fixture: "with-env",
+			Fixture: "with-env/compose.yaml",
 		},
 		{
 			Name:     "with-env_production_yaml",
-			Fixture:  "with-env",
+			Fixture:  "with-env/compose.yaml",
 			EnvFiles: []string{"production.env"},
 		},
 		{
 			Name:     "with-env_staging_yaml",
-			Fixture:  "with-env",
+			Fixture:  "with-env/compose.yaml",
 			EnvFiles: []string{"staging.env"},
 		},
 	}
