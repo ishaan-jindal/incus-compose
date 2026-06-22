@@ -27,7 +27,7 @@ there.
 ## 2. Install base packages — _container (root)_
 
 ```bash
-apt install sudo-rs vim golang git skopeo
+apt install sudo-rs vim golang git
 ```
 
 ## 3. Install Incus from the Zabbly repository — _container (root)_
@@ -45,7 +45,7 @@ Signed-By: /etc/apt/keyrings/zabbly.asc
 
 EOF'
 
-apt update; apt install incus
+apt update; apt install incus podman skopeo xdelta3 umoci
 ```
 
 ## 4. Create the `runner` user — _container (root)_
