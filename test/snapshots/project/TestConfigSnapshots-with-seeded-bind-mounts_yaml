@@ -32,4 +32,4 @@ services:
       limits.cpu: 1
 networks:
   default:
-    name: with-bind-mounts_default
+    name: with-seeded-bind-mounts_default

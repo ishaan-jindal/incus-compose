@@ -572,6 +572,11 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 					return nil, nil, nil, fmt.Errorf("failed to add a bind-mount for service %v: %w", service.Name, err)
 				}
 
+				_, err = os.Stat(cVol.Source)
+				if err != nil {
+					return nil, nil, nil, client.ErrUnknown.WithKindName(client.KindInstance, service.Name).Wrap(err)
+				}
+
 				devName := "bind-" + client.SanitizeIncusName(cVol.Source, client.MaxIncusNameLen-5)
 
 				devConfig := client.InstanceDeviceConfig{

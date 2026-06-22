@@ -263,8 +263,6 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 		)
 	}
 
-	slog.SetDefault(logger)
-
 	// Priority: INCUS_REMOTE -> INCUS_COMPOSE_URL -> "local" remote
 	var opts []ClientOption
 
@@ -320,7 +318,28 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 // NewOfflineClient creates a disconnected project client for resource planning.
 // It can create in-memory resources, but cannot run Incus operations.
 func NewOfflineClient(ctx context.Context, name string) *Client {
+	var logger *slog.Logger
+
+	logFormat, ok := os.LookupEnv("LOG_FORMAT")
+	if !ok {
+		logFormat = "text"
+	}
+
+	switch logFormat {
+	case "json":
+		logger = slog.New(slog.NewJSONHandler(
+			os.Stderr,
+			&slog.HandlerOptions{Level: slog.LevelDebug - 4}),
+		)
+	default:
+		logger = slog.New(slog.NewTextHandler(
+			os.Stderr,
+			&slog.HandlerOptions{Level: slog.LevelDebug - 4}),
+		)
+	}
+
 	gc := New(ctx)
+	gc.unix = true
 	config := gc.Config
 	config.DescriptionFormat = fmt.Sprintf(config.DescriptionFormat, name) + ":%s"
 
@@ -330,7 +349,7 @@ func NewOfflineClient(ctx context.Context, name string) *Client {
 		config:       config,
 		project:      name,
 		incusProject: sanitizeProjectName(name),
-		logger:       gc.logger.With("project", name),
+		logger:       logger.With("project", name),
 	}
 }
 

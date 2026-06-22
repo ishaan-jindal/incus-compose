@@ -502,7 +502,7 @@ func TestInstanceVolumeDevices(t *testing.T) {
 		assert.Empty(t, files)
 		require.Len(t, devices, 1)
 		assert.Equal(t, client.InstanceDeviceTypeDisk, devices[0].Config.DeviceType)
-		assert.Len(t, resources, 1)
+		assert.Empty(t, resources)
 	})
 
 	t.Run("unknown type", func(t *testing.T) {
