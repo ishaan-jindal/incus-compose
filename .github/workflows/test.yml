@@ -47,12 +47,12 @@ jobs:
 
   test:
     needs: lint
-    runs-on: [self-hosted, incus-compose]
+    runs-on: [self-hosted, incus-compose-local]
     permissions:
       contents: read
       checks: write # publish JUnit results as a check run
     env:
-      INCUS_REMOTE: ict
+      INCUS_REMOTE: local-https
     steps:
       - uses: actions/checkout@v6
         with:
