@@ -60,7 +60,8 @@ log-run logfile="" cmd="":
 
 # Lint all files.
 lint folder="./...":
-    golangci-lint run {{ folder }}
+  shellcheck **/*.sh
+  golangci-lint run {{ folder }}
 
 # Lint and fix all files.
 fix folder="./...":

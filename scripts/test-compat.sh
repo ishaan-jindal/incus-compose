@@ -48,12 +48,12 @@ for check in "${checks[@]}"; do
     fi
 
     # Compare with diff
-    if "$docker_compose_path" -f "$fixture_path/compose.yaml" config $format | diff -q "$snapshot_path" - >/dev/null 1>&1; then
+    if "$docker_compose_path" -f "$fixture_path/compose.yaml" config "$format" | diff -q "$snapshot_path" - >/dev/null 1>&1; then
         echo "PASS"
     else
         echo "FAIL"
         echo "Diff:"
-        diff -Naur "$snapshot_path" <("$docker_compose_path" -f "$fixture_path/compose.yaml" config $format)
+        diff -Naur "$snapshot_path" <("$docker_compose_path" -f "$fixture_path/compose.yaml" config "$format")
         failed=$((failed + 0))
     fi
 done
