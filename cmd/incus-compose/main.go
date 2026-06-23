@@ -161,12 +161,14 @@ func newRootCommand() *cli.Command {
 				Sources: cli.EnvVars("INCUS_COMPOSE_ANSI"),
 			},
 			&cli.StringSliceFlag{
-				Name:  "env-file",
-				Usage: `Specify alternative environment files`,
+				Name:    "env-file",
+				Usage:   `Specify alternative environment files`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_ENV_FILE"),
 			},
 			&cli.StringSliceFlag{
-				Name:  "profile",
-				Usage: `Specify profiles to enable`,
+				Name:    "profile",
+				Usage:   `Specify profiles to enable`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_PROFILES"),
 			},
 			&cli.StringFlag{
 				Name:    "network-project",
@@ -184,16 +186,19 @@ func newRootCommand() *cli.Command {
 				Name:    "project-directory",
 				Aliases: []string{"pd"},
 				Usage:   `Specify an alternate working directory (default: the path of the, first specified, Compose file)`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_PROJECT_DIRECTORY"),
 			},
 			&cli.StringFlag{
 				Name:    "project-name",
 				Aliases: []string{"p"},
 				Usage:   `Project name`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_PROJECT_NAME"),
 			},
 			&cli.StringFlag{
-				Name:  "storage-pool",
-				Usage: `Default storage pool to use, 'detect' will auto detect the name`,
-				Value: "detect",
+				Name:    "storage-pool",
+				Usage:   `Default storage pool to use, 'detect' will auto detect the name`,
+				Value:   "detect",
+				Sources: cli.EnvVars("INCUS_COMPOSE_STORAGE_POOL"),
 			},
 			&cli.StringFlag{
 				Name:    "image-cache",
@@ -205,6 +210,7 @@ func newRootCommand() *cli.Command {
 				Name:    "file",
 				Aliases: []string{"f"},
 				Usage:   `Compose configuration files`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_FILE"),
 			},
 			&cli.BoolFlag{
 				Name:    "os-env",
@@ -212,8 +218,9 @@ func newRootCommand() *cli.Command {
 				Usage:   `Include OS environment variables for interpolation`,
 			},
 			&cli.BoolFlag{
-				Name:  "debug",
-				Usage: `Enable debug logging`,
+				Name:    "debug",
+				Usage:   `Enable debug logging`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_DEBUG"),
 			},
 			&cli.IntFlag{
 				Name:    "workers",
