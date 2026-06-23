@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/creativeprojects/go-selfupdate"
 	"github.com/lmittmann/tint"
 	"github.com/lxc/incus/v7/shared/cliconfig"
 	"github.com/mattn/go-colorable"
@@ -145,6 +146,35 @@ func noColor(ctx context.Context) bool {
 }
 
 func newRootCommand() *cli.Command {
+	commands := []*cli.Command{
+		newUpCommand(),
+		newDownCommand(),
+		newBuildCommand(),
+		newStartCommand(),
+		newStopCommand(),
+		newRestartCommand(),
+		newListCommand(),
+		newPsCommand(),
+		newConfigCommand(),
+		newExecCommand(),
+		newLogsCommand(),
+		newIncusCommand(),
+		newHealthdCommand(),
+		newVersionCommand(),
+	}
+
+	// "self-update" is only available if the executable is writeable and the version is not "latest".
+	if version.Current() != "latest" {
+		exe, err := selfupdate.ExecutablePath()
+		if err == nil {
+			f, err := os.OpenFile(exe, os.O_WRONLY, 0o644)
+			if err == nil {
+				f.Close()
+				commands = append(commands, newSelfUpdateCommand())
+			}
+		}
+	}
+
 	return &cli.Command{
 		Usage: "Compose for incus",
 		Flags: []cli.Flag{
@@ -229,22 +259,7 @@ func newRootCommand() *cli.Command {
 				Value:   10,
 			},
 		},
-		Commands: []*cli.Command{
-			newUpCommand(),
-			newDownCommand(),
-			newBuildCommand(),
-			newStartCommand(),
-			newStopCommand(),
-			newRestartCommand(),
-			newListCommand(),
-			newPsCommand(),
-			newConfigCommand(),
-			newExecCommand(),
-			newLogsCommand(),
-			newIncusCommand(),
-			newHealthdCommand(),
-			newVersionCommand(),
-		},
+		Commands: commands,
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			noColor := false
 
