@@ -31,6 +31,9 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      - name: shellcheck **/*.sh
+        run: shellcheck **/*.sh
+
       - name: go mod tidy -diff
         run: go mod tidy -v -diff
 

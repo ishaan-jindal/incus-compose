@@ -280,7 +280,7 @@ PRESEED_EOF
 EOF
 )
 
-CONFIGURE_SCRIPT="$(echo "${CONFIGURE_SCRIPT}" | sed -e 's/__STORAGE_POOL__/'${STORAGE_POOL}'/g' -e 's/__BRIDGE__/'${BRIDGE}'/g')"
+CONFIGURE_SCRIPT="$(echo "${CONFIGURE_SCRIPT}" | sed -e 's/__STORAGE_POOL__/'"${STORAGE_POOL}"'/g' -e 's/__BRIDGE__/'"${BRIDGE}"'/g')"
 
 # Stream the configure script as well (no temp files)
 echo "${CONFIGURE_SCRIPT}" | incus exec "${CONTAINER_NAME}" -- bash -s
