@@ -181,8 +181,9 @@ func newRootCommand() *cli.Command {
 				Value:   "default",
 			},
 			&cli.StringFlag{
-				Name:  "project-directory",
-				Usage: `Specify an alternate working directory (default: the path of the, first specified, Compose file)`,
+				Name:    "project-directory",
+				Aliases: []string{"pd"},
+				Usage:   `Specify an alternate working directory (default: the path of the, first specified, Compose file)`,
 			},
 			&cli.StringFlag{
 				Name:    "project-name",
@@ -213,6 +214,12 @@ func newRootCommand() *cli.Command {
 			&cli.BoolFlag{
 				Name:  "debug",
 				Usage: `Enable debug logging`,
+			},
+			&cli.IntFlag{
+				Name:    "workers",
+				Usage:   `Number of concurrent workers`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_WORKERS"),
+				Value:   10,
 			},
 		},
 		Commands: []*cli.Command{
