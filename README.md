@@ -1,5 +1,9 @@
 # incus-compose
 
+[![CI](https://github.com/lxc/incus-compose/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/lxc/incus-compose/actions?query=event%3Apush+branch%3Amain)
+[![Go Reference](https://pkg.go.dev/badge/github.com/lxc/incus-compose.svg)](https://pkg.go.dev/github.com/lxc/incus-compose)
+[![Go Report Card](https://goreportcard.com/badge/github.com/lxc/incus-compose)](https://goreportcard.com/report/github.com/lxc/incus-compose)
+
 Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` implements the Compose specification for the Incus ecosystem, allowing you to define and run multi-container applications using the same `docker-compose.yml` files you already know.
 
 ## Why incus-compose?
@@ -12,17 +16,6 @@ Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` 
 - Manage complex multi-container applications with familiar commands
 - Benefit from Incus's resource efficiency and security model
 
-## Quick Links
-
-Full docs index: [docs/README.md](docs/README.md)
-
-- **[Getting Started](docs/getting-started.md)** - Install and run your first compose project
-- **[CLI Reference](docs/cli.md)** - Commands and options
-- **[Compose Compatibility](docs/compose-compatibility.md)** - What works and what doesn't
-- **[Architecture](docs/architecture.md)** - How it works under the hood
-- **[Why Incus?](docs/why-incus.md)** - Benefits over Docker
-- **[Contributing](CONTRIBUTING.md)** - Contributing to incus-compose
-
 ## Features
 
 Status: **Beta** - testing the beta release of incus-compose.
@@ -34,17 +27,13 @@ Status: **Beta** - testing the beta release of incus-compose.
 - Local image building via Podman/Docker [doc](docs/build.md)
 - Bridge networks with automatic name sanitization
 - Static IPv4/IPv6 addresses with automatic DHCP ranges [doc](docs/compose-compatibility.md#automatic-dhcp-ranges)
-- Port forwarding via proxy devices or kernel NAT mode
-- Storage volumes with UID/GID shifting; bind mounts (pass-through by default, optional seeding)
+- Port forwarding via proxy devices or kernel NAT mode [doc](docs/compose-compatibility.md#port-publishing)
+- Storage volumes with UID/GID shifting; bind mounts (pass-through by default, optional seeding) [doc](docs/compose-compatibility.md#volume-permissions)
 - Health checks, restart policies, and `depends_on: service_healthy` ordering via the `ic-healthd` sidecar [doc](docs/healthd.md)
 - Service scaling with `up --scale` and orphan pruning
 - Incus project isolation
 - Resource limits and other advanced compose features (`shm_size`, `container_name`, etc.)
 - Configuration via `INCUS_COMPOSE_*` environment variables for every flag, with a configurable parallel worker count [doc](docs/environment-variables.md)
-
-## Architecture
-
-incus-compose uses a **resource-first design**, see [Architecture Documentation](docs/architecture.md) for details.
 
 ## Quick Start
 
@@ -74,6 +63,41 @@ incus-compose list
 # Stop and remove
 incus-compose down
 ```
+
+## Quick Links
+
+Full docs index: [docs/README.md](docs/README.md)
+
+- **[Getting Started](docs/getting-started.md)** - Install and run your first compose project
+- **[CLI Reference](docs/cli.md)** - Commands and options
+- **[Compose Compatibility](docs/compose-compatibility.md)** - What works and what doesn't
+- **[Architecture](docs/architecture.md)** - How it works under the hood
+- **[Why Incus?](docs/why-incus.md)** - Benefits over Docker
+- **[Contributing](CONTRIBUTING.md)** - Contributing to incus-compose
+
+## Architecture
+
+incus-compose uses a **resource-first design**, see [Architecture Documentation](docs/architecture.md) for details.
+
+## Support and community
+
+The following channels are available for you to interact with the Incus community.
+
+### Bug reports
+
+You can file bug reports and feature requests at: [`https://github.com/lxc/incus-compose/issues/new`](https://github.com/lxc/incus-compose/issues/new)
+
+### Community support
+
+Community support is handled at: [`https://discuss.linuxcontainers.org`](https://discuss.linuxcontainers.org)
+
+## Documentation
+
+The official documentation is available at: [`https://github.com/lxc/incus-compose/tree/main/docs`](https://github.com/lxc/incus-compose/tree/main/docs)
+
+## Contributing
+
+Fixes and new features are greatly appreciated. Make sure to read our [contributing guidelines](CONTRIBUTING.md) first!
 
 ## Credits
 

@@ -244,7 +244,7 @@ func parseScale(values []string) map[string]int {
 func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Client, p *project.Project, params upParams) error {
 	runOptions := []client.Option{client.OptionTimeout(params.timeout)}
 	// With --no-deps the linked services are out of scope, so don't wait on
-	// healthd dependency conditions (depends_on: service_healthy) that can never
+	// healthd dependency conditions (depends_on: service_healthy) that maybe can't
 	// be satisfied because those dependencies were never started.
 	if !params.healthd || !params.deps {
 		runOptions = append(runOptions, client.OptionNoHealthd())
