@@ -111,7 +111,7 @@ func ClientNetworkProjectProfile(project, profile string) ClientOption {
 // GlobalClient provides a high-level interface to Incus operations.
 type GlobalClient struct {
 	ctx    context.Context
-	Config ClientConfig
+	config ClientConfig
 
 	logger    *slog.Logger
 	projects  []*Client
@@ -163,7 +163,7 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 
 	c := &GlobalClient{
 		ctx:       ctx,
-		Config:    config,
+		config:    config,
 		logger:    config.Logger,
 		cliConfig: cliConf,
 	}
@@ -340,7 +340,7 @@ func NewOfflineClient(ctx context.Context, name string) *Client {
 
 	gc := New(ctx)
 	gc.unix = true
-	config := gc.Config
+	config := gc.config
 	config.DescriptionFormat = fmt.Sprintf(config.DescriptionFormat, name) + ":%s"
 
 	return &Client{
@@ -355,20 +355,20 @@ func NewOfflineClient(ctx context.Context, name string) *Client {
 
 // Connect establishes a connection to the Incus server.
 func (c *GlobalClient) Connect() error {
-	if c.Config.ProvidedInstanceServer == nil {
+	if c.config.ProvidedInstanceServer == nil {
 		return errors.New("provide a ProvidedInstanceServer")
 	}
 
-	info, err := c.Config.ProvidedInstanceServer.GetConnectionInfo()
+	info, err := c.config.ProvidedInstanceServer.GetConnectionInfo()
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrConnectionFailed, err)
 	}
 
-	c.Config.URL = info.URL
+	c.config.URL = info.URL
 	c.unix = info.SocketPath != ""
 
 	// Force "default" project for global client - project-scoped clients are created via EnsureProject.
-	pIncus, ok := c.Config.ProvidedInstanceServer.UseProject("default").(*incusClient.ProtocolIncus)
+	pIncus, ok := c.config.ProvidedInstanceServer.UseProject("default").(*incusClient.ProtocolIncus)
 	if !ok {
 		return fmt.Errorf("%w: cannot cast to ProtocolIncus", ErrConnectionFailed)
 	}
@@ -376,9 +376,9 @@ func (c *GlobalClient) Connect() error {
 	c.incus = pIncus
 	c.connected = true
 
-	c.logger.Debug("Connected", "url", c.Config.URL)
+	c.logger.Debug("Connected", "url", c.config.URL)
 
-	if c.Config.DefaultStoragePool == "detect" {
+	if c.config.DefaultStoragePool == "detect" {
 		if err = c.detectStoragePool(); err != nil {
 			return err
 		}
@@ -413,17 +413,17 @@ func (c *GlobalClient) detectStoragePool() error {
 		return fmt.Errorf("detecting storage pool: no storage pools found on server")
 	}
 
-	c.Config.DefaultStoragePool = names[0]
+	c.config.DefaultStoragePool = names[0]
 	return nil
 }
 
 // setupImageCache configures the image cache based on CacheProject or defaults.
 func (c *GlobalClient) setupImageCache() error {
-	if c.Config.CacheProject != "" {
+	if c.config.CacheProject != "" {
 		// Use dedicated cache project (create if needed)
-		cacheClient, err := c.EnsureProject(c.Config.CacheProject, EnsureProjectWithCreate())
+		cacheClient, err := c.EnsureProject(c.config.CacheProject, EnsureProjectWithCreate())
 		if err != nil {
-			return fmt.Errorf("ensuring cache project %s: %w", c.Config.CacheProject, err)
+			return fmt.Errorf("ensuring cache project %s: %w", c.config.CacheProject, err)
 		}
 		c.imageCache = cacheClient.incus
 	} else {
@@ -525,7 +525,7 @@ func (c *GlobalClient) createProject(name string, config map[string]string) (*Cl
 	err := c.incus.CreateProject(incusApi.ProjectsPost{
 		Name: incusName,
 		ProjectPut: incusApi.ProjectPut{
-			Description: fmt.Sprintf(c.Config.DescriptionFormat, name),
+			Description: fmt.Sprintf(c.config.DescriptionFormat, name),
 			Config:      projectConfig,
 		},
 	})
@@ -771,9 +771,9 @@ func (c *GlobalClient) ConnectionIP() (net.IP, error) {
 		return c.connectionIP, nil
 	}
 
-	u, err := url.Parse(c.Config.URL)
+	u, err := url.Parse(c.config.URL)
 	if err != nil {
-		return nil, fmt.Errorf("while parsing url %q: %w", c.Config.URL, err)
+		return nil, fmt.Errorf("while parsing url %q: %w", c.config.URL, err)
 	}
 
 	ip := net.ParseIP(u.Hostname())
@@ -784,7 +784,7 @@ func (c *GlobalClient) ConnectionIP() (net.IP, error) {
 
 	ips, err := net.LookupIP(u.Hostname())
 	if err != nil {
-		return nil, fmt.Errorf("while looking up the IP for %q: %w", c.Config.URL, err)
+		return nil, fmt.Errorf("while looking up the IP for %q: %w", c.config.URL, err)
 	}
 
 	c.connectionIP = ips[0]
@@ -847,8 +847,8 @@ func (c *GlobalClient) DefaultNetwork() (string, error) {
 		return "", err
 	}
 
-	if c.Config.NetworkProject != info.Project {
-		pc, err := c.getProject(c.Config.NetworkProject)
+	if c.config.NetworkProject != info.Project {
+		pc, err := c.getProject(c.config.NetworkProject)
 		if err != nil {
 			return "", err
 		}
@@ -885,12 +885,12 @@ func (c *GlobalClient) DefaultNetwork() (string, error) {
 
 // NetworkProfile sets the NetworkProject and NetworkProfile in the config.
 func (c *GlobalClient) NetworkProfile(project, profile string) error {
-	if c.Config.NetworkProject != DefaultNetworkProject || c.Config.NetworkProfile != DefaultNetworkProfile {
+	if c.config.NetworkProject != DefaultNetworkProject || c.config.NetworkProfile != DefaultNetworkProfile {
 		return errors.New("networkProfile was already set")
 	}
 
-	c.Config.NetworkProject = project
-	c.Config.NetworkProfile = profile
+	c.config.NetworkProject = project
+	c.config.NetworkProfile = profile
 
 	if c.defaultNetwork != "" {
 		c.defaultNetwork = ""

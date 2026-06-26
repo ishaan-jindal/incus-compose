@@ -48,7 +48,7 @@ type Client struct {
 }
 
 func (c *GlobalClient) newProjectClient(name, incusName string, created bool) (*Client, error) {
-	config := c.Config
+	config := c.config
 	config.DescriptionFormat = fmt.Sprintf(config.DescriptionFormat, name) + ":%s"
 
 	incus := c.incus.UseProject(incusName)
