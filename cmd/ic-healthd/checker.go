@@ -69,6 +69,10 @@ func (c *Checker) Run(ctx context.Context, inStart bool, startInstance bool) {
 			if err := c.restart(ctx); err != nil {
 				slog.Error("restart failed", "instance", c.name, "error", err)
 			}
+		} else if c.isStopped() {
+			if err := c.writeStatus(client.HealthStatusStopped); err != nil {
+				slog.Debug("updating healthcheck status", "instance", c.name, "error", err)
+			}
 		}
 
 		inst, _, err := c.client.GetInstance(c.name)
@@ -160,7 +164,7 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 				}
 			} else {
 				c.failures++
-				slog.Warn("check failed",
+				slog.Debug("check failed",
 					"instance", c.name,
 					"failures", c.failures,
 					"retries", retries,
@@ -176,6 +180,7 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 						result, done = phaseStop, true
 					case c.config.UnlessStopped && c.isStopped():
 						c.failures = 0
+						status = client.HealthStatusStopped
 						slog.Debug("unless-stopped: intentionally stopped, skipping restart", "instance", c.name)
 					default:
 						c.failures = 0

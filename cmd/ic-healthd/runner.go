@@ -86,7 +86,7 @@ func (r *Runner) findHealthd() (string, error) {
 	}
 
 	for _, inst := range instances {
-		if inst.Config["user.healthcheck.daemon"] == "true" {
+		if inst.Config[client.HealthKeyPrefix+"daemon"] == "true" {
 			return inst.Name, nil
 		}
 	}
@@ -269,19 +269,19 @@ func (r *Runner) discover(conn incus.InstanceServer) (map[string]InstanceConfig,
 	var errs error
 
 	for _, inst := range incusInstances {
-		if inst.Config["user.healthcheck.daemon"] == "true" {
+		if inst.Config[client.HealthKeyPrefix+"daemon"] == "true" {
 			continue
 		}
 
 		restart := false
 		if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, inst.Config["user.restart"]) {
 			restart = true
-			if inst.Config["user.healthcheck.test"] == "" {
-				inst.Config["user.healthcheck.test"] = "[\"NONE\"]"
+			if inst.Config[client.HealthKeyPrefix+"test"] == "" {
+				inst.Config[client.HealthKeyPrefix+"test"] = "[\"NONE\"]"
 			}
 		}
 
-		if inst.Config["user.healthcheck.test"] == "" && !restart {
+		if inst.Config[client.HealthKeyPrefix+"test"] == "" && !restart {
 			continue
 		}
 
@@ -311,7 +311,7 @@ func parseInstance(cfg map[string]string) (InstanceConfig, error) {
 		RestartDelay:  defaultRestartDelay,
 	}
 
-	if err := json.Unmarshal([]byte(cfg["user.healthcheck.test"]), &svc.Test); err != nil {
+	if err := json.Unmarshal([]byte(cfg[client.HealthKeyPrefix+"test"]), &svc.Test); err != nil {
 		return svc, fmt.Errorf("parsing test: %w", err)
 	}
 
@@ -319,7 +319,7 @@ func parseInstance(cfg map[string]string) (InstanceConfig, error) {
 		return svc, errors.New("CMD-SHELL requires a command")
 	}
 
-	if v := cfg["user.healthcheck.start_period"]; v != "" {
+	if v := cfg[client.HealthKeyPrefix+"start_period"]; v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
 			return svc, fmt.Errorf("parsing start_period: %w", err)
@@ -327,7 +327,7 @@ func parseInstance(cfg map[string]string) (InstanceConfig, error) {
 		svc.StartPeriod = d
 	}
 
-	if v := cfg["user.healthcheck.start_interval"]; v != "" {
+	if v := cfg[client.HealthKeyPrefix+"start_interval"]; v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
 			return svc, fmt.Errorf("parsing start_interval: %w", err)
@@ -335,7 +335,7 @@ func parseInstance(cfg map[string]string) (InstanceConfig, error) {
 		svc.StartInterval = d
 	}
 
-	if v := cfg["user.healthcheck.interval"]; v != "" {
+	if v := cfg[client.HealthKeyPrefix+"interval"]; v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
 			return svc, fmt.Errorf("parsing interval: %w", err)
@@ -343,7 +343,7 @@ func parseInstance(cfg map[string]string) (InstanceConfig, error) {
 		svc.Interval = d
 	}
 
-	if v := cfg["user.healthcheck.timeout"]; v != "" {
+	if v := cfg[client.HealthKeyPrefix+"timeout"]; v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
 			return svc, fmt.Errorf("parsing timeout: %w", err)
@@ -351,7 +351,7 @@ func parseInstance(cfg map[string]string) (InstanceConfig, error) {
 		svc.Timeout = d
 	}
 
-	if v := cfg["user.healthcheck.retries"]; v != "" {
+	if v := cfg[client.HealthKeyPrefix+"retries"]; v != "" {
 		n, err := strconv.ParseUint(v, 10, 32)
 		if err != nil {
 			return svc, fmt.Errorf("parsing retries: %w", err)

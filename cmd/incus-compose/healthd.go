@@ -171,10 +171,10 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 		Image: imgRes.IncusName(),
 		Type:  incusApi.InstanceTypeContainer,
 		Config: map[string]string{
-			"limits.cpu":              defaultHealthdCPULimit,
-			"limits.memory":           defaultHealthdMemoryLimit,
-			"user.internal":           "true",
-			"user.healthcheck.daemon": "true",
+			"limits.cpu":                      defaultHealthdCPULimit,
+			"limits.memory":                   defaultHealthdMemoryLimit,
+			client.HealthKeyPrefix + "test":   "[\"NONE\"]",
+			client.HealthKeyPrefix + "daemon": "true",
 		},
 		Resources: []client.Resource{img},
 	}

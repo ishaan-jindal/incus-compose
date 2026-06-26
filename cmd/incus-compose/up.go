@@ -31,7 +31,7 @@ func newUpCommand() *cli.Command {
 			&cli.DurationFlag{
 				Name:  "timeout",
 				Usage: "Timeout for stopping/starting",
-				Value: 10 * time.Second,
+				Value: 1 * time.Minute,
 			},
 			&cli.DurationFlag{
 				Name:  "dependency-timeout",

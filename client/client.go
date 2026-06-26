@@ -320,7 +320,7 @@ func (c *Client) FindHealthd() (string, error) {
 	}
 
 	for _, inst := range instances {
-		if inst.Config["user.healthcheck.daemon"] == "true" {
+		if inst.Config[HealthKeyPrefix+"daemon"] == "true" {
 			return inst.Name, nil
 		}
 	}

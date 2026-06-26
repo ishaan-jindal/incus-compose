@@ -193,8 +193,8 @@ func TestInstanceConfig(t *testing.T) {
 	assert.Equal(t, "2", config["limits.cpu"])
 	assert.Equal(t, "512MiB", config["limits.memory"])
 	assert.Equal(t, client.HealthStatusUnknown, config[client.HealthStatusKey])
-	assert.Equal(t, `["CMD","curl","-f","http://localhost"]`, config["user.healthcheck.test"])
-	assert.Equal(t, "3", config["user.healthcheck.retries"])
+	assert.Equal(t, `["CMD","curl","-f","http://localhost"]`, config[client.HealthKeyPrefix+"test"])
+	assert.Equal(t, "3", config[client.HealthKeyPrefix+"retries"])
 }
 
 func TestInstanceConfigMinimal(t *testing.T) {
