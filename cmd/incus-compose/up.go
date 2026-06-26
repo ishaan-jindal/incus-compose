@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -31,7 +33,7 @@ func newUpCommand() *cli.Command {
 			&cli.DurationFlag{
 				Name:  "timeout",
 				Usage: "Timeout for stopping/starting",
-				Value: 10 * time.Second,
+				Value: 1 * time.Minute,
 			},
 			&cli.DurationFlag{
 				Name:  "dependency-timeout",
@@ -83,6 +85,11 @@ func newUpCommand() *cli.Command {
 				Name:    "healthd-binary",
 				Usage:   "Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)",
 				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_BINARY"),
+			},
+			&cli.StringFlag{
+				Name:    "healthd-incus",
+				Usage:   `Connection URL of the incus to connect to from inside the sidecar. Empty = detect the ip from the bridge we are connected too`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_INCUS"),
 			},
 			&cli.StringFlag{
 				Name:    "healthd-network",
@@ -137,13 +144,34 @@ func newUpCommand() *cli.Command {
 			}
 
 			if usesHealthd {
+				healthdIncus, healthdNetwork := p.HealthdConfig()
+				if cmd.String("healthd-incus") != "" {
+					healthdIncus = cmd.String("healthd-incus")
+				}
+				if cmd.String("healthd-network") != "" {
+					healthdNetwork = cmd.String("healthd-network")
+				}
+
+				var (
+					incus *url.URL
+					err   error
+				)
+				if healthdIncus != "" {
+					incus, err = url.Parse(healthdIncus)
+					if err != nil {
+						globalClient.LogError("Parsing the URL given with `--healthd-incus` failed", "error", err)
+						return errLogged.Wrap(errors.New("parsing error"))
+					}
+				}
+
 				hparams := healthdParams{
 					projectName: p.Name,
 					binary:      cmd.String("healthd-binary"),
 					image:       resolveHealthdImage(cmd.String("healthd-image")),
 					pull:        cmd.String("pull"),
 					reCreate:    cmd.Bool("recreate"),
-					network:     cmd.String("healthd-network"),
+					incus:       incus,
+					network:     healthdNetwork,
 					timeout:     cmd.Duration("timeout"),
 					stdout:      cmd.Root().Writer,
 					stderr:      cmd.Root().ErrWriter,

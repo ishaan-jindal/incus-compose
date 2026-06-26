@@ -192,9 +192,9 @@ func TestInstanceConfig(t *testing.T) {
 	assert.Equal(t, "always", config["user.restart"])
 	assert.Equal(t, "2", config["limits.cpu"])
 	assert.Equal(t, "512MiB", config["limits.memory"])
-	assert.Equal(t, client.HealthStatusStarting, config[client.HealthConfigKey])
-	assert.Equal(t, `["CMD","curl","-f","http://localhost"]`, config["user.healthcheck.test"])
-	assert.Equal(t, "3", config["user.healthcheck.retries"])
+	assert.Equal(t, client.HealthStatusUnknown, config[client.HealthStatusKey])
+	assert.Equal(t, `["CMD","curl","-f","http://localhost"]`, config[client.HealthKeyPrefix+"test"])
+	assert.Equal(t, "3", config[client.HealthKeyPrefix+"retries"])
 }
 
 func TestInstanceConfigMinimal(t *testing.T) {
@@ -203,7 +203,7 @@ func TestInstanceConfigMinimal(t *testing.T) {
 	config, err := instanceConfig(types.ServiceConfig{Name: "web"})
 	require.NoError(t, err)
 	// Only the default restart policy is applied.
-	assert.Equal(t, map[string]string{"boot.autostart": "false"}, config)
+	assert.Equal(t, map[string]string{"boot.autostart": "false", client.HealthStatusKey: client.HealthStatusUnknown}, config)
 }
 
 func TestInstanceConfigXIncusOverrides(t *testing.T) {

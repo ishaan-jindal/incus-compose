@@ -576,7 +576,23 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 		return r.client.hookAfter(ctx, ActionStart, r, options, nil)
 	}
 
-	return r.client.hookAfter(ctx, ActionStart, r, options, r.start(ctx, options))
+	err := r.start(ctx, options)
+	if err != nil {
+		return r.client.hookAfter(ctx, ActionStart, r, options, err)
+	}
+
+	if options.Healthd {
+		// Wait for the healthcheck to success if a test is defined.
+		_, ok := r.IncusInstance.Config[HealthKeyPrefix+"test"]
+		if ok {
+			err = r.waitForHealthCheck(ctx, ActionStart, options)
+			if err != nil {
+				return r.client.hookAfter(ctx, ActionStart, r, options, err)
+			}
+		}
+	}
+
+	return r.client.hookAfter(ctx, ActionStart, r, options, nil)
 }
 
 // Running returns true if the instance is running.
@@ -586,6 +602,41 @@ func (r *Instance) Running() bool {
 	}
 
 	return r.IncusInstance.StatusCode == incusApi.Running
+}
+
+func (r *Instance) waitForHealthCheck(ctx context.Context, action Action, options Options) error {
+	var cancel context.CancelFunc
+	if options.Timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, options.Timeout)
+	} else {
+		ctx, cancel = context.WithCancel(ctx)
+	}
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		err := r.fetch()
+		if err == nil && r.IncusInstance.Config[HealthStatusKey] == HealthStatusHealthy {
+			r.client.LogDebug("Ready", "resource", r)
+
+			cancel()
+			return nil
+		}
+
+		r.client.globalClient.emitProgress(action, r, options, Progress{
+			Percent: -1,
+			Text:    "Waiting for the healthcheck",
+		})
+
+		select {
+		case <-ticker.C:
+			r.client.LogDebug("Waiting for the healthcheck", "resource", r)
+		case <-ctx.Done():
+			cancel()
+			return fmt.Errorf("did not reach status %q within %s", HealthStatusHealthy, options.Timeout)
+		}
+	}
 }
 
 // waitForDependencies blocks until all Config.Dependencies reach their required
@@ -607,7 +658,7 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 		ctx, cancel = context.WithCancel(ctx)
 	}
 
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
 	for depName, requiredStatus := range r.Config.Dependencies {
@@ -621,14 +672,14 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 		})
 		for {
 			inst, _, err := r.conn.GetInstance(depName)
-			if err == nil && inst.Config[HealthConfigKey] == requiredStatus {
+			if err == nil && inst.Config[HealthStatusKey] == requiredStatus {
 				r.client.LogDebug("Dependency ready", "dep", depName)
 				break
 			}
 
 			select {
 			case <-ticker.C:
-				r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "status", inst.Config[HealthConfigKey])
+				r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "status", inst.Config[HealthStatusKey])
 			case <-ctx.Done():
 				cancel()
 				return fmt.Errorf("dependency %q did not reach status %q within %s", depName, requiredStatus, timeout)
@@ -801,7 +852,7 @@ func (r *Instance) PushFiles() error {
 // Directories are owned by oci.UID/oci.GID to match the container user.
 // Uses slash-separated paths so it works regardless of host OS.
 func (r *Instance) mkdirP(dirPath string, mode int) error {
-	r.client.LogDebug("Creating directories", "dir", dirPath)
+	r.client.LogDebug("Creating directories", "resource", r, "dir", dirPath)
 
 	dirs := []string{}
 	p := path.Clean(dirPath)

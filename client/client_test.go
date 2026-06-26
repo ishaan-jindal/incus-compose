@@ -54,7 +54,7 @@ func TestClientDescriptionFormat(t *testing.T) {
 	t.Parallel()
 	client := NewOfflineClient(context.Background(), "my_project")
 
-	require.Equal(t, "incus-compose: %s", client.globalClient.Config.DescriptionFormat)
+	require.Equal(t, "incus-compose: %s", client.globalClient.config.DescriptionFormat)
 	require.Equal(t, "incus-compose: my_project:%s", client.Config().DescriptionFormat)
 	require.Equal(t, "incus-compose: my_project:web", fmt.Sprintf(client.Config().DescriptionFormat, "web"))
 }
@@ -63,7 +63,7 @@ func TestClientCustomDescriptionFormat(t *testing.T) {
 	t.Parallel()
 	gc := New(context.Background(), ClientDescriptionFormat("managed-by-test: %s"))
 
-	config := gc.Config
+	config := gc.config
 	config.DescriptionFormat = fmt.Sprintf(config.DescriptionFormat, "demo") + ":%s"
 
 	require.Equal(t, "managed-by-test: demo:web", fmt.Sprintf(config.DescriptionFormat, "web"))

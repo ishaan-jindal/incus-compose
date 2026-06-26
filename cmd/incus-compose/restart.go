@@ -21,7 +21,7 @@ func newRestartCommand() *cli.Command {
 			&cli.DurationFlag{
 				Name:  "timeout",
 				Usage: "Timeout for stopping and starting",
-				Value: 10 * time.Second,
+				Value: 1 * time.Minute,
 			},
 			&cli.BoolFlag{
 				Name:  "with-deps",
@@ -71,7 +71,8 @@ func newRestartCommand() *cli.Command {
 			runOpts := []client.Option{
 				client.OptionTimeout(timeout),
 			}
-			if !withDeps {
+			_, err = healthdResolve(c)
+			if err != nil || (!withDeps && cmd.Args().Len() > 0) {
 				runOpts = append(runOpts, client.OptionNoHealthd())
 			}
 

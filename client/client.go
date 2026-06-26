@@ -48,7 +48,7 @@ type Client struct {
 }
 
 func (c *GlobalClient) newProjectClient(name, incusName string, created bool) (*Client, error) {
-	config := c.Config
+	config := c.config
 	config.DescriptionFormat = fmt.Sprintf(config.DescriptionFormat, name) + ":%s"
 
 	incus := c.incus.UseProject(incusName)
@@ -320,7 +320,7 @@ func (c *Client) FindHealthd() (string, error) {
 	}
 
 	for _, inst := range instances {
-		if inst.Config["user.healthcheck.daemon"] == "true" {
+		if inst.Config[HealthKeyPrefix+"daemon"] == "true" {
 			return inst.Name, nil
 		}
 	}

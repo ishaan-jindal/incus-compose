@@ -29,6 +29,7 @@ type ProjectStatus struct {
 	IncusName   string   `json:"incus_name" yaml:"incus_name"`
 	Image       string   `json:"image" yaml:"image"`
 	Status      string   `json:"status" yaml:"status"`
+	Health      string   `json:"health" yaml:"health"`
 	Addresses   []string `json:"addresses" yaml:"addresses"`
 }
 
@@ -77,7 +78,7 @@ func (c *ContainerStatuses) JSON() error {
 // Table outputs statuses as a formatted table.
 func (c *ContainerStatuses) Table() error {
 	tw := tabwriter.NewWriter(c.Writer, 0, 0, 2, ' ', 0)
-	_, err := fmt.Fprintln(tw, "KIND\tNAME\tINCUSNAME\tIMAGE\tSTATUS\tADDRESSES")
+	_, err := fmt.Fprintln(tw, "KIND\tNAME\tINCUSNAME\tIMAGE\tSTATUS\tHEALTH\tADDRESSES")
 	if err != nil {
 		return err
 	}
@@ -91,12 +92,13 @@ func (c *ContainerStatuses) Table() error {
 				addrs += ", " + a
 			}
 		}
-		_, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+		_, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			s.Kind,
 			s.Name,
 			s.IncusName,
 			s.Image,
 			s.Status,
+			s.Health,
 			addrs,
 		)
 
@@ -231,6 +233,7 @@ func newListCommand() *cli.Command {
 					IncusName:   r.IncusName(),
 					Image:       "",
 					Status:      s,
+					Health:      "",
 					Addresses:   []string{},
 				}
 
@@ -277,8 +280,8 @@ func newListCommand() *cli.Command {
 					}
 
 					// Use the healthcheck status if available.
-					if val, ok := instFull.Config["user.healthcheck.status"]; ok {
-						status.Status = status.Status + " / " + titleCaser.String(val)
+					if val, ok := instFull.Config[client.HealthStatusKey]; ok {
+						status.Health = titleCaser.String(val)
 					}
 				}
 

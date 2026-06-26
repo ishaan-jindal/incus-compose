@@ -23,12 +23,14 @@ import (
 
 	incus "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
+
+	"github.com/lxc/incus-compose/client"
 )
 
 // Runner manages all health checkers.
 type Runner struct {
 	config *Config
-	client incus.InstanceServer
+	conn   incus.InstanceServer
 
 	knownMu       sync.Mutex
 	knownCheckers map[string]struct{}
@@ -48,28 +50,78 @@ func NewRunner(cfg *Config) (*Runner, error) {
 
 // Run starts all health checkers and blocks until context is cancelled.
 func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
-	client, err := r.connect()
+	conn, err := r.connect()
 	if err != nil {
 		return fmt.Errorf("connecting to incus: %w", err)
 	}
-	r.client = client.UseProject(r.config.Projects[0])
+	r.conn = conn.UseProject(r.config.Projects[0])
 
 	slog.Debug("connected to incus", "project", r.config.Projects[0])
+
+	err = r.writeStatus(client.HealthStatusHealthy)
+	if err != nil {
+		return err
+	}
 
 	for {
 		r.startCheckers(ctx)
 
 		select {
 		case <-ctx.Done():
-			return nil
+			return r.writeStatus(client.HealthStatusUnhealthy)
 		case <-reload:
 			slog.Info("loading additional checkers")
 		}
 	}
 }
 
+func (r *Runner) findHealthd() (string, error) {
+	if r.conn == nil {
+		return "", client.ErrNotFound
+	}
+
+	instances, err := r.conn.GetInstances("")
+	if err != nil {
+		return "", client.ErrUnknown.Wrap(fmt.Errorf("listing instances: %w", err))
+	}
+
+	for _, inst := range instances {
+		if inst.Config[client.HealthKeyPrefix+"daemon"] == "true" {
+			return inst.Name, nil
+		}
+	}
+
+	return "", client.ErrNotFound
+}
+
+func (r *Runner) writeStatus(status string) error {
+	name, err := r.findHealthd()
+	if err != nil {
+		return fmt.Errorf("finding healthd: %w", err)
+	}
+
+	slog.Debug("Writing status", "healthd", name, "status", status)
+
+	inst, etag, err := r.conn.GetInstance(name)
+	if err != nil {
+		return err
+	}
+
+	inst.Config[client.HealthStatusKey] = status
+	op, err := r.conn.UpdateInstance(name, inst.Writable(), etag)
+	if err != nil {
+		return err
+	}
+
+	if err := op.Wait(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (r *Runner) startCheckers(ctx context.Context) {
-	instances, err := r.discover(r.client)
+	instances, err := r.discover(r.conn)
 	if err != nil {
 		slog.Warn("instance discovery had errors", "error", err)
 	}
@@ -86,7 +138,7 @@ func (r *Runner) startCheckers(ctx context.Context) {
 			continue
 		}
 
-		checker := NewChecker(r.client, name, inst)
+		checker := NewChecker(r.conn, name, inst)
 		go func() {
 			defer func() {
 				r.knownMu.Lock()
@@ -207,8 +259,8 @@ func (r *Runner) register(tokenPath string) error {
 // Per-instance parse errors are collected and returned as a joined error;
 // valid instance are still registered so one broken instances cannot stop
 // the daemon.
-func (r *Runner) discover(client incus.InstanceServer) (map[string]InstanceConfig, error) {
-	incusInstances, err := client.GetInstances(incusApi.InstanceTypeAny)
+func (r *Runner) discover(conn incus.InstanceServer) (map[string]InstanceConfig, error) {
+	incusInstances, err := conn.GetInstances(incusApi.InstanceTypeAny)
 	if err != nil {
 		return nil, fmt.Errorf("listing instances: %w", err)
 	}
@@ -217,19 +269,19 @@ func (r *Runner) discover(client incus.InstanceServer) (map[string]InstanceConfi
 	var errs error
 
 	for _, inst := range incusInstances {
-		if inst.Config["user.healthcheck.daemon"] == "true" {
+		if inst.Config[client.HealthKeyPrefix+"daemon"] == "true" {
 			continue
 		}
 
 		restart := false
 		if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, inst.Config["user.restart"]) {
 			restart = true
-			if inst.Config["user.healthcheck.test"] == "" {
-				inst.Config["user.healthcheck.test"] = "[\"NONE\"]"
+			if inst.Config[client.HealthKeyPrefix+"test"] == "" {
+				inst.Config[client.HealthKeyPrefix+"test"] = "[\"NONE\"]"
 			}
 		}
 
-		if inst.Config["user.healthcheck.test"] == "" && !restart {
+		if inst.Config[client.HealthKeyPrefix+"test"] == "" && !restart {
 			continue
 		}
 
@@ -259,7 +311,7 @@ func parseInstance(cfg map[string]string) (InstanceConfig, error) {
 		RestartDelay:  defaultRestartDelay,
 	}
 
-	if err := json.Unmarshal([]byte(cfg["user.healthcheck.test"]), &svc.Test); err != nil {
+	if err := json.Unmarshal([]byte(cfg[client.HealthKeyPrefix+"test"]), &svc.Test); err != nil {
 		return svc, fmt.Errorf("parsing test: %w", err)
 	}
 
@@ -267,7 +319,7 @@ func parseInstance(cfg map[string]string) (InstanceConfig, error) {
 		return svc, errors.New("CMD-SHELL requires a command")
 	}
 
-	if v := cfg["user.healthcheck.start_period"]; v != "" {
+	if v := cfg[client.HealthKeyPrefix+"start_period"]; v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
 			return svc, fmt.Errorf("parsing start_period: %w", err)
@@ -275,7 +327,7 @@ func parseInstance(cfg map[string]string) (InstanceConfig, error) {
 		svc.StartPeriod = d
 	}
 
-	if v := cfg["user.healthcheck.start_interval"]; v != "" {
+	if v := cfg[client.HealthKeyPrefix+"start_interval"]; v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
 			return svc, fmt.Errorf("parsing start_interval: %w", err)
@@ -283,7 +335,7 @@ func parseInstance(cfg map[string]string) (InstanceConfig, error) {
 		svc.StartInterval = d
 	}
 
-	if v := cfg["user.healthcheck.interval"]; v != "" {
+	if v := cfg[client.HealthKeyPrefix+"interval"]; v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
 			return svc, fmt.Errorf("parsing interval: %w", err)
@@ -291,7 +343,7 @@ func parseInstance(cfg map[string]string) (InstanceConfig, error) {
 		svc.Interval = d
 	}
 
-	if v := cfg["user.healthcheck.timeout"]; v != "" {
+	if v := cfg[client.HealthKeyPrefix+"timeout"]; v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
 			return svc, fmt.Errorf("parsing timeout: %w", err)
@@ -299,7 +351,7 @@ func parseInstance(cfg map[string]string) (InstanceConfig, error) {
 		svc.Timeout = d
 	}
 
-	if v := cfg["user.healthcheck.retries"]; v != "" {
+	if v := cfg[client.HealthKeyPrefix+"retries"]; v != "" {
 		n, err := strconv.ParseUint(v, 10, 32)
 		if err != nil {
 			return svc, fmt.Errorf("parsing retries: %w", err)

@@ -97,7 +97,9 @@ func newStopCommand() *cli.Command {
 				client.OptionForce(),
 				client.OptionTimeout(timeout),
 			}
-			if !withDeps {
+
+			_, err = healthdResolve(c)
+			if err != nil || (!withDeps && cmd.Args().Len() > 0) {
 				stopOpts = append(stopOpts, client.OptionNoHealthd())
 			}
 

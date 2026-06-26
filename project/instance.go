@@ -152,33 +152,33 @@ func instanceConfig(service types.ServiceConfig) (map[string]string, error) {
 	}
 
 	// Healtcheck
-	if service.HealthCheck != nil {
-		config[client.HealthConfigKey] = client.HealthStatusStarting
+	config[client.HealthStatusKey] = client.HealthStatusUnknown
 
+	if service.HealthCheck != nil {
 		testB, err := json.Marshal(service.HealthCheck.Test)
 		if err != nil {
 			return nil, fmt.Errorf("converting service %q healthcheck test: %w", service.Name, err)
 		}
-		config["user.healthcheck.test"] = string(testB)
+		config[client.HealthKeyPrefix+"test"] = string(testB)
 
 		if service.HealthCheck.StartPeriod != nil {
-			config["user.healthcheck.start_period"] = service.HealthCheck.StartPeriod.String()
+			config[client.HealthKeyPrefix+"start_period"] = service.HealthCheck.StartPeriod.String()
 		}
 
 		if service.HealthCheck.StartInterval != nil {
-			config["user.healthcheck.start_interval"] = service.HealthCheck.StartInterval.String()
+			config[client.HealthKeyPrefix+"start_interval"] = service.HealthCheck.StartInterval.String()
 		}
 
 		if service.HealthCheck.Interval != nil {
-			config["user.healthcheck.interval"] = service.HealthCheck.Interval.String()
+			config[client.HealthKeyPrefix+"interval"] = service.HealthCheck.Interval.String()
 		}
 
 		if service.HealthCheck.Retries != nil {
-			config["user.healthcheck.retries"] = strconv.FormatUint(*service.HealthCheck.Retries, 10)
+			config[client.HealthKeyPrefix+"retries"] = strconv.FormatUint(*service.HealthCheck.Retries, 10)
 		}
 
 		if service.HealthCheck.Timeout != nil {
-			config["user.healthcheck.timeout"] = service.HealthCheck.Timeout.String()
+			config[client.HealthKeyPrefix+"timeout"] = service.HealthCheck.Timeout.String()
 		}
 	}
 
