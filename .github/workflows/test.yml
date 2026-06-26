@@ -50,7 +50,17 @@ jobs:
 
   test:
     needs: lint
-    runs-on: [self-hosted, incus-compose-local]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            runs-on: [self-hosted, incus-compose, default]
+          - name: custom-storage
+            runs-on: [self-hosted, incus-compose, custom-storage]
+          - name: custom-network
+            runs-on: [self-hosted, incus-compose, custom-network]
+    runs-on: ${{ matrix.runs-on }}
     permissions:
       contents: read
       checks: write # publish JUnit results as a check run
@@ -93,7 +103,7 @@ jobs:
         if: always()
         uses: dorny/test-reporter@v3
         with:
-          name: Go Tests (ict)
+          name: Go Tests (${{ matrix.name }})
           path: ${{ env.REPORTS_DIR }}/junit.xml
           reporter: java-junit
           fail-on-error: false
@@ -102,64 +112,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: go-test-reports
-          path: ${{ env.REPORTS_DIR }}
-          if-no-files-found: ignore
-
-  test-custom:
-    needs: lint
-    runs-on: [self-hosted, incus-compose]
-    permissions:
-      contents: read
-      checks: write # publish JUnit results as a check run
-    env:
-      INCUS_REMOTE: ict-custom
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: false
-
-      - name: Test
-        run: |
-          mkdir -p "$REPORTS_DIR"
-          go mod tidy -v -diff
-          set -o pipefail
-          NO_COLOR=1 go test ./... -count=1 -parallel=2 -v -cover \
-            -coverprofile="$REPORTS_DIR/go-test-coverage.txt" 2>&1 \
-            | tee "$REPORTS_DIR/go-test-results.txt"
-
-      - name: Generate JUnit and coverage reports
-        if: always()
-        run: |
-          if [[ -s "$REPORTS_DIR/go-test-results.txt" ]]; then
-            go install github.com/jstemmer/go-junit-report/v2@latest
-            "$(go env GOPATH)/bin/go-junit-report" \
-              -in "$REPORTS_DIR/go-test-results.txt" -out "$REPORTS_DIR/junit.xml"
-          fi
-          if [[ -s "$REPORTS_DIR/go-test-coverage.txt" ]]; then
-            go install gitlab.com/adiproject/gocover-report@latest
-            "$(go env GOPATH)/bin/gocover-report" \
-              -cobertura="$REPORTS_DIR/cobertura.xml" "$REPORTS_DIR/go-test-coverage.txt"
-          fi
-
-      - name: Publish test results
-        if: always()
-        uses: dorny/test-reporter@v3
-        with:
-          name: Go Tests (ict-custom)
-          path: ${{ env.REPORTS_DIR }}/junit.xml
-          reporter: java-junit
-          fail-on-error: false
-
-      - name: Upload test reports
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: go-test-custom-reports
+          name: go-test-reports-${{ matrix.name }}
           path: ${{ env.REPORTS_DIR }}
           if-no-files-found: ignore
