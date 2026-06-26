@@ -27,7 +27,8 @@ there.
 ## 2. Install base packages — _container (root)_
 
 ```bash
-apt install sudo-rs vim golang git shellcheck
+apt install sudo sudo-rs vim golang git shellcheck
+ln -s /usr/sbin/sudo-rs /usr/local/sbin/sudo
 ```
 
 ## 3. Install Incus from the Zabbly repository — _container (root)_
@@ -66,8 +67,8 @@ login, so log out and back in afterwards to pick it up.
 
 ```bash
 sudo -u runner -iH
-mkdir ~/bin
-curl -sSfL https://golangci-lint.run/install.sh | sh -s -b ~/.local/bin
+mkdir -p ~/.local/bin
+curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b ~/.local/bin
 exit
 
 sudo -u runner -iH
@@ -103,8 +104,8 @@ incus remote generate-certificate
 incus config trust add-certificate ~/.config/incus/client.crt
 ip a show dev incusbr0
 export IP=<ip-from-above>
-incus config set core.https_address=$IP:8443
-incus remote add local-https https://$IP:8443 --accept-certificate
+incus config set core.https_address=:8443
+incus remote add local-https $IP --accept-certificate
 ```
 
 ## 9. Download the GitHub Actions runner — _runner user_
