@@ -95,7 +95,7 @@ release-healthd-image tag="ghcr.io/lxc/incus-compose/ic-healthd:latest": build-h
 
 # Release incus-compose
 release tag="0.0.1-dev0" healthd_image="ghcr.io/lxc/incus-compose/ic-healthd": build-healthd-image
-    git tag {{ tag }}
+    git tag v{{ tag }}
     echo "${GITHUB_TOKEN}" | podman login --username "${GITHUB_USERNAME}" --password-stdin ghcr.io
     podman push {{ healthd_image }}:latest
     podman tag {{ healthd_image }}:latest {{ healthd_image }}:{{ tag }}
