@@ -18,39 +18,34 @@ v_test_procs := env("TEST_PROCS", `expr $(nproc) / 2`)
 default:
     @just --list
 
+# Run tests against nested Incus, includes direct incus tests.
+test folder="./..." *args:
+    gotestsum --rerun-fails --hide-summary=skipped --jsonfile=test/logs/`date +%Y%m%d-%H%M%S`.json --packages={{ folder }} -- -parallel {{ v_test_procs }} -coverprofile=coverage.out -covermode=atomic -v {{ args }}
+
 # Run local unit-tests, incus-facing tests are skipped.
 [env("INCUS_COMPOSE_TEST_LOCAL", "1")]
-[env("NO_COLOR", "1")]
 test-local folder="./..." *args:
-    @just log-run "test/logs/`date +%Y%m%d-%H%M%S`-test-local.log" "go test {{ folder }} -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}"
-
-# Run tests against nested Incus, includes direct incus tests.
-[env("NO_COLOR", "1")]
-test folder="./..." *args:
-    @just log-run "test/logs/`date +%Y%m%d-%H%M%S`-test.log" "go test {{ folder }} -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}"
-
-# Run the tests with a race detector.
-test-race folder="./..." *args:
-    @just test {{ folder }} -race -count=1 {{ args }}
+    @just test {{ folder }} {{ args }}
 
 # Run all tests against nested Incus, includes direct incus as well as slow tests.
 [env("INCUS_COMPOSE_TEST_SLOW", "1")]
-[env("NO_COLOR", "1")]
 test-slow folder="./..." *args:
-    @just log-run "test/logs/`date +%Y%m%d-%H%M%S`-test-slow.log" "go test {{ folder }} -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}"
+    @just test {{ folder }} {{ args }}
+
+# Run the tests with a race detector.
+test-race folder="./..." *args:
+  gotestsum --hide-summary=skipped --jsonfile=test/logs/`date +%Y%m%d-%H%M%S`.json --packages={{ folder }} -- -parallel {{ v_test_procs }} -race -v {{ args }}
 
 # Update snapshots for long running tests.
 [env("INCUS_COMPOSE_TEST_SLOW", "1")]
-[env("NO_COLOR", "1")]
 [env("UPDATE_SNAPSHOTS", "1")]
 update-slow-snapshots folder="./..." *args:
-    @just log-run "test/logs/`date +%Y%m%d-%H%M%S`-update-slow.log" "go test {{ folder }} -count=1 -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}"
+  @just test {{ folder }} {{ args }}
 
 # Update snapshot test files that require a remote
-[env("NO_COLOR", "1")]
 [env("UPDATE_SNAPSHOTS", "1")]
 update-snapshots folder="./..." *args:
-    @just log-run "test/logs/`date +%Y%m%d-%H%M%S`-update.log" "go test {{ folder }} -count=1 -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}"
+  @just test {{ folder }} {{ args }}
 
 [private]
 log-run logfile="" cmd="":
