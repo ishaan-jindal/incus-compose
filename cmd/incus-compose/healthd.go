@@ -179,6 +179,7 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			client.HealthKeyPrefix + "daemon": "true",
 		},
 		Resources: []client.Resource{img},
+		Priority:  client.PriorityInstance - 1,
 	}
 
 	instanceConfig.Devices = append(instanceConfig.Devices, client.InstanceDevice{
@@ -204,6 +205,169 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 		return nil, nil, client.ErrUnknown.WithResource(instRes)
 	}
 
+	c.AddHookBefore(func(ctx context.Context, action client.Action, r client.Resource, _ client.Options, err error) error {
+		if err != nil || action != client.ActionEnsure || r.IncusName() != inst.IncusName() {
+			return err
+		}
+
+		ref, err := parseHealthdNetwork(c, params.network)
+		if err != nil {
+			return err
+		}
+
+		var netRes client.Resource
+		switch {
+		case ref.deflt:
+			// The project's own default network. healthd may bring it up before the
+			// rest of the project, so allow creation.
+			netRes, err = c.Resource(client.KindNetwork, ref.name, &client.NetworkConfig{})
+		case ref.project != "" && ref.project != c.Project():
+			// A managed network in another project; must pre-exist (External).
+			var nc *client.Client
+			nc, err = c.Global().EnsureProject(ref.project)
+			if err != nil {
+				return fmt.Errorf("failed to fetch the healthd network: %w", err)
+			}
+
+			netRes, err = nc.Resource(client.KindNetwork, ref.name, &client.NetworkConfig{External: true})
+		default:
+			// A referenced network in this project or a host bridge; must pre-exist.
+			netRes, err = c.Resource(client.KindNetwork, ref.name, &client.NetworkConfig{External: true})
+		}
+		if err != nil {
+			return fmt.Errorf("failed to get a healthd network: %w", err)
+		}
+
+		err = client.RunAction(ctx, netRes, client.ActionEnsure)
+		if err != nil {
+			return fmt.Errorf("failed to ensure a network for healthd: %w", err)
+		}
+
+		network, ok := netRes.(*client.Network)
+		if !ok {
+			return client.ErrUnknown.WithResource(netRes).WithText("failed to cast")
+		}
+
+		inst.Config.Resources = append(inst.Config.Resources, network)
+
+		var incusURL *url.URL
+		if params.incus != nil {
+			incusURL = params.incus
+		} else {
+			if !c.IsRemote() {
+				return errors.New("healthd works only with a https connection, provide one with INCUS_COMPOSE_HEALTHD_INCUS")
+			}
+
+			u, err := c.Global().URL()
+			if err != nil {
+				return fmt.Errorf("failed to get the url: %w", err)
+			}
+
+			if network.IncusNetwork.Config["ipv4.address"] == "" {
+				return fmt.Errorf("ip of network %q is empty", network.Name())
+			}
+
+			ipSplit := strings.Split(network.IncusNetwork.Config["ipv4.address"], "/")
+			ip := net.ParseIP(ipSplit[0])
+			if ip == nil {
+				return fmt.Errorf("result is nil while parsing ip '%v'", ipSplit[0])
+			}
+
+			u.Host = fmt.Sprintf("%s:%s", ip.String(), u.Port())
+			incusURL = u
+		}
+
+		inst.Config.Config["user.healthd.incusurl"] = incusURL.String()
+
+		token, err := healthdCreateToken(c)
+		if err != nil {
+			c.LogWarn("Failed to get a token", "error", err)
+			token = ""
+		}
+
+		if inst.Config.Files == nil {
+			inst.Config.Files = make(map[string]client.InstanceFile)
+		}
+
+		inst.Config.Files["/etc/ic-healthd/token"] = client.InstanceFile{
+			Content: &closingBufferReader{bytes.NewReader([]byte(token))},
+			UID:     -1,
+			GID:     -1,
+			Mode:    0o400,
+			DirMode: 0o700,
+		}
+
+		inst.Config.Devices = append(inst.Config.Devices, client.InstanceDevice{
+			Name: "eth0",
+			Config: client.InstanceDeviceConfig{
+				DeviceType:  client.InstanceDeviceTypeNic,
+				NetworkName: netRes.IncusName(),
+			},
+		})
+
+		flags := []string{fmt.Sprintf(" --incus=%s --project=%s", incusURL.String(), c.IncusProject())}
+		if c.IsDebugging() {
+			flags = append(flags, " --debug")
+		}
+
+		if params.binary != "" {
+			f, err := filepath.Abs(params.binary)
+			if err != nil {
+				return err
+			}
+
+			inst.Config.Files["/usr/local/bin/ic-healthd"] = client.InstanceFile{
+				File:    f,
+				UID:     -1,
+				GID:     -1,
+				Mode:    0o700,
+				DirMode: 0o700,
+			}
+		} else {
+			// c.LogDebug("Setting entrypoint")
+			inst.Config.Config["oci.entrypoint"] = "/usr/local/bin/ic-healthd run" + strings.Join(flags, " ")
+		}
+
+		return err
+	})
+
+	c.AddHookAfter(func(ctx context.Context, action client.Action, r client.Resource, args client.Options, err error) error {
+		if err != nil || action != client.ActionStart || r.IncusName() != inst.IncusName() {
+			return err
+		}
+
+		if params.binary != "" {
+			flags := []string{fmt.Sprintf(" --incus=%s --project=%s", inst.Config.Config["user.healthd.incusurl"], c.IncusProject())}
+			if c.IsDebugging() {
+				flags = append(flags, " --debug")
+			}
+
+			cmd := []string{
+				"sh", "-c",
+				`nohup /usr/local/bin/ic-healthd run` + strings.Join(flags, " ") + `> /var/log/ic-healthd.log 2>&1 &`,
+			}
+			execReq := incusApi.InstanceExecPost{
+				Command:     cmd,
+				WaitForWS:   false,
+				Interactive: false,
+			}
+			conn, err := c.Connection()
+			if err != nil {
+				return err
+			}
+
+			op, err := conn.ExecInstance(inst.IncusName(), execReq, nil)
+			if err != nil {
+				return err
+			}
+			if err := op.Wait(); err != nil {
+				return err
+			}
+		}
+
+		return healthdRegisterReloader(c, inst)
+	})
+
 	return inst, []client.Resource{img, volume}, nil
 }
 
@@ -218,186 +382,25 @@ type healthdNetworkRef struct {
 // parseHealthdNetwork decodes the healthd network selector. An empty value means
 // the project's default network. A "<project>:<network>" value references a
 // managed network that must already exist; anything else is a host bridge name.
-func parseHealthdNetwork(network string) (healthdNetworkRef, error) {
+func parseHealthdNetwork(c *client.Client, network string) (healthdNetworkRef, error) {
 	if network == "" {
 		return healthdNetworkRef{name: "default", deflt: true}, nil
 	}
 
 	if strings.Contains(network, ":") {
-		netProject, netName, _ := strings.Cut(network, ":")
-		if netProject == "" || netName == "" || strings.Contains(netName, ":") {
+		p, n, _ := strings.Cut(network, ":")
+
+		if p == "" {
+			p = c.Project()
+		}
+		if n == "" || strings.Contains(n, ":") {
 			return healthdNetworkRef{}, errors.New("`--healthd-network` is wrong, need something like `<project>:<network>` or `<bridge>`")
 		}
 
-		return healthdNetworkRef{project: netProject, name: netName}, nil
+		return healthdNetworkRef{project: p, name: n}, nil
 	}
 
 	return healthdNetworkRef{name: network}, nil
-}
-
-// healthdUp generates a restricted Incus token, writes it (and optionally a local binary)
-// into the instance via InstanceConfig.Files, ensures (creates) the instance, and starts it.
-func healthdUp(ctx context.Context, c *client.Client, inst *client.Instance, resources []client.Resource, params healthdParams) error {
-	ref, err := parseHealthdNetwork(params.network)
-	if err != nil {
-		return err
-	}
-
-	var netRes client.Resource
-	switch {
-	case ref.deflt:
-		// The project's own default network. healthd may bring it up before the
-		// rest of the project, so allow creation.
-		netRes, err = c.Resource(client.KindNetwork, ref.name, &client.NetworkConfig{})
-	case ref.project != "" && ref.project != c.Project():
-		// A managed network in another project; must pre-exist (External).
-		var nc *client.Client
-		nc, err = c.Global().EnsureProject(ref.project)
-		if err != nil {
-			return fmt.Errorf("failed to fetch the healthd network: %w", err)
-		}
-
-		netRes, err = nc.Resource(client.KindNetwork, ref.name, &client.NetworkConfig{External: true})
-	default:
-		// A referenced network in this project or a host bridge; must pre-exist.
-		netRes, err = c.Resource(client.KindNetwork, ref.name, &client.NetworkConfig{External: true})
-	}
-	if err != nil {
-		return fmt.Errorf("failed to get a healthd network: %w", err)
-	}
-
-	err = client.RunAction(ctx, netRes, client.ActionEnsure, client.OptionCreate())
-	if err != nil {
-		return fmt.Errorf("failed to ensure network %q: %w", netRes, err)
-	}
-
-	network, ok := netRes.(*client.Network)
-	if !ok {
-		return client.ErrUnknown.WithResource(netRes).WithText("failed to cast")
-	}
-
-	var incusURL *url.URL
-	if params.incus != nil {
-		incusURL = params.incus
-	} else {
-		if !c.IsRemote() {
-			return errors.New("healthd works only with a https connection, provide one with INCUS_COMPOSE_HEALTHD_INCUS")
-		}
-
-		u, err := c.Global().URL()
-		if err != nil {
-			return fmt.Errorf("failed to get the url: %w", err)
-		}
-
-		if network.IncusNetwork.Config["ipv4.address"] == "" {
-			return fmt.Errorf("ip of network %q is empty", network.Name())
-		}
-
-		ipSplit := strings.Split(network.IncusNetwork.Config["ipv4.address"], "/")
-		ip := net.ParseIP(ipSplit[0])
-		if ip == nil {
-			return fmt.Errorf("result is nil while parsing ip '%v'", ipSplit[0])
-		}
-
-		u.Host = fmt.Sprintf("%s:%s", ip.String(), u.Port())
-		incusURL = u
-	}
-
-	token, err := healthdCreateToken(c)
-	if err != nil {
-		c.LogWarn("Failed to get a token", "error", err)
-		token = ""
-	}
-
-	if inst.Config.Files == nil {
-		inst.Config.Files = make(map[string]client.InstanceFile)
-	}
-
-	inst.Config.Files["/etc/ic-healthd/token"] = client.InstanceFile{
-		Content: &closingBufferReader{bytes.NewReader([]byte(token))},
-		UID:     -1,
-		GID:     -1,
-		Mode:    0o400,
-		DirMode: 0o700,
-	}
-
-	inst.Config.Devices = append(inst.Config.Devices, client.InstanceDevice{
-		Name: "eth0",
-		Config: client.InstanceDeviceConfig{
-			DeviceType:  client.InstanceDeviceTypeNic,
-			NetworkName: netRes.IncusName(),
-		},
-	})
-
-	flags := []string{fmt.Sprintf(" --incus=%s --project=%s", incusURL.String(), c.IncusProject())}
-	if c.IsDebugging() {
-		flags = append(flags, " --debug")
-	}
-
-	if params.binary != "" {
-		f, err := filepath.Abs(params.binary)
-		if err != nil {
-			return err
-		}
-
-		inst.Config.Files["/usr/local/bin/ic-healthd"] = client.InstanceFile{
-			File:    f,
-			UID:     -1,
-			GID:     -1,
-			Mode:    0o700,
-			DirMode: 0o700,
-		}
-	} else {
-		// c.LogDebug("Setting entrypoint")
-		inst.Config.Config["oci.entrypoint"] = "/usr/local/bin/ic-healthd run" + strings.Join(flags, " ")
-	}
-
-	stack := client.NewStack(c, client.StackWorkers(params.workers))
-	stack.Add(resources...)
-	stack.Add(inst)
-
-	c.LogDebug("Ensure", "resources", stack.All())
-
-	ensureOpts := []client.Option{client.OptionCreate()}
-	if params.pull == "always" {
-		ensureOpts = append(ensureOpts, client.OptionPull())
-	}
-
-	if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, params.stdout, params.stderr, ensureOpts...); err != nil {
-		c.LogError("Creating healthd resources", "error", err)
-		return err
-	}
-
-	if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, params.stdout, params.stderr); err != nil {
-		c.LogError("Starting healthd resources", "error", err)
-		return err
-	}
-
-	if params.binary != "" {
-		cmd := []string{
-			"sh", "-c",
-			`nohup /usr/local/bin/ic-healthd run` + strings.Join(flags, " ") + `> /var/log/ic-healthd.log 2>&1 &`,
-		}
-		execReq := incusApi.InstanceExecPost{
-			Command:     cmd,
-			WaitForWS:   false,
-			Interactive: false,
-		}
-		conn, err := c.Connection()
-		if err != nil {
-			return err
-		}
-
-		op, err := conn.ExecInstance(inst.IncusName(), execReq, nil)
-		if err != nil {
-			return err
-		}
-		if err := op.Wait(); err != nil {
-			return err
-		}
-	}
-
-	return healthdRegisterReloader(c, inst)
 }
 
 // healthdDown stops the instance, deletes it, and revokes its Incus trust certificate.
@@ -903,8 +906,25 @@ func newHealthdUpCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			if err := healthdUp(ctx, c, inst, resources, params); err != nil {
-				globalClient.LogError("Starting healthd", "error", err)
+			stack := client.NewStack(c, client.StackWorkers(params.workers))
+			stack.Add(resources...)
+			stack.Add(inst)
+
+			c.LogDebug("Ensure", "resources", stack.All())
+
+			ensureOpts := []client.Option{client.OptionCreate()}
+			if params.pull == "always" {
+				ensureOpts = append(ensureOpts, client.OptionPull())
+			}
+
+			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, params.stdout, params.stderr, ensureOpts...); err != nil {
+				c.LogError("Creating healthd resources", "error", err)
+				finish(false)
+				return errLogged.Wrap(err)
+			}
+
+			if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, params.stdout, params.stderr); err != nil {
+				c.LogError("Starting healthd resources", "error", err)
 				finish(false)
 				return errLogged.Wrap(err)
 			}

@@ -6,6 +6,7 @@
     "incus_name": "ic-uf62fvkwl4",
     "image": "",
     "status": "Exists",
+    "health": "",
     "addresses": []
   },
   {
@@ -15,6 +16,7 @@
     "incus_name": "web-1",
     "image": "docker.io/library/nginx:alpine",
     "status": "Running",
+    "health": "Unknown",
     "addresses": [
       ""
     ]

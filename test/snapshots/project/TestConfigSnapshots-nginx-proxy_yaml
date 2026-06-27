@@ -73,3 +73,6 @@ networks:
   frontend:
     name: nginx-proxy_frontend
     driver: bridge
+x-incus-compose:
+  healthd:
+    network: :backend
