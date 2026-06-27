@@ -50,7 +50,7 @@ update-slow-snapshots folder="./..." *args:
 [env("NO_COLOR", "1")]
 [env("UPDATE_SNAPSHOTS", "1")]
 update-snapshots folder="./..." *args:
-    @just log-run "test/logs/`date +%Y%m%d-%H%M%S`-update-slow.log" "go test {{ folder }} -count=1 -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}"
+    @just log-run "test/logs/`date +%Y%m%d-%H%M%S`-update.log" "go test {{ folder }} -count=1 -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}"
 
 [private]
 log-run logfile="" cmd="":
@@ -60,8 +60,8 @@ log-run logfile="" cmd="":
 
 # Lint all files.
 lint folder="./...":
-  shellcheck **/*.sh
-  golangci-lint run {{ folder }}
+    shellcheck **/*.sh
+    golangci-lint run {{ folder }}
 
 # Lint and fix all files.
 fix folder="./...":
