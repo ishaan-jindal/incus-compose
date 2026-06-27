@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/lxc/incus-compose/client"
 )
 
 func TestParseHealthdNetwork(t *testing.T) {
@@ -37,11 +40,6 @@ func TestParseHealthdNetwork(t *testing.T) {
 			want:    healthdNetworkRef{name: "incusbr0"},
 		},
 		{
-			name:    "missing project errors",
-			network: ":default",
-			wantErr: true,
-		},
-		{
 			name:    "missing network errors",
 			network: "default:",
 			wantErr: true,
@@ -53,11 +51,12 @@ func TestParseHealthdNetwork(t *testing.T) {
 		},
 	}
 
+	c := client.NewOfflineClient(context.Background(), "default")
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := parseHealthdNetwork(tt.network)
+			got, err := parseHealthdNetwork(c, tt.network)
 			if tt.wantErr {
 				require.Error(t, err)
 				return

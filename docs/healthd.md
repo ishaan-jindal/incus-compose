@@ -149,14 +149,15 @@ x-incus-compose:
     # Incus API endpoint healthd connects to.
     # Default: the bridge IP of `network` below, with the port incus-compose
     # itself connected on.
-    incus: https://:8443
+    incus: https://<ip-of-the-projects-bridge>:8443
     # `<project>:<network>` for a managed network, or a plain bridge name.
+    # We assume the current project if you leave the first part empty.
     # Default: the `default` network of the current project.
-    network: default:default
+    network: :default
 ```
 
-| Flag                | Environment variable           | Compose key                       |
-| ------------------- | ------------------------------ | --------------------------------- |
+| Flag                | Environment variable            | Compose key                       |
+| ------------------- | ------------------------------- | --------------------------------- |
 | `--healthd-incus`   | `INCUS_COMPOSE_HEALTHD_INCUS`   | `x-incus-compose.healthd.incus`   |
 | `--healthd-network` | `INCUS_COMPOSE_HEALTHD_NETWORK` | `x-incus-compose.healthd.network` |
 
@@ -186,12 +187,12 @@ reach Incus over that bridge.
 
 ### Combinations
 
-| `network`                    | `incus` | Behavior                                      |
-| ---------------------------- | ------- | --------------------------------------------- |
-| default                      | empty   | Project bridge IP + client port (the default) |
-| default                      | URL     | Project bridge for the NIC, pinned endpoint   |
-| bridge / `project:network`   | empty   | Different bridge, auto-detected IP            |
-| bridge / `project:network`   | URL     | Different bridge, pinned endpoint             |
+| `network`                  | `incus` | Behavior                                      |
+| -------------------------- | ------- | --------------------------------------------- |
+| default                    | empty   | Project bridge IP + client port (the default) |
+| default                    | URL     | Project bridge for the NIC, pinned endpoint   |
+| bridge / `project:network` | empty   | Different bridge, auto-detected IP            |
+| bridge / `project:network` | URL     | Different bridge, pinned endpoint             |
 
 ## Security
 

@@ -83,6 +83,9 @@ type InstanceConfig struct {
 	// status (HealthStatusHealthy, HealthStatusStarting, HealthStatusUnhealthy).
 	// Instance.Start() blocks until all dependencies reach the required status.
 	Dependencies map[string]string
+
+	// Priority if set sets the instance priority to this instead PriorityInstance.
+	Priority int
 }
 
 // GetConfig returns the configuration.
@@ -134,6 +137,10 @@ func newInstance(c *Client, name string, configGetter Config) (*Instance, error)
 	}
 	config = cConfig
 
+	if config.Priority == 0 {
+		config.Priority = PriorityInstance
+	}
+
 	// Set defaults
 	if config.Type == "" {
 		config.Type = incusApi.InstanceTypeContainer
@@ -143,7 +150,7 @@ func newInstance(c *Client, name string, configGetter Config) (*Instance, error)
 	}
 
 	inst := &Instance{
-		BaseResource: NewBaseResource(KindInstance, name, PriorityInstance),
+		BaseResource: NewBaseResource(KindInstance, name, config.Priority),
 		client:       c,
 		incusName:    SanitizeIncusName(name, -1),
 		Config:       *config,
@@ -187,25 +194,23 @@ func (r *Instance) WaitIPs(ctx context.Context, timeout time.Duration) (ips []In
 		return nil, err
 	}
 
-	if !r.Running() {
-		return nil, ErrNotRunning.WithText("in WaitIPs")
-	}
-
 	deadline, cancel := context.WithTimeout(ctx, timeout)
 
 	for {
-		ips, err = r.client.InstanceIPs(r.IncusName())
-		if err == nil {
-			cancel()
-			return ips, nil
-		}
+		r.client.LogDebug("Waiting for IPs", "instance", r)
 
-		r.client.LogDebug("Waiting for IPs", "instance", r, "error", err)
+		if r.Running() {
+			ips, err = r.client.InstanceIPs(r.IncusName())
+			if err == nil {
+				cancel()
+				return ips, nil
+			}
+		}
 
 		select {
 		case <-deadline.Done():
 			cancel()
-			return nil, deadline.Err()
+			return nil, NewError("WaitIPs").Wrap(deadline.Err())
 		case <-time.After(250 * time.Millisecond):
 		}
 	}

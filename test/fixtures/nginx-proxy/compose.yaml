@@ -1,5 +1,9 @@
 name: nginx-proxy
 
+x-incus-compose:
+  healthd:
+    network: :backend
+
 services:
   nginx:
     image: docker.io/nginxinc/nginx-unprivileged:alpine

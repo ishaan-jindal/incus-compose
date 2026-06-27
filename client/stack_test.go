@@ -12,8 +12,8 @@ import (
 // Unit Tests (no Incus required)
 // ----------------------------------------------------------------------------
 
-// TestGroupByKind tests the batch grouping logic without Incus.
-func TestGroupByKind(t *testing.T) {
+// TestGroupByPriority tests the batch grouping logic without Incus.
+func TestGroupByPriority(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name        string
@@ -36,34 +36,34 @@ func TestGroupByKind(t *testing.T) {
 			wantSizes:   []int{1},
 		},
 		{
-			name: "same kind groups together",
+			name: "same priority groups together",
 			tasks: []Resource{
-				newMockResource("a", "", 0, false),
-				newMockResource("b", "", 0, false),
-				newMockResource("c", "", 0, false),
+				newMockResource("a", "", PriorityImage, false),
+				newMockResource("b", "", PriorityImage, false),
+				newMockResource("c", "", PriorityImage, false),
 			},
 			wantBatches: 1,
 			wantSizes:   []int{3},
 		},
 		{
-			name: "different kinds create separate batches",
+			name: "different priorities create separate batches",
 			tasks: []Resource{
-				newMockResource("profile", KindProfile, 0, false),
-				newMockResource("volume", KindStorageVolume, 0, false),
-				newMockResource("instance", KindInstance, 0, false),
+				newMockResource("profile", KindProfile, PriorityProfile, false),
+				newMockResource("volume", KindStorageVolume, PriorityVolume, false),
+				newMockResource("instance", KindInstance, PriorityInstance, false),
 			},
 			wantBatches: 3,
 			wantSizes:   []int{1, 1, 1},
 		},
 		{
-			name: "mixed kinds with multiple per batch",
+			name: "mixed priorities with multiple per batch",
 			tasks: []Resource{
-				newMockResource("profile", KindProfile, 0, false),
-				newMockResource("image", KindImage, 0, false),
-				newMockResource("image2", KindImage, 0, false),
-				newMockResource("volume", KindStorageVolume, 0, false),
-				newMockResource("volume2", KindStorageVolume, 0, false),
-				newMockResource("instance", KindInstance, 0, false),
+				newMockResource("profile", KindProfile, PriorityProfile, false),
+				newMockResource("image", KindImage, PriorityImage, false),
+				newMockResource("image2", KindImage, PriorityImage, false),
+				newMockResource("volume", KindStorageVolume, PriorityVolume, false),
+				newMockResource("volume2", KindStorageVolume, PriorityVolume, false),
+				newMockResource("instance", KindInstance, PriorityInstance, false),
 			},
 			wantBatches: 4,
 			wantSizes:   []int{1, 2, 2, 1},
@@ -76,7 +76,7 @@ func TestGroupByKind(t *testing.T) {
 			stack := NewStack(nil)
 			stack.Add(tc.tasks...)
 
-			batches := stack.groupByKind()
+			batches := stack.groupByPriority()
 
 			require.Len(t, batches, tc.wantBatches)
 
@@ -128,7 +128,7 @@ func TestParallelImageDownload(t *testing.T) {
 		stack.Add(img)
 	}
 
-	batches := stack.groupByKind()
+	batches := stack.groupByPriority()
 	require.Len(t, batches, 1, "all images should be in one batch")
 	require.Len(t, batches[0], 3, "batch should have 3 images")
 

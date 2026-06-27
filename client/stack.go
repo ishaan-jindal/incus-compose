@@ -105,26 +105,26 @@ func (s *Stack) sort() {
 }
 
 // groupByPriority groups sorted tasks into batches by kind.
-func (s *Stack) groupByKind() [][]Resource {
+func (s *Stack) groupByPriority() [][]Resource {
 	if len(s.resources) == 0 {
 		return nil
 	}
 
 	var batches [][]Resource
-	var currentBatch []Resource
-	currentKind := s.resources[0].Kind()
+	var cBatch []Resource
+	cPriority := s.resources[0].Priority()
 
 	for _, r := range s.resources {
-		if r.Kind() != currentKind {
-			batches = append(batches, currentBatch)
-			currentBatch = nil
-			currentKind = r.Kind()
+		if r.Priority() != cPriority {
+			batches = append(batches, cBatch)
+			cBatch = nil
+			cPriority = r.Priority()
 		}
-		currentBatch = append(currentBatch, r)
+		cBatch = append(cBatch, r)
 	}
 
-	if len(currentBatch) > 0 {
-		batches = append(batches, currentBatch)
+	if len(cBatch) > 0 {
+		batches = append(batches, cBatch)
 	}
 
 	return batches
@@ -165,7 +165,7 @@ func (s *Stack) Run(ctx context.Context, action Action, stdout io.Writer, stderr
 	}
 
 	// Group tasks by priority into batches
-	batches := s.groupByKind()
+	batches := s.groupByPriority()
 
 	// Execute batches in order
 	var errs error
