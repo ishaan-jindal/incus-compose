@@ -157,7 +157,7 @@ func newPsCommand() *cli.Command {
 						continue
 					}
 
-					if full.Config["user.internal"] == "true" {
+					if full.Config[client.HealthKeyPrefix+"daemon"] == "true" {
 						continue
 					}
 
