@@ -353,6 +353,18 @@ func (c *GlobalClient) Connect() error {
 
 	c.logger.Debug("Connected", "url", c.config.URL)
 
+	// Image caching copies images between Incus projects using pull mode, which
+	// needs the server reachable over the network. Fail early with a clear
+	// message instead of a cryptic copy error later.
+	server, _, err := c.incus.GetServer()
+	if err != nil {
+		return ErrConnectionFailed.Wrap(err)
+	}
+
+	if server.Config["core.https_address"] == "" {
+		return ErrServerNotListening
+	}
+
 	if c.config.DefaultStoragePool == "detect" {
 		if err = c.detectStoragePool(); err != nil {
 			return err
