@@ -143,7 +143,7 @@ func NewOptions(opts ...Option) Options {
 		Stdout:            io.Discard,
 		Stderr:            io.Discard,
 		Healthd:           true,
-		Timeout:           2 * time.Minute,
+		Timeout:           5 * time.Minute,
 		DependencyTimeout: 5 * time.Minute,
 	}
 
