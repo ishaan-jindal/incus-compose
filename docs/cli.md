@@ -14,7 +14,7 @@
 | `--ansi`                    | Color output: never/always/auto (`INCUS_COMPOSE_ANSI`)                                                                                                      |
 | `--image-cache`             | Incus project used as image cache (`INCUS_COMPOSE_IMAGE_CACHE`, default: `default`), see [Environment Variables](environment-variables.md#incus-connection) |
 | `--storage-pool`            | Default storage pool for volumes (`INCUS_COMPOSE_STORAGE_POOL`, default: `detect` for auto-detection)                                                       |
-| `--workers`                 | Number of concurrent workers (`INCUS_COMPOSE_WORKERS`, default: `10`)                                                                                       |
+| `--workers`                 | Number of concurrent workers (`INCUS_COMPOSE_WORKERS`, default: `4`)                                                                                        |
 | `--debug`                   | Debug logging                                                                                                                                               |
 
 Supports [no-color.org](https://no-color.org/) via `NO_COLOR` env var.

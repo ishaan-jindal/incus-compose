@@ -255,7 +255,7 @@ func newRootCommand() *cli.Command {
 				Name:    "workers",
 				Usage:   `Number of concurrent workers`,
 				Sources: cli.EnvVars("INCUS_COMPOSE_WORKERS"),
-				Value:   10,
+				Value:   4,
 			},
 		},
 		Commands: commands,

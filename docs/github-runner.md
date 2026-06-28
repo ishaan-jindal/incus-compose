@@ -46,7 +46,7 @@ Signed-By: /etc/apt/keyrings/zabbly.asc
 
 EOF'
 
-apt update; apt install incus podman skopeo xdelta3 umoci
+apt update; apt install incus podman skopeo xdelta3 umoci jq
 ```
 
 ## 4. Create the `runner` user — _container (root)_
@@ -75,7 +75,21 @@ sudo -u runner -iH
 which golangci-lint
 ```
 
-## 6. Initialise the nested Incus daemon — _runner user_
+## 6. Install other tools and configure podman - _runner user_
+
+```bash
+go install gotest.tools/gotestsum@latest
+```
+
+```bash
+mkdir -p ~/.config/containers/
+echo -e '[engine]\ncgroup_manager = "cgroupfs"' > ~/.config/containers/containers.conf
+loginctl enable-linger runner
+```
+
+restart the container/vm.
+
+## 7. Initialise the nested Incus daemon — _runner user_
 
 Accept the defaults unless you have a reason not to.
 
@@ -83,7 +97,7 @@ Accept the defaults unless you have a reason not to.
 incus admin init
 ```
 
-## 7. Add OCI registry remotes — _runner user_
+## 8. Add OCI registry remotes — _runner user_
 
 These point at your registry mirrors so images can be pulled by short name.
 
@@ -94,7 +108,7 @@ incus remote add --protocol=oci ghcr.io https://ghcr-registry.$DOMAIN
 incus remote add --protocol=oci registry.gitlab.com https://gitlab-registry.$DOMAIN
 ```
 
-## 8. Enable HTTPS access to the local daemon — _runner user_
+## 9. Enable HTTPS access to the local daemon — _runner user_
 
 Generate a client certificate, trust it, find the bridge IP, expose the daemon
 over HTTPS, and add a remote pointing at it.
@@ -108,7 +122,7 @@ incus config set core.https_address=:8443
 incus remote add local-https $IP --accept-certificate
 ```
 
-## 9. Download the GitHub Actions runner — _runner user_
+## 10. Download the GitHub Actions runner — _runner user_
 
 ```bash
 mkdir actions-runner; cd actions-runner
@@ -117,7 +131,7 @@ tar xf actions-runner.tar.gz; rm -f actions-runner.tar.gz
 exit
 ```
 
-## 10. Install runner dependencies — _container (root)_
+## 11. Install runner dependencies — _container (root)_
 
 The dependency installer needs root, so run it after the `exit` above.
 
@@ -125,7 +139,7 @@ The dependency installer needs root, so run it after the `exit` above.
 /home/runner/actions-runner/bin/installdependencies.sh
 ```
 
-## 11. Register the runner — _runner user_
+## 12. Register the runner — _runner user_
 
 Get a registration token from the repository's **Settings → Actions → Runners →
 New self-hosted runner**, then register:
@@ -134,6 +148,7 @@ New self-hosted runner**, then register:
 sudo -u runner -iH
 cd actions-runner
 ./config.sh --url https://github.com/lxc/incus-compose --token XXX
+echo "HOME=/home/runner" >> ~/actions-runner/.env
 ```
 
 The interactive prompts look like this (the values shown are the ones used
@@ -174,7 +189,7 @@ Enter name of work folder: [press Enter for _work]
 √ Settings Saved.
 ```
 
-## 12. Run the runner as a service — _container (root)_
+## 13. Run the runner as a service — _container (root)_
 
 ```bash
 exit
