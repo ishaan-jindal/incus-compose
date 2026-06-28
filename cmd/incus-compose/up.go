@@ -31,8 +31,8 @@ func newUpCommand() *cli.Command {
 			},
 			&cli.DurationFlag{
 				Name:  "timeout",
-				Usage: "Timeout for stopping/starting",
-				Value: 1 * time.Minute,
+				Usage: "Timeout for stopping/starting a service",
+				Value: 5 * time.Minute,
 			},
 			&cli.DurationFlag{
 				Name:  "dependency-timeout",
@@ -187,18 +187,23 @@ func newUpCommand() *cli.Command {
 
 				recreateOptions := append(runOptions, client.OptionForce())
 
+				// Do not recreate networks.
+				recreateFilter := func(r client.Resource) bool {
+					return r.Kind() != client.KindNetwork
+				}
+
 				// Ensure without create for "recreate" (resolution only, no progress).
-				if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
+				if err := stack.ForActionF(client.ActionEnsure, recreateFilter).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
 					c.LogDebug("Ensuring for reCreate", "error", err)
 				} else {
 					// Stop
-					errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, recreateOptions...)
+					errStop := stack.ForActionF(client.ActionStop, recreateFilter).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, recreateOptions...)
 					if errStop != nil {
 						c.LogDebug("Stopping resources", "error", errStop)
 					}
 
 					// Delete
-					deleteStack := stack.ForAction(client.ActionDelete)
+					deleteStack := stack.ForActionF(client.ActionDelete, recreateFilter)
 					c.LogDebug("Recreate delete", "resources", deleteStack.All())
 					errDel := deleteStack.Run(ctx, client.ActionDelete, cmd.Root().Writer, cmd.Root().ErrWriter, recreateOptions...)
 					if errDel != nil {

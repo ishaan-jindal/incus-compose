@@ -266,12 +266,12 @@ func TestInstanceDependencyWaits(t *testing.T) {
 		service := types.ServiceConfig{Name: "web", DependsOn: types.DependsOnConfig{
 			"db": {Condition: types.ServiceConditionStarted},
 		}}
-		assert.Nil(t, instanceDependencyWaits(p, service, &ToStackOptions{}))
+		assert.Empty(t, instanceDependencyWaits(p, service, &ToStackOptions{}))
 	})
 
 	t.Run("no dependencies", func(t *testing.T) {
 		t.Parallel()
-		assert.Nil(t, instanceDependencyWaits(&types.Project{}, types.ServiceConfig{Name: "web"}, &ToStackOptions{}))
+		assert.Empty(t, instanceDependencyWaits(&types.Project{}, types.ServiceConfig{Name: "web"}, &ToStackOptions{}))
 	})
 }
 
@@ -510,6 +510,84 @@ func TestInstanceVolumeDevices(t *testing.T) {
 		require.NotNil(t, devices[0].Config.Disk.StorageVolumeConfig)
 		assert.False(t, devices[0].Config.Disk.StorageVolumeConfig.Shifted)
 		assert.Equal(t, "false", devices[0].Config.Disk.StorageVolumeConfig.Extensions["security.shifted"])
+	})
+
+	t.Run("named volume inline x-incus overrides named definition", func(t *testing.T) {
+		t.Parallel()
+		p := &types.Project{Volumes: types.Volumes{"data": {
+			Extensions: types.Extensions{"x-incus": map[string]any{"security.shifted": "true"}},
+		}}}
+		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
+			{
+				Type: "volume", Source: "data", Target: "/data",
+				Extensions: types.Extensions{"x-incus": map[string]any{"security.shifted": "false"}},
+			},
+		}}
+
+		devices, _, resources, err := instanceVolumeDevices(c, p, service, nil, opts)
+		require.NoError(t, err)
+		require.Len(t, devices, 1)
+		require.Len(t, resources, 1)
+		require.NotNil(t, devices[0].Config.Disk.StorageVolumeConfig)
+		assert.Equal(t, "false", devices[0].Config.Disk.StorageVolumeConfig.Extensions["security.shifted"])
+		assert.False(t, devices[0].Config.Disk.StorageVolumeConfig.Shifted)
+		assert.False(t, devices[0].Config.Disk.Shift)
+	})
+
+	t.Run("named volume with x-incus-compose pool", func(t *testing.T) {
+		t.Parallel()
+		p := &types.Project{Volumes: types.Volumes{"data": {
+			Extensions: types.Extensions{"x-incus-compose": map[string]any{"pool": "fast"}},
+		}}}
+		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
+			{Type: "volume", Source: "data", Target: "/data"},
+		}}
+
+		devices, _, resources, err := instanceVolumeDevices(c, p, service, nil, opts)
+		require.NoError(t, err)
+		require.Len(t, devices, 1)
+		require.Len(t, resources, 1)
+		require.NotNil(t, devices[0].Config.Disk.StorageVolumeConfig)
+		assert.Equal(t, "fast", devices[0].Config.Disk.StorageVolumeConfig.Pool)
+	})
+
+	t.Run("bind seed file", func(t *testing.T) {
+		t.Parallel()
+		file := filepath.Join(t.TempDir(), "seed.conf")
+		require.NoError(t, os.WriteFile(file, []byte("hello"), 0o644))
+		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
+			{
+				Type: "bind", Source: file, Target: "/etc/app.conf",
+				Extensions: types.Extensions{"x-incus-compose": map[string]any{"seed": true}},
+			},
+		}}
+
+		devices, files, resources, err := instanceVolumeDevices(c, &types.Project{}, service, nil, opts)
+		require.NoError(t, err)
+		assert.Empty(t, devices)
+		assert.Empty(t, resources)
+		require.Contains(t, files, "/etc/app.conf")
+		assert.Equal(t, file, files["/etc/app.conf"].File)
+	})
+
+	t.Run("bind seed directory", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
+			{
+				Type: "bind", Source: dir, Target: "/mnt",
+				Extensions: types.Extensions{"x-incus-compose": map[string]any{"seed": true}},
+			},
+		}}
+
+		devices, files, resources, err := instanceVolumeDevices(c, &types.Project{}, service, nil, opts)
+		require.NoError(t, err)
+		assert.Empty(t, files)
+		require.Len(t, devices, 1)
+		assert.Equal(t, client.InstanceDeviceTypeDisk, devices[0].Config.DeviceType)
+		require.NotNil(t, devices[0].Config.Disk.StorageVolumeConfig)
+		assert.Equal(t, dir, devices[0].Config.Disk.StorageVolumeConfig.HostPath)
+		require.Len(t, resources, 1)
 	})
 
 	t.Run("bind mount with security.shifted=false", func(t *testing.T) {

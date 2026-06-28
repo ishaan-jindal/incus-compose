@@ -18,9 +18,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/avast/retry-go/v5"
 	incus "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 
@@ -32,8 +32,7 @@ type Runner struct {
 	config *Config
 	conn   incus.InstanceServer
 
-	knownMu       sync.Mutex
-	knownCheckers map[string]struct{}
+	running []context.CancelFunc
 }
 
 // NewRunner creates a new runner with the given configuration.
@@ -43,14 +42,14 @@ func NewRunner(cfg *Config) (*Runner, error) {
 	}
 
 	return &Runner{
-		config:        cfg,
-		knownCheckers: map[string]struct{}{},
+		config:  cfg,
+		running: []context.CancelFunc{},
 	}, nil
 }
 
 // Run starts all health checkers and blocks until context is cancelled.
 func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
-	conn, err := r.connect()
+	conn, err := r.connect(ctx)
 	if err != nil {
 		return fmt.Errorf("connecting to incus: %w", err)
 	}
@@ -65,6 +64,7 @@ func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
 
 	for {
 		r.startCheckers(ctx)
+		slog.Info("health daemon running", "instances", len(r.running))
 
 		select {
 		case <-ctx.Done():
@@ -126,30 +126,19 @@ func (r *Runner) startCheckers(ctx context.Context) {
 		slog.Warn("instance discovery had errors", "error", err)
 	}
 
-	for name, inst := range instances {
-		r.knownMu.Lock()
-		_, known := r.knownCheckers[name]
-		if !known {
-			r.knownCheckers[name] = struct{}{}
-		}
-		r.knownMu.Unlock()
-
-		if known {
-			continue
-		}
-
-		checker := NewChecker(r.conn, name, inst)
-		go func() {
-			defer func() {
-				r.knownMu.Lock()
-				delete(r.knownCheckers, name)
-				r.knownMu.Unlock()
-			}()
-			checker.Run(ctx, true, false)
-		}()
+	for _, cancel := range r.running {
+		cancel()
 	}
 
-	slog.Info("health daemon running", "instances", len(instances))
+	for name, inst := range instances {
+		chkCtx, cancel := context.WithCancel(ctx)
+		checker := NewChecker(r.conn, name, inst)
+		go func() {
+			checker.Run(chkCtx, true, false)
+		}()
+
+		r.running = append(r.running, cancel)
+	}
 }
 
 // connect returns an authenticated Incus client.
@@ -157,7 +146,7 @@ func (r *Runner) startCheckers(ctx context.Context) {
 // On first run, the persisted cert is missing: we generate one, register it
 // with the one-time TrustToken, and persist it for subsequent runs.
 // On restart, the persisted cert is reused and the token (already consumed) is ignored.
-func (r *Runner) connect() (incus.InstanceServer, error) {
+func (r *Runner) connect(ctx context.Context) (incus.InstanceServer, error) {
 	// Token to register (generates KEY/CERT)
 	tokenPath := filepath.Join(r.config.SecretsDir, tokenFile)
 
@@ -168,14 +157,23 @@ func (r *Runner) connect() (incus.InstanceServer, error) {
 	if !fileExists(certDataPath) && fileExists(tokenPath) {
 		slog.Debug("fresh token performing first-run registration")
 
-		if err := r.register(tokenPath); err != nil {
+		conn, err := retry.NewWithData[incus.InstanceServer](
+			retry.Context(ctx),
+			retry.Attempts(6),
+			retry.Delay(500*time.Millisecond),
+		).Do(func() (incus.InstanceServer, error) {
+			return r.register(tokenPath)
+		})
+		if err != nil {
 			return nil, fmt.Errorf("first-run registration: %w", err)
 		}
+
+		return conn, nil
 	} else if !fileExists(keyDataPath) || !fileExists(certDataPath) {
 		return nil, fmt.Errorf("no token and no registration happened before")
-	} else {
-		slog.Debug("reusing persisted cert from data dir")
 	}
+
+	slog.Debug("reusing persisted cert from data dir")
 
 	certPEM, err := os.ReadFile(certDataPath)
 	if err != nil {
@@ -186,10 +184,16 @@ func (r *Runner) connect() (incus.InstanceServer, error) {
 		return nil, fmt.Errorf("reading key: %w", err)
 	}
 
-	return incus.ConnectIncus(r.config.IncusURL, &incus.ConnectionArgs{
-		TLSClientCert:      string(certPEM),
-		TLSClientKey:       string(keyPEM),
-		InsecureSkipVerify: true,
+	return retry.NewWithData[incus.InstanceServer](
+		retry.Context(ctx),
+		retry.Attempts(6),
+		retry.Delay(500*time.Millisecond),
+	).Do(func() (incus.InstanceServer, error) {
+		return incus.ConnectIncus(r.config.IncusURL, &incus.ConnectionArgs{
+			TLSClientCert:      string(certPEM),
+			TLSClientKey:       string(keyPEM),
+			InsecureSkipVerify: true,
+		})
 	})
 }
 
@@ -199,31 +203,31 @@ func (r *Runner) connect() (incus.InstanceServer, error) {
 // applies the restrictions stored in the token metadata, and returns trusted=true.
 // The cert/key are persisted to the data dir only after successful registration,
 // so a failed attempt is retried on the next run.
-func (r *Runner) register(tokenPath string) error {
+func (r *Runner) register(tokenPath string) (incus.InstanceServer, error) {
 	tokenBytes, err := os.ReadFile(tokenPath)
 	if err != nil {
-		return fmt.Errorf("reading token: %w", err)
+		return nil, fmt.Errorf("reading token: %w", err)
 	}
 	token := strings.TrimSpace(string(tokenBytes))
 	if token == "" {
-		return errors.New("token file is empty")
+		return nil, errors.New("token file is empty")
 	}
 
 	certPEM, keyPEM, err := generateClientCert()
 	if err != nil {
-		return fmt.Errorf("generating cert: %w", err)
+		return nil, fmt.Errorf("generating cert: %w", err)
 	}
 
-	srv, err := incus.ConnectIncus(r.config.IncusURL, &incus.ConnectionArgs{
+	conn, err := incus.ConnectIncus(r.config.IncusURL, &incus.ConnectionArgs{
 		TLSClientCert:      string(certPEM),
 		TLSClientKey:       string(keyPEM),
 		InsecureSkipVerify: true,
 	})
 	if err != nil {
-		return fmt.Errorf("connecting to register cert: %w", err)
+		return nil, fmt.Errorf("connecting to register cert: %w", err)
 	}
 
-	if err := srv.CreateCertificate(
+	if err := conn.CreateCertificate(
 		incusApi.CertificatesPost{
 			CertificatePut: incusApi.CertificatePut{
 				Name:       "ic-healthd-" + r.config.Projects[0],
@@ -231,25 +235,25 @@ func (r *Runner) register(tokenPath string) error {
 				Projects:   r.config.Projects,
 			}, TrustToken: token,
 		}); err != nil {
-		return fmt.Errorf("registering cert with token: %w", err)
+		return nil, fmt.Errorf("registering cert with token: %w", err)
 	}
 
 	if err := os.MkdirAll(r.config.DataDir, 0o700); err != nil {
-		return fmt.Errorf("creating data-dir %v: %w", r.config.DataDir, err)
+		return nil, fmt.Errorf("creating data-dir %v: %w", r.config.DataDir, err)
 	}
 
 	keyDataPath := filepath.Join(r.config.DataDir, keyFile)
 	if err := os.WriteFile(keyDataPath, keyPEM, 0o600); err != nil {
-		return fmt.Errorf("saving key %v: %w", keyDataPath, err)
+		return nil, fmt.Errorf("saving key %v: %w", keyDataPath, err)
 	}
 
 	certDataPath := filepath.Join(r.config.DataDir, certFile)
 	if err := os.WriteFile(certDataPath, certPEM, 0o600); err != nil {
-		return fmt.Errorf("saving cert %v: %w", certDataPath, err)
+		return nil, fmt.Errorf("saving cert %v: %w", certDataPath, err)
 	}
 
 	slog.Debug("certificate registered and persisted")
-	return nil
+	return conn, nil
 }
 
 // discover returns instance configs from the set of healthchecks declared on

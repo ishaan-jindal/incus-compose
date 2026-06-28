@@ -28,6 +28,9 @@ type Client struct {
 	imageCache incusClient.InstanceServer
 	logger     *slog.Logger
 
+	// Cache for FindHealthd
+	healthd string
+
 	// Resource storage
 	resources ResourceStore
 
@@ -310,6 +313,10 @@ func (c *Client) Done() error {
 // FindHealthd returns the name of the healthd instance in the project,
 // identified by user.healthcheck.daemon=true.
 func (c *Client) FindHealthd() (string, error) {
+	if c.healthd != "" {
+		return c.healthd, nil
+	}
+
 	if c.incus == nil {
 		return "", ErrNotFound
 	}
@@ -321,7 +328,8 @@ func (c *Client) FindHealthd() (string, error) {
 
 	for _, inst := range instances {
 		if inst.Config[HealthKeyPrefix+"daemon"] == "true" {
-			return inst.Name, nil
+			c.healthd = inst.Name
+			return c.healthd, nil
 		}
 	}
 
