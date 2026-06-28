@@ -106,7 +106,7 @@ Every global flag can be set via an environment variable. Flags given on the com
 | ----------------------- | ----------- | ---------------------------------------------------------------- |
 | `INCUS_COMPOSE_ANSI`    | `--ansi`    | Control ANSI output: `never`, `always`, `auto` (default: `auto`) |
 | `INCUS_COMPOSE_DEBUG`   | `--debug`   | Enable debug logging (`true`/`1`)                                |
-| `INCUS_COMPOSE_WORKERS` | `--workers` | Number of concurrent workers (default: `10`)                     |
+| `INCUS_COMPOSE_WORKERS` | `--workers` | Number of concurrent workers (default: `4`)                      |
 | `NO_COLOR`              | --          | Disable color output ([no-color.org](https://no-color.org/))     |
 
 ### Healthd
