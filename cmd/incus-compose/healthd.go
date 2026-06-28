@@ -273,23 +273,38 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 				return errors.New("healthd works only with a https connection, provide one with INCUS_COMPOSE_HEALTHD_INCUS")
 			}
 
-			u, err := c.Global().URL()
-			if err != nil {
-				return fmt.Errorf("failed to get the url: %w", err)
+			// First use core.https_address if it has a host.
+			addr, err := c.Global().HTTPSAddress()
+			if err == nil {
+				host, port, err := net.SplitHostPort(addr)
+				if err == nil && host != "" && port != "" {
+					u, err := url.Parse(fmt.Sprintf("https://%s:%s", host, port))
+					if err == nil {
+						incusURL = u
+					}
+				}
 			}
 
-			if network.IncusNetwork.Config["ipv4.address"] == "" {
-				return fmt.Errorf("ip of network %q is empty", network.Name())
-			}
+			// Else use the connections port and the bridges ip.
+			if incusURL == nil {
+				u, err := c.Global().URL()
+				if err != nil {
+					return fmt.Errorf("failed to get the url: %w", err)
+				}
 
-			ipSplit := strings.Split(network.IncusNetwork.Config["ipv4.address"], "/")
-			ip := net.ParseIP(ipSplit[0])
-			if ip == nil {
-				return fmt.Errorf("result is nil while parsing ip '%v'", ipSplit[0])
-			}
+				if network.IncusNetwork.Config["ipv4.address"] == "" {
+					return fmt.Errorf("ip of network %q is empty", network.Name())
+				}
 
-			u.Host = fmt.Sprintf("%s:%s", ip.String(), u.Port())
-			incusURL = u
+				ipSplit := strings.Split(network.IncusNetwork.Config["ipv4.address"], "/")
+				ip := net.ParseIP(ipSplit[0])
+				if ip == nil {
+					return fmt.Errorf("result is nil while parsing ip '%v'", ipSplit[0])
+				}
+
+				u.Host = fmt.Sprintf("%s:%s", ip.String(), u.Port())
+				incusURL = u
+			}
 		}
 
 		inst.Config.Extensions["user.healthd.incusurl"] = incusURL.String()
