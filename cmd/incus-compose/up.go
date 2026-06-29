@@ -263,8 +263,6 @@ func newUpCommand() *cli.Command {
 					incus:       incus,
 					network:     healthdNetwork,
 					timeout:     cmd.Duration("timeout"),
-					stdout:      cmd.Root().Writer,
-					stderr:      cmd.Root().ErrWriter,
 					workers:     cmd.Root().Int("workers"),
 				}
 

@@ -39,8 +39,6 @@ type healthdParams struct {
 	incus       *url.URL
 	network     string // Incus bridge name; empty = auto-detect
 	timeout     time.Duration
-	stdout      io.Writer
-	stderr      io.Writer
 	workers     int
 }
 
@@ -431,36 +429,6 @@ func parseHealthdNetwork(c *client.Client, network string) (healthdNetworkRef, e
 	}
 
 	return healthdNetworkRef{name: network}, nil
-}
-
-// healthdDown stops the instance, deletes it, and revokes its Incus trust certificate.
-func healthdDown(ctx context.Context, c *client.Client, inst *client.Instance, resources []client.Resource, timeout time.Duration, stdout, stderr io.Writer) {
-	stack := client.NewStack(c, client.StackSortDescending())
-
-	for _, r := range resources {
-		if r.Kind() != client.KindImage {
-			stack.Add(r)
-		}
-	}
-	stack.Add(inst)
-
-	c.LogDebug("Ensure", "resources", stack.All())
-
-	if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, stdout, stderr); err != nil {
-		c.LogWarn("Ensuring healthd", "error", err)
-	}
-
-	if err := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, stdout, stderr, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
-		c.LogWarn("Stopping healthd resources", "error", err)
-	}
-
-	if err := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, stdout, stderr, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
-		c.LogWarn("Deleting healthd resources", "error", err)
-	}
-
-	if err := healthdRevokeCert(c); err != nil {
-		c.LogWarn("Cannot revoke the healthd cert", "error", err)
-	}
 }
 
 // healthdResolve returns the existing healthd Instance or errors if the sidecar
@@ -903,8 +871,6 @@ func newHealthdUpCommand() *cli.Command {
 				incus:       incus,
 				network:     healthdNetwork,
 				timeout:     cmd.Duration("timeout"),
-				stdout:      cmd.Root().Writer,
-				stderr:      cmd.Root().ErrWriter,
 				workers:     cmd.Root().Int("workers"),
 			}
 
@@ -929,7 +895,37 @@ func newHealthdUpCommand() *cli.Command {
 
 			if params.reCreate {
 				if existing, resources, err := healthdGetResources(c, params); err == nil {
-					healthdDown(ctx, c, existing, resources, params.timeout, params.stdout, params.stderr)
+					stack := client.NewStack(c, client.StackSortDescending())
+
+					for _, r := range resources {
+						if r.Kind() != client.KindImage {
+							stack.Add(r)
+						}
+					}
+					stack.Add(existing)
+
+					c.LogDebug("Ensure", "resources", stack.All())
+
+					// Do not recreate networks.
+					recreateFilter := func(r client.Resource) bool {
+						return r.Kind() != client.KindNetwork
+					}
+
+					if err := stack.ForActionF(client.ActionEnsure, recreateFilter).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
+						c.LogWarn("Ensuring healthd", "error", err)
+					}
+
+					if err := stack.ForActionF(client.ActionStop, recreateFilter).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout"))); err != nil {
+						c.LogWarn("Stopping healthd resources", "error", err)
+					}
+
+					if err := stack.ForActionF(client.ActionDelete, recreateFilter).Run(ctx, client.ActionDelete, cmd.Root().Writer, cmd.Root().ErrWriter, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout"))); err != nil {
+						c.LogWarn("Deleting healthd resources", "error", err)
+					}
+
+					if err := healthdRevokeCert(c); err != nil {
+						c.LogWarn("Cannot revoke the healthd cert", "error", err)
+					}
 				}
 
 				c.ResetResources()
@@ -953,13 +949,13 @@ func newHealthdUpCommand() *cli.Command {
 				ensureOpts = append(ensureOpts, client.OptionPull())
 			}
 
-			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, params.stdout, params.stderr, ensureOpts...); err != nil {
+			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter, ensureOpts...); err != nil {
 				c.LogError("Creating healthd resources", "error", err)
 				finish(false)
 				return errLogged.Wrap(err)
 			}
 
-			if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, params.stdout, params.stderr); err != nil {
+			if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
 				c.LogError("Starting healthd resources", "error", err)
 				finish(false)
 				return errLogged.Wrap(err)
@@ -1010,10 +1006,7 @@ func newHealthdDownCommand() *cli.Command {
 				binary:      "",
 				image:       resolveHealthdImage(cmd.String("image")),
 				reCreate:    false,
-				network:     "auto",
 				timeout:     cmd.Duration("timeout"),
-				stdout:      cmd.Root().Writer,
-				stderr:      cmd.Root().ErrWriter,
 			}
 
 			c, err := globalClient.EnsureProject(p.Name)
@@ -1032,14 +1025,48 @@ func newHealthdDownCommand() *cli.Command {
 				finish = startProgress(globalClient, c, noColor, cmd.Root().Writer)
 			}
 
-			inst, resources, err := healthdGetResources(c, params)
+			stack := client.NewStack(c, client.StackSortDescending())
+
+			volRes, err := c.Resource(
+				client.KindStorageVolume,
+				"ic-healthd",
+				&client.StorageVolumeConfig{},
+			)
 			if err != nil {
-				globalClient.LogError("Getting healthd resources", "error", err)
-				finish(false)
+				c.LogError("Getting the volume resource", "error", err)
+				return errLogged.Wrap(err)
+			}
+			stack.Add(volRes)
+
+			instRes, err := c.Resource(client.KindInstance, fmt.Sprintf("%s-ic-healthd", params.projectName), &client.InstanceConfig{})
+			if err != nil {
+				c.LogError("Getting the healthd instance resource", "error", err)
+				return errLogged.Wrap(err)
+			}
+			stack.Add(instRes)
+
+			c.LogDebug("Ensure", "resources", stack.All())
+
+			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
+				c.LogError("Ensuring healthd", "error", err)
 				return errLogged.Wrap(err)
 			}
 
-			healthdDown(ctx, c, inst, resources, params.timeout, params.stdout, params.stderr)
+			if err := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout"))); err != nil {
+				c.LogError("Stopping healthd resources", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			if err := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, cmd.Root().Writer, cmd.Root().ErrWriter, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout"))); err != nil {
+				c.LogError("Deleting healthd resources", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			if err := healthdRevokeCert(c); err != nil {
+				c.LogError("Cannot revoke the healthd cert", "error", err)
+				return errLogged.Wrap(err)
+			}
+
 			finish(true)
 			return err
 		},
