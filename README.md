@@ -6,14 +6,7 @@
 
 Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` implements the Compose specification for the Incus ecosystem, allowing you to define and run multi-container applications using the same `docker-compose.yml` files you already know.
 
-AsciiCast:
-
 [![asciicast](https://asciinema.org/a/1259458.svg)](https://asciinema.org/a/1259458)
-
-Video:
-
-https://github.com/user-attachments/assets/d4e0a3b1-6b9e-4b43-8b4e-deb7b6d07f39
-
 
 ## Why incus-compose?
 
