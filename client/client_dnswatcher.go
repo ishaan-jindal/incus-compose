@@ -62,7 +62,7 @@ func (c *Client) RegisterDNSWatcher() error {
 	instances := map[string]*Instance{}
 	instanceIPs := map[string][]InterfaceIPs{}
 	ownedSet := map[string]struct{}{} // dnsmasq keys this run owns
-	lastRestart := time.Now()
+	lastRestart := time.Time{}
 	mu := &sync.Mutex{}
 
 	// This hook waits up to 5 seconds before starting an instance after the last restart of a dnsmasq.
@@ -71,12 +71,18 @@ func (c *Client) RegisterDNSWatcher() error {
 			return err
 		}
 
+		// No need if there was no dnsmasq update.
+		if lastRestart.IsZero() {
+			return err
+		}
+
 		mu.Lock()
 		elapsed := time.Since(lastRestart)
 		mu.Unlock()
 
-		if elapsed < 5*time.Second {
-			time.Sleep(5*time.Second - elapsed)
+		if elapsed < 2*time.Second {
+			c.LogDebug("Waiting for DNSMasq to be ready", "resource", r, "time", 2*time.Second-elapsed)
+			time.Sleep(2*time.Second - elapsed)
 		}
 
 		return err
