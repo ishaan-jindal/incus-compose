@@ -1139,15 +1139,21 @@ func (r *Instance) Log(ctx context.Context, opts ...Option) error {
 		return err
 	}
 
-	if !r.IsEnsured() {
-		return r.client.hookAfter(ctx, ActionLog, r, options, ErrNotEnsured)
+	if r.conn == nil {
+		conn, err := r.client.Connection()
+		if err != nil {
+			return r.client.hookAfter(ctx, ActionLog, r, options, err)
+		}
+
+		r.conn = conn
 	}
 
-	if !r.Running() {
-		return r.client.hookAfter(ctx, ActionLog, r, options, nil)
+	err := r.fetch()
+	if err != nil {
+		return r.client.hookAfter(ctx, ActionLog, r, options, err)
 	}
 
-	err := r.log(ctx, options)
+	err = r.log(ctx, options)
 	err = r.client.hookAfter(ctx, ActionLog, r, options, err)
 
 	return err

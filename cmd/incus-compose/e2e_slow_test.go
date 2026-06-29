@@ -192,9 +192,6 @@ func TestSlowStartStopRestartLogsWithDeps(t *testing.T) {
 	_, _, err = runCommand(t, ctx, pn, "-f", compose, "restart", "--with-deps", "nginx")
 	require.NoError(t, err)
 
-	// logs accepts --with-deps and the default form while running.
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "logs", "--with-deps", "nginx")
-	require.NoError(t, err)
 	_, _, err = runCommand(t, ctx, pn, "-f", compose, "logs", "nginx")
 	require.NoError(t, err)
 

@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"sync"
 
+	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/urfave/cli/v3"
 
 	"github.com/lxc/incus-compose/client"
@@ -129,6 +131,66 @@ func (f *logFormatter) flush() {
 	}
 }
 
+// logTracker manages per-instance log goroutines for follow mode.
+type logTracker struct {
+	mu        sync.Mutex
+	cancels   map[string]context.CancelFunc
+	formatter *logFormatter
+}
+
+func newLogTracker(formatter *logFormatter) *logTracker {
+	return &logTracker{
+		cancels:   make(map[string]context.CancelFunc),
+		formatter: formatter,
+	}
+}
+
+func (lt *logTracker) start(ctx context.Context, inst *client.Instance) {
+	lt.mu.Lock()
+	defer lt.mu.Unlock()
+
+	name := inst.IncusName()
+	if _, running := lt.cancels[name]; running {
+		return
+	}
+
+	lt.formatter.registerService(inst.Name())
+
+	logCtx, cancel := context.WithCancel(ctx)
+	lt.cancels[name] = cancel
+
+	go func() {
+		_ = client.RunAction(logCtx, inst, client.ActionLog, client.OptionFollow())
+
+		lt.mu.Lock()
+		delete(lt.cancels, name)
+		lt.mu.Unlock()
+	}()
+}
+
+func (lt *logTracker) stop(incusName string) {
+	lt.mu.Lock()
+	defer lt.mu.Unlock()
+
+	cancel, ok := lt.cancels[incusName]
+	if !ok {
+		return
+	}
+
+	cancel()
+	delete(lt.cancels, incusName)
+}
+
+func (lt *logTracker) stopAll() {
+	lt.mu.Lock()
+	defer lt.mu.Unlock()
+
+	for name, cancel := range lt.cancels {
+		cancel()
+		delete(lt.cancels, name)
+	}
+}
+
 func newLogsCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "logs",
@@ -140,10 +202,6 @@ func newLogsCommand() *cli.Command {
 				Name:    "follow",
 				Aliases: []string{"f"},
 				Usage:   "Follow log output",
-			},
-			&cli.BoolFlag{
-				Name:  "with-deps",
-				Usage: "Also show logs from linked services",
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -163,8 +221,7 @@ func newLogsCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			// Get the per Project client - don't create if it doesn't exist
-			c, err := globalClient.EnsureProject(p.Name)
+			c, err := globalClient.EnsureProject(p.Name, client.EnsureProjectWithCreate())
 			if err != nil {
 				globalClient.LogError("Getting the incus project", "error", err)
 				return errLogged.Wrap(err)
@@ -179,9 +236,6 @@ func newLogsCommand() *cli.Command {
 			globalClient.SetOutputHandler(formatter.write)
 
 			stackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice())}
-			if cmd.Bool("with-deps") {
-				stackOpts = append(stackOpts, project.ToStackWithDeps())
-			}
 
 			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
 			if err := p.ToStack(c, stack, stackOpts...); err != nil {
@@ -189,24 +243,84 @@ func newLogsCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
-				c.LogWarn("Ensuring the stack", "error", err)
+			isInstance := func(r client.Resource) bool {
+				return r.Kind() == client.KindInstance
 			}
 
-			for _, r := range stack.ForAction(client.ActionLog).All() {
-				formatter.registerService(r.Name())
-			}
+			instanceStack := stack.ForActionF(client.ActionLog, isInstance)
 
-			var opts []client.Option
-			if cmd.Bool("follow") {
-				opts = append(opts, client.OptionFollow())
-			}
-
-			if err := stack.ForAction(client.ActionLog).Run(ctx, client.ActionLog, cmd.Root().Writer, cmd.Root().ErrWriter, opts...); err != nil {
-				c.LogError("Getting logs", "error", err)
+			instances, err := client.ByKind[*client.Instance](instanceStack.All(), client.KindInstance)
+			if err != nil {
+				c.LogError("Filtering instances", "error", err)
 				return errLogged.Wrap(err)
 			}
 
+			if !cmd.Bool("follow") {
+				for _, inst := range instances {
+					formatter.registerService(inst.Name())
+				}
+
+				if err := instanceStack.Run(ctx, client.ActionLog, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
+					c.LogError("Getting logs", "error", err)
+					return errLogged.Wrap(err)
+				}
+
+				formatter.flush()
+				return nil
+			}
+
+			// Follow mode: watch events, stream dynamically.
+			knownInstances := make(map[string]*client.Instance, len(instances))
+			for _, inst := range instances {
+				knownInstances[inst.IncusName()] = inst
+			}
+
+			conn, err := c.Connection()
+			if err != nil {
+				c.LogError("Getting connection for events", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			listener, err := conn.GetEventsByType([]string{incusApi.EventTypeLifecycle})
+			if err != nil {
+				c.LogError("Subscribing to events", "error", err)
+				return errLogged.Wrap(err)
+			}
+			defer listener.Disconnect()
+
+			tracker := newLogTracker(formatter)
+			defer tracker.stopAll()
+
+			_, err = listener.AddHandler([]string{incusApi.EventTypeLifecycle}, func(event incusApi.Event) {
+				var lifecycle incusApi.EventLifecycle
+				if err := json.Unmarshal(event.Metadata, &lifecycle); err != nil {
+					return
+				}
+
+				inst, known := knownInstances[lifecycle.Name]
+				if !known {
+					return
+				}
+
+				switch lifecycle.Action {
+				case incusApi.EventLifecycleInstanceStarted:
+					tracker.start(ctx, inst)
+				case incusApi.EventLifecycleInstanceStopped, incusApi.EventLifecycleInstanceDeleted, incusApi.EventLifecycleInstanceShutdown:
+					tracker.stop(lifecycle.Name)
+				}
+			})
+			if err != nil {
+				c.LogError("Adding event handler", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			for _, inst := range knownInstances {
+				if inst.Running() {
+					tracker.start(ctx, inst)
+				}
+			}
+
+			<-ctx.Done()
 			formatter.flush()
 			return nil
 		},

@@ -47,7 +47,7 @@ type Stack struct {
 }
 
 // NewStack creates a new Stack for the given project.
-func NewStack(p *Client, opts ...StackOption) *Stack {
+func NewStack(c *Client, opts ...StackOption) *Stack {
 	options := &StackOptions{
 		Workers: 4,
 	}
@@ -57,7 +57,7 @@ func NewStack(p *Client, opts ...StackOption) *Stack {
 	}
 
 	return &Stack{
-		client:         p,
+		client:         c,
 		workers:        options.Workers,
 		sortDescending: options.SortDescending,
 		seen:           make(map[Resource]struct{}),
