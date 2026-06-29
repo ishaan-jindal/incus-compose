@@ -129,6 +129,7 @@ func (r *Runner) startCheckers(ctx context.Context) {
 	for _, cancel := range r.running {
 		cancel()
 	}
+	r.running = []context.CancelFunc{}
 
 	for name, inst := range instances {
 		chkCtx, cancel := context.WithCancel(ctx)

@@ -78,27 +78,6 @@ After `retries` consecutive failures the instance is restarted. The first
 restart waits `interval * retries`; the delay doubles on every further restart,
 capped at 5 minutes.
 
-### Retries during the start period
-
-The `retries` value above applies to the normal checker only. During the start
-period the instance is given the whole period to come up, so the start-period
-checker derives its own retry budget from the period itself:
-
-```
-start retries = start_period / start_interval
-```
-
-That is the number of checks that fit in the start period. A check that succeeds
-at any point ends the start period early and switches to the normal checker. If
-the instance never becomes healthy, the start period elapses and the checker
-either restarts the instance (when a restart policy is set) or falls back to the
-normal checker.
-
-Keep `start_interval` smaller than `start_period`: if it is larger, the derived
-budget rounds down to zero and the instance is restarted on the first failed
-check during start. `start_interval` must also be a positive, at-least-1ms
-duration.
-
 ## Dockerfile HEALTHCHECK Not Supported
 
 incus-compose does not read or inherit the `HEALTHCHECK` instruction embedded in Docker images.

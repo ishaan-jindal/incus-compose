@@ -101,7 +101,10 @@ func newRestartCommand() *cli.Command {
 				errs = errors.Join(errs, err)
 			}
 
-			finish := startProgress(globalClient, c, noColor, cmd.Root().Writer)
+			finish := func(success bool) {}
+			if !cmd.Root().Bool("debug") {
+				finish = startProgress(globalClient, c, noColor, cmd.Root().Writer)
+			}
 
 			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, append([]client.Option{client.OptionForce()}, runOpts...)...)
 			if errStop != nil {
