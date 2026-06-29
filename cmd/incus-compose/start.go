@@ -102,7 +102,10 @@ func newStartCommand() *cli.Command {
 				startOpts = append(startOpts, client.OptionNoHealthd())
 			}
 
-			finish := startProgress(globalClient, c, noColor, cmd.Root().Writer)
+			finish := func(success bool) {}
+			if !cmd.Root().Bool("debug") {
+				finish = startProgress(globalClient, c, noColor, cmd.Root().Writer)
+			}
 			errStart := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, cmd.Root().Writer, cmd.Root().ErrWriter, startOpts...)
 			finish(errStart == nil)
 			if errStart != nil {

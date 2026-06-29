@@ -138,8 +138,10 @@ func newUpCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			// Render live progress for the ensure phase, where image downloads happen.
-			finish := startProgress(globalClient, c, noColor, cmd.Root().Writer)
+			finish := func(success bool) {}
+			if !cmd.Root().Bool("debug") {
+				finish = startProgress(globalClient, c, noColor, cmd.Root().Writer)
+			}
 
 			usesHealthd := !cmd.Bool("no-healthd")
 			if usesHealthd && !healthdInUseByProject(globalClient, p) {

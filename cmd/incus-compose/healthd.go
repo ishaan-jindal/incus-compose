@@ -704,8 +704,10 @@ func newHealthdReloadCommand() *cli.Command {
 			}
 			defer func() { _ = c.Done() }()
 
-			// Render live progress for the ensure phase, where image downloads happen.
-			finish := startProgress(globalClient, c, noColor, cmd.Root().Writer)
+			finish := func(success bool) {}
+			if !cmd.Root().Bool("debug") {
+				finish = startProgress(globalClient, c, noColor, cmd.Root().Writer)
+			}
 
 			h, err := healthdResolve(c)
 			if err != nil {
@@ -771,8 +773,10 @@ func newHealthdRestartCommand() *cli.Command {
 			}
 			defer func() { _ = c.Done() }()
 
-			// Render live progress for the ensure phase, where image downloads happen.
-			finish := startProgress(globalClient, c, noColor, cmd.Root().Writer)
+			finish := func(success bool) {}
+			if !cmd.Root().Bool("debug") {
+				finish = startProgress(globalClient, c, noColor, cmd.Root().Writer)
+			}
 
 			h, err := healthdResolve(c)
 			if err != nil {
@@ -918,8 +922,10 @@ func newHealthdUpCommand() *cli.Command {
 			}
 			defer func() { _ = c.Done() }()
 
-			// Render live progress for the ensure phase, where image downloads happen.
-			finish := startProgress(globalClient, c, noColor, cmd.Root().Writer)
+			finish := func(success bool) {}
+			if !cmd.Root().Bool("debug") {
+				finish = startProgress(globalClient, c, noColor, cmd.Root().Writer)
+			}
 
 			if params.reCreate {
 				if existing, resources, err := healthdGetResources(c, params); err == nil {
@@ -1021,8 +1027,10 @@ func newHealthdDownCommand() *cli.Command {
 			}
 			defer func() { _ = c.Done() }()
 
-			// Render live progress for the ensure phase, where image downloads happen.
-			finish := startProgress(globalClient, c, noColor, cmd.Root().Writer)
+			finish := func(success bool) {}
+			if !cmd.Root().Bool("debug") {
+				finish = startProgress(globalClient, c, noColor, cmd.Root().Writer)
+			}
 
 			inst, resources, err := healthdGetResources(c, params)
 			if err != nil {

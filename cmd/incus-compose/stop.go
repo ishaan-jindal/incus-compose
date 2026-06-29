@@ -103,7 +103,10 @@ func newStopCommand() *cli.Command {
 				stopOpts = append(stopOpts, client.OptionNoHealthd())
 			}
 
-			finish := startProgress(globalClient, c, noColor, cmd.Root().Writer)
+			finish := func(success bool) {}
+			if !cmd.Root().Bool("debug") {
+				finish = startProgress(globalClient, c, noColor, cmd.Root().Writer)
+			}
 			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, stopOpts...)
 			finish(errStop == nil)
 			if errStop != nil {
