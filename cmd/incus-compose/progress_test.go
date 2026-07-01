@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -25,8 +26,9 @@ func (f fakeResource) Created() bool     { return false }
 
 // newTestRenderer builds a progress renderer with a fixed 40-column width.
 func newTestRenderer() (*bytes.Buffer, *progressRenderer) {
+	c := client.NewOfflineClient(context.Background(), "progress")
 	buf := &bytes.Buffer{}
-	renderer := newProgressRenderer(buf, true, true)
+	renderer := newProgressRenderer(c, buf, true, true)
 	renderer.width = func() int { return 40 }
 	return buf, renderer
 }
@@ -82,7 +84,8 @@ func TestMarkStartShowsSpinner(t *testing.T) {
 func TestRenderError(t *testing.T) {
 	t.Parallel()
 
-	colored := newProgressRenderer(&bytes.Buffer{}, false, true)
+	c := client.NewOfflineClient(context.Background(), "progress")
+	colored := newProgressRenderer(c, &bytes.Buffer{}, false, true)
 	line := &progressLine{action: "start", kind: "instance", label: "web", err: assert.AnError}
 
 	full := colored.render(line, 0)
@@ -93,8 +96,9 @@ func TestRenderError(t *testing.T) {
 func TestMarkErrorPlainMode(t *testing.T) {
 	t.Parallel()
 
+	c := client.NewOfflineClient(context.Background(), "progress")
 	buf := &bytes.Buffer{}
-	renderer := newProgressRenderer(buf, true, false)
+	renderer := newProgressRenderer(c, buf, true, false)
 
 	renderer.markError(client.ActionStart, fakeResource{name: "web"}, assert.AnError)
 
@@ -115,7 +119,8 @@ func TestRenderErrorTruncatesToWidth(t *testing.T) {
 func TestRenderDoneSkipsColorWhenTruncated(t *testing.T) {
 	t.Parallel()
 
-	colored := newProgressRenderer(&bytes.Buffer{}, false, true)
+	c := client.NewOfflineClient(context.Background(), "progress")
+	colored := newProgressRenderer(c, &bytes.Buffer{}, false, true)
 	line := &progressLine{action: "ensure", kind: "image", label: "alpine", done: true}
 
 	full := colored.render(line, 0)
@@ -193,7 +198,7 @@ func TestStopFlushesPartialLogLine(t *testing.T) {
 	_, err := w.Write([]byte("trailing"))
 	require.NoError(t, err)
 
-	renderer.Stop(true)
+	renderer.Stop()
 	assert.Contains(t, buf.String(), "trailing\n")
 }
 

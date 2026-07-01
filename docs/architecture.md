@@ -263,6 +263,7 @@ See the [docs index](README.md) for all user and contributor docs. Closely relat
 - [Client Package](architecture/client/README.md) - Resources, Stack, WorkerPool
 - [Testing](architecture/testing.md) - Testing patterns and fixtures
 - [Health Checking](healthd.md) - ic-healthd sidecar
+- [Progress](architecture/progress.md) - Live operation progress and the terminal renderer
 
 ## Need Help?
 

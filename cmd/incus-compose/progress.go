@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/lxc/incus/v7/shared/units"
-	"github.com/mattn/go-isatty"
 	"golang.org/x/term"
 
 	"github.com/lxc/incus-compose/client"
@@ -54,10 +53,13 @@ type progressLine struct {
 // Operations run in parallel, so handle may be called concurrently; all state
 // is guarded by mu.
 type progressRenderer struct {
+	client  *client.Client
 	out     io.Writer
 	noColor bool
 	animate bool       // redraw in place with a spinner (real terminal only)
 	width   func() int // terminal width in columns, 0 disables truncation
+
+	logWriter io.Writer // The logwriter we bypass between Start() and Stop()
 
 	mu      sync.Mutex
 	order   []string
@@ -70,54 +72,9 @@ type progressRenderer struct {
 	wg      sync.WaitGroup
 }
 
-// startProgress attaches a live progress renderer to the project client and
-// returns a finish func that detaches it and flushes the final frame. Call it
-// after any resolution-only ensure so resource lookups stay silent; only the
-// wrapped actions report. The before-hook starts a spinner at action start and
-// the after-hook ends it (done or error), so each action reports in
-// batch/priority order.
-func startProgress(globalClient *client.GlobalClient, c *client.Client, noColor bool, writer io.Writer) func(success bool) {
-	if writer == nil {
-		writer = os.Stderr
-	}
-
-	renderer := newProgressRenderer(writer, noColor, isatty.IsTerminal(os.Stderr.Fd()))
-	renderer.Start()
-	globalClient.SetProgressHandler(renderer.handle)
-
-	// Route log records through the renderer while the live block is on
-	// screen, so they print above it instead of being overwritten by the
-	// next repaint. Plain mode has no in-place block, nothing to protect.
-	var prevLog io.Writer
-	if renderer.animate {
-		prevLog = logWriter.Swap(renderer.bypass())
-	}
-
-	c.AddHookBefore(func(_ context.Context, action client.Action, r client.Resource, _ client.Options, herr error) error {
-		renderer.markStart(action, r)
-		return herr
-	})
-
-	c.AddHookAfter(func(_ context.Context, action client.Action, r client.Resource, _ client.Options, herr error) error {
-		if herr != nil {
-			renderer.markError(action, r, herr)
-		} else {
-			renderer.markDone(action, r)
-		}
-		return herr
-	})
-
-	return func(success bool) {
-		globalClient.SetProgressHandler(nil)
-		renderer.Stop(success)
-		if prevLog != nil {
-			logWriter.Swap(prevLog)
-		}
-	}
-}
-
-func newProgressRenderer(out io.Writer, noColor, animate bool) *progressRenderer {
+func newProgressRenderer(c *client.Client, out io.Writer, noColor, animate bool) *progressRenderer {
 	return &progressRenderer{
+		client:  c,
 		out:     out,
 		noColor: noColor,
 		animate: animate,
@@ -138,41 +95,66 @@ func termWidth() int {
 
 // Start launches the spinner ticker in animated mode. It is a no-op otherwise.
 func (p *progressRenderer) Start() {
-	if !p.animate {
-		return
+	if p.animate {
+		p.wg.Add(1)
+		go func() {
+			defer p.wg.Done()
+			ticker := time.NewTicker(120 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-p.stopCh:
+					return
+				case <-ticker.C:
+					p.mu.Lock()
+					p.spin++
+					p.draw()
+					p.mu.Unlock()
+				}
+			}
+		}()
+
+		p.logWriter = logWriter.Swap(p.bypass())
 	}
 
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
-		ticker := time.NewTicker(120 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-p.stopCh:
-				return
-			case <-ticker.C:
-				p.mu.Lock()
-				p.spin++
-				p.draw()
-				p.mu.Unlock()
-			}
+	p.client.Global().SetProgressHandler(p.handle)
+
+	p.client.AddHookBefore(func(_ context.Context, action client.Action, r client.Resource, _ client.Options, herr error) error {
+		p.markStart(action, r)
+		return herr
+	})
+
+	p.client.AddHookAfter(func(_ context.Context, action client.Action, r client.Resource, _ client.Options, herr error) error {
+		if herr != nil {
+			p.markError(action, r, herr)
+		} else {
+			p.markDone(action, r)
 		}
-	}()
+		return herr
+	})
 }
 
 // Stop ends rendering. On success every line is marked done so the final frame
 // reads cleanly; on failure the last observed state is left in place.
-func (p *progressRenderer) Stop(success bool) {
+func (p *progressRenderer) Stop() {
+	if p.stopped {
+		return
+	}
+
+	p.stopped = true
+	p.client.Global().SetProgressHandler(nil)
+
 	if p.animate {
+		if p.logWriter != nil {
+			logWriter.Swap(p.logWriter)
+		}
+
 		close(p.stopCh)
 		p.wg.Wait()
 	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-
-	p.stopped = true
 
 	// Flush a trailing partial log line so it is not lost (bypass writer
 	// buffers until a newline arrives).
@@ -181,10 +163,8 @@ func (p *progressRenderer) Stop(success bool) {
 		p.logBuf = nil
 	}
 
-	if success {
-		for _, key := range p.order {
-			p.lines[key].done = true
-		}
+	for _, key := range p.order {
+		p.lines[key].done = true
 	}
 
 	if p.animate {
