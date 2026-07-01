@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/mattn/go-isatty"
 	"github.com/urfave/cli/v3"
 
 	"github.com/lxc/incus-compose/client"
@@ -138,9 +140,16 @@ func newUpCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			finish := func(success bool) {}
+			stdout := cmd.Root().Writer
+			stderr := cmd.Root().ErrWriter
+
 			if !cmd.Root().Bool("debug") {
-				finish = startProgress(globalClient, c, noColor, cmd.Root().Writer)
+				progress := newProgressRenderer(c, stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+				progress.Start()
+				defer progress.Stop()
+
+				stdout = progress.bypass()
+				stderr = stdout
 			}
 
 			usesHealthd := !cmd.Bool("no-healthd")
@@ -200,11 +209,11 @@ func newUpCommand() *cli.Command {
 				recreateOptions := append(runOptions, client.OptionForce())
 
 				// Ensure without create for "recreate" (resolution only, no progress).
-				if err := ensureStack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
+				if err := ensureStack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, stdout, stderr); err != nil {
 					c.LogDebug("Ensuring for reCreate", "error", err)
 				} else {
 					// Stop
-					errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, recreateOptions...)
+					errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, stdout, stderr, recreateOptions...)
 					if errStop != nil {
 						c.LogDebug("Stopping resources", "error", errStop)
 					}
@@ -212,7 +221,7 @@ func newUpCommand() *cli.Command {
 					// Delete
 					deleteStack := stack.ForAction(client.ActionDelete)
 					c.LogDebug("Recreate delete", "resources", deleteStack.All())
-					errDel := deleteStack.Run(ctx, client.ActionDelete, cmd.Root().Writer, cmd.Root().ErrWriter, recreateOptions...)
+					errDel := deleteStack.Run(ctx, client.ActionDelete, stdout, stderr, recreateOptions...)
 					if errDel != nil {
 						c.LogDebug("Deleting resources", "error", errDel)
 					}
@@ -280,8 +289,6 @@ func newUpCommand() *cli.Command {
 				inst, resources, err := healthdGetResources(c, hparams)
 				if err != nil {
 					globalClient.LogError("Creating healthd resources", "error", err)
-
-					finish(err == nil)
 					return errLogged.Wrap(err)
 				}
 
@@ -304,7 +311,7 @@ func newUpCommand() *cli.Command {
 				startOptions = append(startOptions, client.OptionDependencyTimeout(cmd.Duration("dependency-timeout")))
 			}
 
-			err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter, startOptions...)
+			err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, stdout, stderr, startOptions...)
 			if err != nil {
 				c.LogError("Ensuring resources", "error", err)
 				return errLogged.Wrap(err)
@@ -314,15 +321,13 @@ func newUpCommand() *cli.Command {
 			if !cmd.Bool("no-start") {
 				startFilter := func(r client.Resource) bool { return r.IsEnsured() }
 
-				if err := stack.ForActionF(client.ActionStart, startFilter).Run(ctx, client.ActionStart, cmd.Root().Writer, cmd.Root().ErrWriter, startOptions...); err != nil {
+				if err := stack.ForActionF(client.ActionStart, startFilter).Run(ctx, client.ActionStart, stdout, stderr, startOptions...); err != nil {
 					c.LogError("Starting resources", "error", err)
 					return errLogged.Wrap(err)
 				}
 			}
 
 			_ = c.Done()
-
-			finish(err == nil)
 
 			return nil
 		},

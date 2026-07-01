@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"os"
 	"time"
 
+	"github.com/mattn/go-isatty"
 	"github.com/urfave/cli/v3"
 
 	"github.com/lxc/incus-compose/client"
@@ -77,9 +79,16 @@ func newDownCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			finish := func(success bool) {}
+			stdout := cmd.Root().Writer
+			stderr := cmd.Root().ErrWriter
+
 			if !cmd.Root().Bool("debug") {
-				finish = startProgress(globalClient, c, noColor, cmd.Root().Writer)
+				progress := newProgressRenderer(c, stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+				progress.Start()
+				defer progress.Stop()
+
+				stdout = progress.bypass()
+				stderr = stdout
 			}
 
 			resources, err := p.Resources(c)
@@ -122,7 +131,7 @@ func newDownCommand() *cli.Command {
 				}
 			}
 
-			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
+			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, stdout, stderr); err != nil {
 				c.LogWarn("Getting resources", "error", err)
 			}
 
@@ -131,12 +140,12 @@ func newDownCommand() *cli.Command {
 				client.OptionTimeout(cmd.Duration("timeout")),
 			}
 
-			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, runOpts...)
+			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, stdout, stderr, runOpts...)
 			if errStop != nil {
 				c.LogWarn("Stopping resources", "error", errStop)
 			}
 
-			errDel := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, cmd.Root().Writer, cmd.Root().ErrWriter, runOpts...)
+			errDel := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, cmd.Root().Writer, stderr, runOpts...)
 			if errDel != nil {
 				c.LogWarn("Deleting resources", "error", errDel)
 			}
@@ -150,7 +159,6 @@ func newDownCommand() *cli.Command {
 				}
 			}
 
-			finish(err == nil)
 			return nil
 		},
 	}

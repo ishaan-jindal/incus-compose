@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
 	"time"
 
+	"github.com/mattn/go-isatty"
 	"github.com/urfave/cli/v3"
 
 	"github.com/lxc/incus-compose/client"
@@ -66,9 +68,16 @@ func newStartCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			finish := func(success bool) {}
+			stdout := cmd.Root().Writer
+			stderr := cmd.Root().ErrWriter
+
 			if !cmd.Root().Bool("debug") {
-				finish = startProgress(globalClient, c, noColor, cmd.Root().Writer)
+				progress := newProgressRenderer(c, stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+				progress.Start()
+				defer progress.Stop()
+
+				stdout = progress.bypass()
+				stderr = stdout
 			}
 
 			resources, err := p.Resources(c)
@@ -97,8 +106,8 @@ func newStartCommand() *cli.Command {
 			if err := stack.ForAction(client.ActionEnsure).Run(
 				ctx,
 				client.ActionEnsure,
-				cmd.Root().Writer,
-				cmd.Root().ErrWriter,
+				stdout,
+				stderr,
 			); err != nil {
 				c.LogError("Getting resources", "error", err)
 				errs = errors.Join(errs, err)
@@ -116,8 +125,7 @@ func newStartCommand() *cli.Command {
 			}
 
 			filter := func(r client.Resource) bool { return r.IsEnsured() }
-			errStart := stack.ForActionF(client.ActionStart, filter).Run(ctx, client.ActionStart, cmd.Root().Writer, cmd.Root().ErrWriter, startOpts...)
-			finish(errStart == nil)
+			errStart := stack.ForActionF(client.ActionStart, filter).Run(ctx, client.ActionStart, stdout, stderr, startOpts...)
 			if errStart != nil {
 				c.LogError("Starting resources", "error", errStart)
 				errs = errors.Join(errs, errStart)
