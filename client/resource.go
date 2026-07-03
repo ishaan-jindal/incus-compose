@@ -298,9 +298,9 @@ func (s *ResourceStore) Get(kind Kind, name string, incus bool) Resource {
 	idx := slices.IndexFunc(s.resources, func(r Resource) bool {
 		if !incus {
 			return r.Kind() == kind && r.Name() == name
-		} else {
-			return r.Kind() == kind && r.IncusName() == name
 		}
+
+		return r.Kind() == kind && r.IncusName() == name
 	})
 	if idx == -1 {
 		return nil

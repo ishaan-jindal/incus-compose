@@ -230,7 +230,7 @@ func TestSlowStartStopRestartWithDeps(t *testing.T) {
 			args: []string{"-f", compose, "restart", "--with-deps", "nginx"},
 		},
 		{
-			name: "stop manualy",
+			name: "stop manually",
 			args: []string{"-f", compose, "stop", "nginx", "backend1", "backend2"},
 		},
 		{
