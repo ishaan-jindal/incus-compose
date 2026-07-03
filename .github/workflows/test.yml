@@ -84,7 +84,7 @@ jobs:
         run: |
           mkdir -p "$REPORTS_DIR"
 
-          gotestsum --rerun-fails \
+          gotestsum \
             --packages="./..." \
             --junitfile "$REPORTS_DIR/junit.xml" \
             -- -count=1 -parallel "$TEST_PROCS" -v 2>&1
