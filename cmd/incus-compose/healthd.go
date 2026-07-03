@@ -258,6 +258,10 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			return client.ErrUnknown.WithResource(netRes).WithText("failed to cast")
 		}
 
+		if !network.IsEnsured() {
+			return client.ErrNotEnsured.WithResource(network)
+		}
+
 		inst.Config.Resources = append(inst.Config.Resources, network)
 
 		var incusURL *url.URL

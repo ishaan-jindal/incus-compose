@@ -70,9 +70,9 @@ func newHealthdDownCommand() *cli.Command {
 			stderr := cmd.Root().ErrWriter
 
 			if !cmd.Root().Bool("debug") {
-				progress := newProgressRenderer(c, stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
-				progress.Start()
-				defer progress.Stop()
+				progress := newProgressRenderer(stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+				progress.Start(c)
+				defer progress.Stop(c)
 
 				stdout = progress.bypass()
 				stderr = stdout

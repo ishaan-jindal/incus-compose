@@ -115,6 +115,17 @@ func newUpCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
+			if cmd.Args().Len() > 0 {
+				for _, s := range cmd.Args().Slice() {
+					_, ok := p.Services[s]
+					if !ok {
+						err := client.ErrNotFound.WithKindName(client.KindInstance, s)
+						globalClient.LogError("Service not found", "service", s)
+						return errLogged.Wrap(err)
+					}
+				}
+			}
+
 			c, err := globalClient.EnsureProject(
 				p.Name,
 				client.EnsureProjectWithCreate(),
@@ -137,17 +148,16 @@ func newUpCommand() *cli.Command {
 			stdout := cmd.Root().Writer
 			stderr := cmd.Root().ErrWriter
 
-			// We start all resources, just ignore warning but let progress know them (so add before - LIFO - progress runs before).
-			c.IgnoreWarn(client.ActionStart, client.KindInstance)
+			// We start all resources, just ignore that warning but let progress know them (so add before - LIFO - progress runs before).
+			c.IgnoreError(client.ActionStart, client.ErrRunning)
+			c.IgnoreError(client.ActionStop, client.ErrNotRunning)
+			c.IgnoreError(client.ActionEnsure, client.ErrNotFound)
 
-			if !cmd.Root().Bool("debug") {
-				progress := newProgressRenderer(c, stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
-				progress.Start()
-				defer progress.Stop()
-
-				stdout = progress.bypass()
-				stderr = stdout
-			}
+			// The recreate client has own errors it ignores.
+			rc := c.Clone()
+			rc.IgnoreError(client.ActionStop, client.ErrNotEnsured)
+			rc.IgnoreError(client.ActionDelete, client.ErrNotEnsured)
+			rc.IgnoreError(client.ActionDelete, client.ErrNotFound)
 
 			// Register the DNS Watcher after the progress renderer so progress waits for the dns changes.
 			if err := c.RegisterDNSWatcher(); err != nil {
@@ -180,58 +190,84 @@ func newUpCommand() *cli.Command {
 			}
 
 			if cmd.Bool("recreate") {
+				var rprogress *progressRenderer
+				if !cmd.Bool("debug") {
+					rprogress = newProgressRenderer(stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+					rprogress.Start(rc)
+				}
+
 				scale := parseScale(cmd.StringSlice("scale"))
-				resources, err := p.Resources(c, project.ResourcesScale(scale))
+				resources, err := p.Resources(rc, project.ResourcesScale(scale))
 				if err != nil {
-					c.LogError("Getting project resources in reCreate", "error", err)
+					rc.LogError("Getting project resources in reCreate", "error", err)
+					if rprogress != nil {
+						rprogress.Stop(rc)
+					}
 					return errLogged.Wrap(err)
 				}
 
 				order, err := p.ServiceOrder(true)
 				if err != nil {
-					c.LogError("Getting the service dependency order", "error", err)
+					rc.LogError("Getting the service dependency order", "error", err)
+					if rprogress != nil {
+						rprogress.Stop(rc)
+					}
 					return errLogged.Wrap(err)
 				}
 
-				// The client needs to know about all resources for DNSWatcher, even those we filter out later.
-				ensureStack := client.NewStack(c, client.StackSortDescending(), client.StackWorkers(cmd.Root().Int("workers")))
-				ensureStack.AddOrdered(order, resources)
-
+				// The client needs to know about all instances for DNSWatcher as well as networks for healthd, even those we filter out later.
+				ensureStack := client.NewStack(rc, client.StackSortDescending(), client.StackWorkers(cmd.Root().Int("workers")))
 				args := filterResourcesArgs{
+					ExcludeKinds: []client.Kind{client.KindImage, client.KindStorageVolume},
+				}
+				myResources := filterResources(p, resources, args)
+				ensureStack.AddOrdered(order, myResources)
+
+				args = filterResourcesArgs{
 					OnlyServices:     cmd.Args().Slice(),
 					WithDependencies: !cmd.Bool("no-deps"),
 					ExcludeKinds:     []client.Kind{client.KindImage, client.KindNetwork, client.KindStorageVolume},
 				}
-				myResources := filterResources(p, resources, args)
+				myResources = filterResources(p, resources, args)
 
-				stack := client.NewStack(c, client.StackSortDescending(), client.StackWorkers(cmd.Root().Int("workers")))
+				stack := client.NewStack(rc, client.StackSortDescending(), client.StackWorkers(cmd.Root().Int("workers")))
 				stack.AddOrdered(order, myResources)
 
-				c.LogDebug("Ensure", "resources", stack.All())
+				rc.LogDebug("Ensure", "resources", stack.All())
 
 				recreateOptions := append(runOptions, client.OptionForce())
 
 				// Ensure without create for "recreate" (resolution only, no progress).
 				if err := ensureStack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, stdout, stderr); err != nil {
-					c.LogDebug("Ensuring for reCreate", "error", err)
+					rc.LogDebug("Ensuring for reCreate", "error", err)
 				} else {
 					// Stop
 					errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, stdout, stderr, recreateOptions...)
 					if errStop != nil {
-						c.LogDebug("Stopping resources", "error", errStop)
+						rc.LogDebug("Stopping resources", "error", errStop)
 					}
 
 					// Delete
 					deleteStack := stack.ForAction(client.ActionDelete)
-					c.LogDebug("Recreate delete", "resources", deleteStack.All())
+					rc.LogDebug("Recreate delete", "resources", deleteStack.All())
 					errDel := deleteStack.Run(ctx, client.ActionDelete, stdout, stderr, recreateOptions...)
 					if errDel != nil {
-						c.LogDebug("Deleting resources", "error", errDel)
+						rc.LogDebug("Deleting resources", "error", errDel)
 					}
 				}
 
-				// Start fresh after recreate
-				c.ResetResources()
+				if rprogress != nil {
+					rprogress.Stop(rc)
+				}
+			}
+
+			if !cmd.Root().Bool("debug") {
+				progress := newProgressRenderer(stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+				progress.Start(c)
+				defer progress.Stop(c)
+
+				stdout = progress.bypass()
+				stderr = stdout
 			}
 
 			scale := parseScale(cmd.StringSlice("scale"))

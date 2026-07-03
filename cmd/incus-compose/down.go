@@ -27,7 +27,7 @@ func newDownCommand() *cli.Command {
 			},
 			&cli.StringFlag{
 				Name:  "rmi",
-				Usage: `Remove images used by services. "local" for known images.`,
+				Usage: `Remove images used by services. "local" for known images - all is currently the same as "local".`,
 			},
 			&cli.BoolFlag{
 				Name:  "images",
@@ -41,6 +41,10 @@ func newDownCommand() *cli.Command {
 			&cli.BoolFlag{
 				Name:  "no-deps",
 				Usage: "Don't stop linked services",
+			},
+			&cli.BoolFlag{
+				Name:  "no-networks",
+				Usage: "Don't touch networks",
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -73,13 +77,20 @@ func newDownCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
+			// We start all resources, just ignore that warning but let progress know them (so add before - LIFO - progress runs before).
+			c.IgnoreError(client.ActionStop, client.ErrNotEnsured)
+			c.IgnoreError(client.ActionStop, client.ErrNotRunning)
+			c.IgnoreError(client.ActionEnsure, client.ErrNotFound)
+			c.IgnoreError(client.ActionDelete, client.ErrNotEnsured)
+			c.IgnoreError(client.ActionDelete, client.ErrNotFound)
+
 			stdout := cmd.Root().Writer
 			stderr := cmd.Root().ErrWriter
 
 			if !cmd.Root().Bool("debug") {
-				progress := newProgressRenderer(c, stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
-				progress.Start()
-				defer progress.Stop()
+				progress := newProgressRenderer(stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+				progress.Start(c)
+				defer progress.Stop(c)
 
 				stdout = progress.bypass()
 				stderr = stdout
@@ -108,7 +119,7 @@ func newDownCommand() *cli.Command {
 			}
 
 			// Do not delete networks when we are not deleting all other resources.
-			if cmd.Args().Len() > 0 {
+			if cmd.Args().Len() > 0 || cmd.Bool("no-networks") {
 				args.ExcludeKinds = append(args.ExcludeKinds, client.KindNetwork)
 			}
 

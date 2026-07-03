@@ -123,16 +123,19 @@ func newHealthdUpCommand() *cli.Command {
 			stdout := cmd.Root().Writer
 
 			if !cmd.Root().Bool("debug") {
-				progress := newProgressRenderer(c, stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
-				progress.Start()
-				defer progress.Stop()
+				progress := newProgressRenderer(stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+				progress.Start(c)
+				defer progress.Stop(c)
 
 				stdout = progress.bypass()
 			}
 
 			if params.reCreate {
-				if existing, resources, err := healthdGetResources(c, params); err == nil {
-					stack := client.NewStack(c, client.StackSortDescending())
+				existing, resources, err := healthdGetResources(c, params)
+				if err == nil {
+					rc := c.Clone()
+
+					stack := client.NewStack(rc, client.StackSortDescending())
 
 					for _, r := range resources {
 						if r.Kind() != client.KindImage {
@@ -141,7 +144,7 @@ func newHealthdUpCommand() *cli.Command {
 					}
 					stack.Add(existing)
 
-					c.LogDebug("Ensure", "resources", stack.All())
+					rc.LogDebug("Ensure", "resources", stack.All())
 
 					// Do not recreate networks.
 					recreateFilter := func(r client.Resource) bool {
@@ -149,23 +152,21 @@ func newHealthdUpCommand() *cli.Command {
 					}
 
 					if err := stack.ForActionF(client.ActionEnsure, recreateFilter).Run(ctx, client.ActionEnsure, stdout, cmd.Root().ErrWriter); err != nil {
-						c.LogWarn("Ensuring healthd", "error", err)
+						rc.LogWarn("Ensuring healthd", "error", err)
 					}
 
 					if err := stack.ForActionF(client.ActionStop, recreateFilter).Run(ctx, client.ActionStop, stdout, cmd.Root().ErrWriter, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout"))); err != nil {
-						c.LogWarn("Stopping healthd resources", "error", err)
+						rc.LogWarn("Stopping healthd resources", "error", err)
 					}
 
 					if err := stack.ForActionF(client.ActionDelete, recreateFilter).Run(ctx, client.ActionDelete, stdout, cmd.Root().ErrWriter, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout"))); err != nil {
-						c.LogWarn("Deleting healthd resources", "error", err)
+						rc.LogWarn("Deleting healthd resources", "error", err)
 					}
 
 					if err := healthdRevokeCert(c); err != nil {
-						c.LogWarn("Cannot revoke the healthd cert", "error", err)
+						rc.LogWarn("Cannot revoke the healthd cert", "error", err)
 					}
 				}
-
-				c.ResetResources()
 			}
 
 			stack := client.NewStack(c, client.StackWorkers(params.workers))

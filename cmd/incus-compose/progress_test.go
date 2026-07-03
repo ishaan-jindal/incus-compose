@@ -26,9 +26,8 @@ func (f fakeResource) Created() bool     { return false }
 
 // newTestRenderer builds a progress renderer with a fixed 40-column width.
 func newTestRenderer() (*bytes.Buffer, *progressRenderer) {
-	c := client.NewOfflineClient(context.Background(), "progress")
 	buf := &bytes.Buffer{}
-	renderer := newProgressRenderer(c, buf, true, true)
+	renderer := newProgressRenderer(buf, true, true)
 	renderer.width = func() int { return 40 }
 	return buf, renderer
 }
@@ -41,7 +40,7 @@ func TestRenderTruncatesToWidth(t *testing.T) {
 	line := &progressLine{
 		action:  "ensure",
 		kind:    "image",
-		label:   "docker.io/library/postgres:16-alpine",
+		name:    "docker.io/library/postgres:16-alpine",
 		percent: -1,
 		text:    strings.Repeat("x", 100),
 	}
@@ -59,7 +58,7 @@ func TestRenderPercentTruncatesToWidth(t *testing.T) {
 	line := &progressLine{
 		action:  "ensure",
 		kind:    "image",
-		label:   "images:alpine/edge",
+		name:    "images:alpine/edge",
 		percent: 42,
 		text:    "rootfs: 42% (3.10MB/s)",
 	}
@@ -84,9 +83,8 @@ func TestMarkStartShowsSpinner(t *testing.T) {
 func TestRenderError(t *testing.T) {
 	t.Parallel()
 
-	c := client.NewOfflineClient(context.Background(), "progress")
-	colored := newProgressRenderer(c, &bytes.Buffer{}, false, true)
-	line := &progressLine{action: "start", kind: "instance", label: "web", err: assert.AnError}
+	colored := newProgressRenderer(&bytes.Buffer{}, false, true)
+	line := &progressLine{action: "start", kind: "instance", name: "web", err: assert.AnError}
 
 	full := colored.render(line, 0)
 	assert.Contains(t, full, "[error: "+assert.AnError.Error()+"]")
@@ -96,11 +94,10 @@ func TestRenderError(t *testing.T) {
 func TestMarkErrorPlainMode(t *testing.T) {
 	t.Parallel()
 
-	c := client.NewOfflineClient(context.Background(), "progress")
 	buf := &bytes.Buffer{}
-	renderer := newProgressRenderer(c, buf, true, false)
+	renderer := newProgressRenderer(buf, true, false)
 
-	renderer.markError(client.ActionStart, fakeResource{name: "web"}, assert.AnError)
+	renderer.markDone(client.ActionStart, fakeResource{name: "web"}, assert.AnError)
 
 	assert.Contains(t, buf.String(), "error: "+assert.AnError.Error())
 }
@@ -109,7 +106,7 @@ func TestRenderErrorTruncatesToWidth(t *testing.T) {
 	t.Parallel()
 
 	_, renderer := newTestRenderer()
-	line := &progressLine{action: "start", kind: "instance", label: "web", err: assert.AnError}
+	line := &progressLine{action: "start", kind: "instance", name: "web", err: assert.AnError}
 
 	out := renderer.render(line, 40)
 	assert.Len(t, out, 40)
@@ -119,9 +116,8 @@ func TestRenderErrorTruncatesToWidth(t *testing.T) {
 func TestRenderDoneSkipsColorWhenTruncated(t *testing.T) {
 	t.Parallel()
 
-	c := client.NewOfflineClient(context.Background(), "progress")
-	colored := newProgressRenderer(c, &bytes.Buffer{}, false, true)
-	line := &progressLine{action: "ensure", kind: "image", label: "alpine", done: true}
+	colored := newProgressRenderer(&bytes.Buffer{}, false, true)
+	line := &progressLine{action: "ensure", kind: "image", name: "alpine", done: true}
 
 	full := colored.render(line, 0)
 	assert.Contains(t, full, colorGreen)
@@ -198,7 +194,8 @@ func TestStopFlushesPartialLogLine(t *testing.T) {
 	_, err := w.Write([]byte("trailing"))
 	require.NoError(t, err)
 
-	renderer.Stop()
+	c := client.NewOfflineClient(context.Background(), "progress")
+	renderer.Stop(c)
 	assert.Contains(t, buf.String(), "trailing\n")
 }
 

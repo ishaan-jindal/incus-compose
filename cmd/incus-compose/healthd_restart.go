@@ -52,9 +52,9 @@ func newHealthdRestartCommand() *cli.Command {
 			defer func() { _ = c.Done() }()
 
 			if !cmd.Root().Bool("debug") {
-				progress := newProgressRenderer(c, cmd.Root().Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
-				progress.Start()
-				defer progress.Stop()
+				progress := newProgressRenderer(cmd.Root().Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+				progress.Start(c)
+				defer progress.Stop(c)
 			}
 
 			h, err := healthdResolve(c)

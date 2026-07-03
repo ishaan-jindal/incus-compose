@@ -44,7 +44,7 @@ var spinFrames = []string{"-", "\\", "|", "/"}
 type progressLine struct {
 	action    string
 	kind      string
-	label     string
+	name      string
 	percent   int    // -1 when the operation reports no percentage (OCI pulls)
 	text      string // latest status text from Incus
 	done      bool
@@ -56,7 +56,6 @@ type progressLine struct {
 // Operations run in parallel, so handle may be called concurrently; all state
 // is guarded by mu.
 type progressRenderer struct {
-	client  *client.Client
 	out     io.Writer
 	noColor bool
 	animate bool       // redraw in place with a spinner (real terminal only)
@@ -75,9 +74,8 @@ type progressRenderer struct {
 	wg      sync.WaitGroup
 }
 
-func newProgressRenderer(c *client.Client, out io.Writer, noColor, animate bool) *progressRenderer {
+func newProgressRenderer(out io.Writer, noColor, animate bool) *progressRenderer {
 	return &progressRenderer{
-		client:  c,
 		out:     out,
 		noColor: noColor,
 		animate: animate,
@@ -96,8 +94,8 @@ func termWidth() int {
 	return w
 }
 
-// Start launches the spinner ticker in animated mode. It is a no-op otherwise.
-func (p *progressRenderer) Start() {
+// Start launches the spinner ticker in animated mode and adds the hooks.
+func (p *progressRenderer) Start(c *client.Client) {
 	if p.animate {
 		p.wg.Add(1)
 		go func() {
@@ -120,32 +118,28 @@ func (p *progressRenderer) Start() {
 		p.logWriter = logWriter.Swap(p.bypass())
 	}
 
-	p.client.Global().SetProgressHandler(p.handle)
+	c.Global().SetProgressHandler(p.handle)
 
-	p.client.AddHookBefore(func(_ context.Context, action client.Action, r client.Resource, _ client.Options, herr error) error {
+	c.AddHookBefore(func(_ context.Context, action client.Action, r client.Resource, _ client.Options, herr error) error {
 		p.markStart(action, r)
 		return herr
 	})
 
-	p.client.AddHookAfter(func(_ context.Context, action client.Action, r client.Resource, _ client.Options, herr error) error {
-		if herr != nil {
-			p.markError(action, r, herr)
-		} else {
-			p.markDone(action, r)
-		}
+	c.AddHookAfter(func(_ context.Context, action client.Action, r client.Resource, _ client.Options, herr error) error {
+		p.markDone(action, r, herr)
 		return herr
 	})
 }
 
 // Stop ends rendering. On success every line is marked done so the final frame
 // reads cleanly; on failure the last observed state is left in place.
-func (p *progressRenderer) Stop() {
+func (p *progressRenderer) Stop(c *client.Client) {
 	if p.stopped {
 		return
 	}
 
 	p.stopped = true
-	p.client.Global().SetProgressHandler(nil)
+	c.Global().SetProgressHandler(nil)
 
 	if p.animate {
 		if p.logWriter != nil {
@@ -188,8 +182,12 @@ func (p *progressRenderer) line(action client.Action, r client.Resource) *progre
 	key := string(action) + "/" + r.IncusName()
 	line, ok := p.lines[key]
 	if !ok {
-		kind, label := resourceLabel(r)
-		line = &progressLine{action: string(action), kind: kind, label: label, percent: -1}
+		kind, name := string(r.Kind()), r.Name()
+		if sz, ok := r.(interface{ Size() int64 }); ok && sz.Size() > 0 {
+			kind, name = string(r.Kind()), fmt.Sprintf("%s (%s)", r.Name(), units.GetByteSizeString(sz.Size(), 1))
+		}
+
+		line = &progressLine{action: string(action), kind: kind, name: name, percent: -1}
 		p.lines[key] = line
 		p.order = append(p.order, key)
 	}
@@ -240,34 +238,9 @@ func (p *progressRenderer) markStart(action client.Action, r client.Resource) {
 	}
 }
 
-// markDone marks an action/resource as finished. Driven by the client's
-// after-hook (fires at action completion), it creates the line if no progress
-// event arrived, so quick actions (start, stop, delete) still report. Batches
-// run in priority order, so images report done before instances.
-func (p *progressRenderer) markDone(action client.Action, r client.Resource) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.stopped {
-		return
-	}
-
-	line := p.line(action, r)
-	if line.done {
-		return
-	}
-	line.done = true
-
-	if p.animate {
-		p.draw()
-	} else {
-		p.drawPlain(line)
-	}
-}
-
-// markError records the failure for an action/resource so the line renders as
-// an error. Driven by the client's after-hook when the action returns an error.
-func (p *progressRenderer) markError(action client.Action, r client.Resource, err error) {
+// markDone records the end for an action/resource.
+// Driven by the client's after-hook.
+func (p *progressRenderer) markDone(action client.Action, r client.Resource, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -277,6 +250,7 @@ func (p *progressRenderer) markError(action client.Action, r client.Resource, er
 
 	line := p.line(action, r)
 	line.err = err
+	line.done = true
 
 	if p.animate {
 		p.draw()
@@ -338,7 +312,7 @@ func (p *progressRenderer) drawPlain(line *progressLine) {
 		return
 	}
 	line.lastPlain = msg
-	_, _ = fmt.Fprintf(p.out, "%s %s %s: %s\n", line.action, line.kind, line.label, msg)
+	_, _ = fmt.Fprintf(p.out, "%s %s %s: %s\n", line.action, line.kind, line.name, msg)
 }
 
 // render formats one line, truncated to width so it never wraps; a wrapped
@@ -347,11 +321,11 @@ func (p *progressRenderer) drawPlain(line *progressLine) {
 func (p *progressRenderer) render(line *progressLine, width int) string {
 	action := fmt.Sprintf("%-*s", actionWidth, truncate(line.action, actionWidth))
 	kind := fmt.Sprintf("%-*s", kindWidth, truncate(line.kind, kindWidth))
-	label := fmt.Sprintf("%-*s", labelWidth, truncate(line.label, labelWidth))
+	label := fmt.Sprintf("%-*s", labelWidth, truncate(line.name, labelWidth))
 
 	switch {
 	case line.err != nil:
-		cError := &client.Error{}
+		var cError *client.Error
 		ok := errors.As(line.err, &cError)
 		if ok {
 			if cError.Severity() <= slog.LevelWarn {
@@ -467,15 +441,6 @@ func (p *progressRenderer) colorize(s, color string) string {
 	return color + s + colorReset
 }
 
-// resourceLabel builds a per-resource label, appending the size when the
-// resource exposes one (images resolve it before a download).
-func resourceLabel(r client.Resource) (string, string) {
-	if sz, ok := r.(interface{ Size() int64 }); ok && sz.Size() > 0 {
-		return string(r.Kind()), fmt.Sprintf("%s (%s)", r.Name(), units.GetByteSizeString(sz.Size(), 1))
-	}
-	return string(r.Kind()), r.Name()
-}
-
 func bar(percent int) string {
 	if percent < 0 {
 		percent = 0
@@ -488,6 +453,8 @@ func bar(percent int) string {
 }
 
 func truncate(s string, n int) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+
 	if len(s) <= n {
 		return s
 	}
