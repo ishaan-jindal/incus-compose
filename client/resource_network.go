@@ -96,7 +96,11 @@ func newNetwork(c *Client, name string, configGetter Config) (*Network, error) {
 
 	// Static initial name: used offline and as first guess before Ensure resolves candidates.
 	if !config.External {
-		network.incusName = SanitizeNetworkName(c.project, c.Config().NetworkPrefix, name)
+		if config.OverrideName == "" {
+			network.incusName = SanitizeNetworkName(c.project, c.Config().NetworkPrefix, name)
+		} else {
+			network.incusName = SanitizeNetworkName("", c.Config().NetworkPrefix, config.OverrideName)
+		}
 	} else if config.OverrideName != "" {
 		network.incusName = config.OverrideName
 	} else {
