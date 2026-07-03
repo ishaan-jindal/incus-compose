@@ -512,10 +512,16 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 		switch cVol.Type {
 		case "volume":
 			volDef := p.Volumes[cVol.Source]
+
+			pool := volumeXIncusComposePool(volDef)
+			if pool == "" {
+				pool = c.Config().DefaultStoragePool
+			}
+
 			volConfig := &client.StorageVolumeConfig{
 				Shifted:       shifted,
 				ImageResource: image,
-				Pool:          volumeXIncusComposePool(volDef),
+				Pool:          pool,
 				Extensions:    extensions,
 			}
 
@@ -561,12 +567,13 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 						DirMode: 0o755,
 					}
 				} else {
-					devName := "bind-seed-" + client.SanitizeIncusName(cVol.Source, client.MaxIncusNameLen-10)
+					devName := "vol-seed-" + client.SanitizeIncusName(cVol.Source, client.MaxIncusNameLen-10)
 
 					volConfig := &client.StorageVolumeConfig{
 						Shifted:       shifted,
 						ImageResource: image,
 						HostPath:      cVol.Source,
+						Pool:          c.Config().DefaultStoragePool,
 					}
 
 					v, err := c.Resource(client.KindStorageVolume, "bind-"+cVol.Source, volConfig)
