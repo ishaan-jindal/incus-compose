@@ -152,7 +152,7 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 			return nil
 		}
 
-		cError := &Error{}
+		var cError *Error
 		if ok := errors.As(err, &cError); ok {
 			return cError.WithResource(r)
 		}

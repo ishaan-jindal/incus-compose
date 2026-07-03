@@ -178,8 +178,7 @@ func (r *Instance) Created() bool {
 	return r.created
 }
 
-// ServiceName returns the compose service name by stripping the trailing
-// "-{index}" from the instance name ("database-1" -> "database").
+// ServiceName returns the compose service name which has been set by the config.
 func (r *Instance) ServiceName() string {
 	return r.Config.ServiceName
 }
@@ -702,6 +701,11 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
+	logTicker := time.NewTicker(2 * time.Second)
+	defer logTicker.Stop()
+
+	startTimeout := time.After(timeout / 3)
+
 	for depName, requiredStatus := range r.Config.Dependencies {
 		r.client.LogDebug("Waiting for dependency", "instance", r.incusName, "dep", depName, "status", requiredStatus)
 		// Report the wait on the instance's start line so it shows a spinner
@@ -719,15 +723,24 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 			}
 
 			select {
+			case <-startTimeout:
+				if inst.StatusCode != incusApi.Running {
+					cancel()
+					return fmt.Errorf("dependency '%v' not running after %s", depName, timeout/3)
+				}
 			case <-ticker.C:
-				if err == nil {
-					r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "status", inst.Config[HealthStatusKey])
-				} else {
-					r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "error", err)
+				select {
+				case <-logTicker.C:
+					if err == nil {
+						r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "status", inst.Config[HealthStatusKey])
+					} else {
+						r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "error", err)
+					}
+				default:
 				}
 			case <-ctx.Done():
 				cancel()
-				return fmt.Errorf("dependency %q did not reach status %q within %s", depName, requiredStatus, timeout)
+				return fmt.Errorf("dependency '%v' did not reach status %q within %s", depName, requiredStatus, timeout)
 			}
 		}
 	}
@@ -764,18 +777,18 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 		Timeout: options.incusTimeout(),
 	}, r.ETag)
 	if err != nil {
-		return ErrOperation.WithText("starting instance").Wrap(err)
+		return ErrOperation.WithText("creating an instance start operation").Wrap(err)
 	}
 
 	// The operation completes once the instance is running or failed to start.
 	err = r.client.hookOperation(ctx, ActionStart, r, options, op, err)
 	if err != nil {
-		return err
+		return ErrOperation.WithText("starting an instance").Wrap(err)
 	}
 
 	err = r.fetch()
 	if err != nil {
-		return err
+		return ErrOperation.WithText("fetch after create").Wrap(err)
 	}
 
 	if !r.Running() {
@@ -784,22 +797,22 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 
 	if r.created {
 		if err := r.PushFiles(ctx); err != nil {
-			return err
+			return ErrCreate.WithText("push files").Wrap(err)
 		}
 
 		// Push secrets after instance is running
 		if len(r.Config.Secrets) > 0 {
 			err := r.PushSecrets(ctx)
 			if err != nil {
-				return err
+				return ErrCreate.WithText("push secrets").Wrap(err)
 			}
 		}
-	}
 
-	if r.created && len(r.Config.PostStartDevices) > 0 {
-		err := r.attachPostStartDevices(ctx)
-		if err != nil {
-			return err
+		if len(r.Config.PostStartDevices) > 0 {
+			err := r.attachPostStartDevices(ctx)
+			if err != nil {
+				return ErrCreate.WithText("post start").Wrap(err)
+			}
 		}
 	}
 
@@ -1085,7 +1098,7 @@ func (r *Instance) Delete(ctx context.Context, opts ...Option) error {
 		r.ETag = ""
 
 		r.client.resources.Remove(r)
-		return r.client.hookAfter(ctx, ActionDelete, r, options, nil)
+		return r.client.hookAfter(ctx, ActionDelete, r, options, ErrNotEnsured)
 	}
 
 	op, err := r.conn.DeleteInstance(r.incusName)

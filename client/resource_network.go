@@ -312,26 +312,6 @@ func networkCreateConfig(extensions map[string]string) (map[string]string, error
 // Delete removes the network from Incus.
 // External networks are never deleted.
 func (r *Network) Delete(ctx context.Context, opts ...Option) error {
-	if !r.IsEnsured() {
-		r.client.resources.Remove(r)
-		return nil
-	}
-
-	if r.Config.External {
-		// External networks are not managed - don't delete them
-		r.IncusNetwork = nil
-		r.ETag = ""
-
-		r.client.resources.Remove(r)
-		return nil
-	}
-
-	if err := r.get(); err != nil {
-		// Already gone server side
-		r.client.resources.Remove(r)
-		return err
-	}
-
 	options := NewOptions(opts...)
 
 	if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
@@ -340,6 +320,34 @@ func (r *Network) Delete(ctx context.Context, opts ...Option) error {
 
 		r.client.resources.Remove(r)
 		return err
+	}
+
+	if !r.IsEnsured() {
+		r.client.resources.Remove(r)
+		return r.client.hookAfter(ctx, ActionDelete, r, options, ErrNotEnsured)
+	}
+
+	if r.Config.External {
+		// External networks are not managed - don't delete them
+		r.IncusNetwork = nil
+		r.ETag = ""
+
+		r.client.resources.Remove(r)
+		return r.client.hookAfter(ctx, ActionDelete, r, options, nil)
+	}
+
+	if err := r.get(); err != nil {
+		// Already gone server side
+		r.client.resources.Remove(r)
+		return r.client.hookAfter(ctx, ActionDelete, r, options, ErrNotFound.Wrap(err))
+	}
+
+	if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
+		r.IncusNetwork = nil
+		r.ETag = ""
+
+		r.client.resources.Remove(r)
+		return r.client.hookAfter(ctx, ActionDelete, r, options, ErrDelete.Wrap(err))
 	}
 
 	err := r.conn.DeleteNetwork(r.incusName)
@@ -355,14 +363,14 @@ func (r *Network) Delete(ctx context.Context, opts ...Option) error {
 		r.ETag = ""
 
 		r.client.resources.Remove(r)
-		return err
+		return r.client.hookAfter(ctx, ActionDelete, r, options, ErrDelete.Wrap(err))
 	}
 
 	r.IncusNetwork = nil
 	r.ETag = ""
 
 	r.client.resources.Remove(r)
-	return nil
+	return r.client.hookAfter(ctx, ActionDelete, r, options, nil)
 }
 
 // UpdateDNSAliases reads raw.dnsmasq from Incus, replaces records for
