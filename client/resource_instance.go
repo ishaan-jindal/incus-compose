@@ -552,7 +552,7 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 			}
 		}
 
-		return r.client.hookAfter(ctx, ActionStart, r, options, nil)
+		return r.client.hookAfter(ctx, ActionStart, r, options, ErrRunning)
 	}
 
 	startCtx, cancel := context.WithTimeout(ctx, options.Timeout)

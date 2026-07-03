@@ -137,6 +137,9 @@ func newUpCommand() *cli.Command {
 			stdout := cmd.Root().Writer
 			stderr := cmd.Root().ErrWriter
 
+			// We start all resources, just ignore warning but let progress know them (so add before - LIFO - progress runs before).
+			c.IgnoreWarn(client.ActionStart, client.KindInstance)
+
 			if !cmd.Root().Bool("debug") {
 				progress := newProgressRenderer(c, stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
 				progress.Start()
@@ -321,7 +324,8 @@ func newUpCommand() *cli.Command {
 			if !cmd.Bool("no-start") {
 				startFilter := func(r client.Resource) bool { return r.IsEnsured() }
 
-				if err := stack.ForActionF(client.ActionStart, startFilter).Run(ctx, client.ActionStart, stdout, stderr, startOptions...); err != nil {
+				err := stack.ForActionF(client.ActionStart, startFilter).Run(ctx, client.ActionStart, stdout, stderr, startOptions...)
+				if err != nil {
 					c.LogError("Starting resources", "error", err)
 					return errLogged.Wrap(err)
 				}

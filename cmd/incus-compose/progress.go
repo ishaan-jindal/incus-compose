@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -24,6 +26,7 @@ const (
 	ansiClearEnd  = "\033[K" // clear from cursor to end of line
 	ansiClearDown = "\033[J" // clear from cursor to end of screen
 	colorGreen    = "\033[32m"
+	colorYellow   = "\033[33m"
 	colorRed      = "\033[31m"
 	colorReset    = "\033[0m"
 
@@ -348,6 +351,21 @@ func (p *progressRenderer) render(line *progressLine, width int) string {
 
 	switch {
 	case line.err != nil:
+		cError := &client.Error{}
+		ok := errors.As(line.err, &cError)
+		if ok {
+			if cError.Severity() <= slog.LevelWarn {
+				// Colorize only when the line fits; truncating would cut the
+				// escape sequence and print garbage.
+				status := "[warn: " + cError.Error() + "]"
+				plain := action + " " + kind + " " + label + " " + status
+				if width > 0 && len(plain) > width {
+					return truncate(plain, width)
+				}
+				return action + " " + kind + " " + label + " " + p.colorize(status, colorYellow)
+			}
+		}
+
 		// Colorize only when the line fits; truncating would cut the
 		// escape sequence and print garbage.
 		status := "[error: " + line.err.Error() + "]"

@@ -3,6 +3,13 @@ package client
 import (
 	"errors"
 	"fmt"
+	"log/slog"
+)
+
+// Severity of an error, defaults to SeverityError
+const (
+	SeverityError = slog.LevelError
+	SeverityWarn  = slog.LevelWarn
 )
 
 // Error is a sentinel-based error type that supports context enrichment.
@@ -10,11 +17,19 @@ type Error struct {
 	sentinel error
 	text     string
 	wrapped  error
+
+	// severity indicates how important that error is, defaults to error.
+	severity slog.Level
 }
 
 // NewError creates a new sentinel error.
 func NewError(text string) *Error {
-	return &Error{sentinel: errors.New(text), text: text}
+	return &Error{sentinel: errors.New(text), text: text, severity: SeverityError}
+}
+
+func (e *Error) WithSeverity(severity slog.Level) *Error {
+	e.severity = severity
+	return e
 }
 
 // WithKindName adds resource kind and name context to the error.
@@ -51,6 +66,11 @@ func (e *Error) WithResource(resource Resource) *Error {
 		text:     fmt.Sprintf("%v: %v", e.text, resource),
 		wrapped:  e.wrapped,
 	}
+}
+
+// Severity returns the errors severity, defaults to
+func (e *Error) Severity() slog.Level {
+	return e.severity
 }
 
 // Error implements the error interface.
@@ -96,10 +116,10 @@ var (
 	ErrUnknown = NewError("unknown")
 
 	// ErrRunning indicates a command on a running instance.
-	ErrRunning = NewError("running")
+	ErrRunning = NewError("resource is already running").WithSeverity(SeverityWarn)
 
 	// ErrNotRunning indicates a command on a not running instance.
-	ErrNotRunning = NewError("not running")
+	ErrNotRunning = NewError("resource is not running").WithSeverity(SeverityWarn)
 
 	// ErrUnknownConfig indicates an unknown config for a resource.
 	ErrUnknownConfig = NewError("unknown config for resource")

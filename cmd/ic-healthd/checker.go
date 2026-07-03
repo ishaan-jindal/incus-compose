@@ -336,7 +336,7 @@ func (c *Checker) writeStatus(status string) error {
 		return nil
 	}
 
-	slog.Debug("Writing status", "instance", c.name, "status", status, "old-status", inst.Config[client.HealthStatusKey])
+	slog.Info("Status update", "instance", c.name, "current", status, "old", inst.Config[client.HealthStatusKey])
 
 	inst.Config[client.HealthStatusKey] = status
 	op, err := c.client.UpdateInstance(c.name, inst.Writable(), etag)
