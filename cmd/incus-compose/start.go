@@ -57,12 +57,6 @@ func newStartCommand() *cli.Command {
 			}
 			defer func() { _ = c.Done() }()
 
-			// Register the DNS Watcher
-			if err := c.RegisterDNSWatcher(); err != nil {
-				globalClient.LogError("Registering the DNS watcher", "project", p.Name, "error", err)
-				return errLogged.Wrap(err)
-			}
-
 			if err := c.Open(); err != nil {
 				globalClient.LogError("Opening the project client", "error", err)
 				return errLogged.Wrap(err)
@@ -80,6 +74,12 @@ func newStartCommand() *cli.Command {
 				stderr = stdout
 			}
 
+			// Register the DNS Watcher after the progress renderer so progress waits for the dns changes.
+			if err := c.RegisterDNSWatcher(); err != nil {
+				globalClient.LogError("Registering the DNS watcher", "project", p.Name, "error", err)
+				return errLogged.Wrap(err)
+			}
+
 			resources, err := p.Resources(c)
 			if err != nil {
 				c.LogError("Getting project resources in reCreate", "error", err)
@@ -94,12 +94,12 @@ func newStartCommand() *cli.Command {
 
 			args := filterResourcesArgs{
 				OnlyServices:     cmd.Args().Slice(),
-				WithDependencies: !cmd.Bool("no-deps"),
+				WithDependencies: cmd.Bool("with-deps"),
 				ExcludeKinds:     []client.Kind{client.KindImage, client.KindNetwork, client.KindStorageVolume},
 			}
 			myResources := filterResources(p, resources, args)
 
-			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
+			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")), client.StackFailFast())
 			stack.AddOrdered(order, myResources)
 
 			var errs error
@@ -135,7 +135,6 @@ func newStartCommand() *cli.Command {
 				return errLogged.Wrap(errs)
 			}
 
-			c.LogDebug("All done")
 			return nil
 		},
 	}

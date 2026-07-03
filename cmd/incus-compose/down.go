@@ -68,12 +68,6 @@ func newDownCommand() *cli.Command {
 			}
 			defer func() { _ = c.Done() }()
 
-			// Register the DNS Watcher
-			if err := c.RegisterDNSWatcher(); err != nil {
-				globalClient.LogError("Registering the DNS watcher", "project", p.Name, "error", err)
-				return errLogged.Wrap(err)
-			}
-
 			if err := c.Open(); err != nil {
 				globalClient.LogError("Opening the project client", "project", p.Name, "error", err)
 				return errLogged.Wrap(err)
@@ -91,6 +85,12 @@ func newDownCommand() *cli.Command {
 				stderr = stdout
 			}
 
+			// Register the DNS Watcher after the progress renderer so progress waits for the dns changes.
+			if err := c.RegisterDNSWatcher(); err != nil {
+				globalClient.LogError("Registering the DNS watcher", "project", p.Name, "error", err)
+				return errLogged.Wrap(err)
+			}
+
 			resources, err := p.Resources(c)
 			if err != nil {
 				c.LogError("Getting project resources in reCreate", "error", err)
@@ -101,7 +101,10 @@ func newDownCommand() *cli.Command {
 				OnlyServices:     cmd.Args().Slice(),
 				WithDependencies: !cmd.Bool("no-deps"),
 				Reverse:          true,
-				ExcludeKinds:     []client.Kind{client.KindStorageVolume},
+			}
+
+			if !cmd.Bool("project") {
+				args.ExcludeKinds = append(args.ExcludeKinds, client.KindStorageVolume)
 			}
 
 			// Do not delete networks when we are not deleting all other resources.
@@ -124,10 +127,12 @@ func newDownCommand() *cli.Command {
 			stack := client.NewStack(c, client.StackSortDescending(), client.StackWorkers(cmd.Root().Int("workers")))
 			stack.AddOrdered(order, myResources)
 
-			if healthdInUseByProject(globalClient, p) {
-				h, err := healthdResolve(c)
-				if err == nil {
-					stack.Add(h)
+			if cmd.Args().Len() == 0 {
+				if healthdInUseByProject(globalClient, p) {
+					h, err := healthdResolve(c)
+					if err == nil {
+						stack.Add(h)
+					}
 				}
 			}
 

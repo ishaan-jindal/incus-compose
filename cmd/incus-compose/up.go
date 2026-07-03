@@ -129,12 +129,6 @@ func newUpCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			// Register the DNS Watcher
-			if err := c.RegisterDNSWatcher(); err != nil {
-				globalClient.LogError("Registering the DNS watcher", "project", p.Name, "error", err)
-				return errLogged.Wrap(err)
-			}
-
 			if err := c.Open(); err != nil {
 				globalClient.LogError("Opening the project client", "error", err)
 				return errLogged.Wrap(err)
@@ -150,6 +144,12 @@ func newUpCommand() *cli.Command {
 
 				stdout = progress.bypass()
 				stderr = stdout
+			}
+
+			// Register the DNS Watcher after the progress renderer so progress waits for the dns changes.
+			if err := c.RegisterDNSWatcher(); err != nil {
+				globalClient.LogError("Registering the DNS watcher", "project", p.Name, "error", err)
+				return errLogged.Wrap(err)
 			}
 
 			usesHealthd := !cmd.Bool("no-healthd")
@@ -250,7 +250,7 @@ func newUpCommand() *cli.Command {
 			}
 			myResources := filterResources(p, resources, args)
 
-			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
+			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")), client.StackFailFast())
 			stack.AddOrdered(order, myResources)
 
 			if usesHealthd {
@@ -286,14 +286,14 @@ func newUpCommand() *cli.Command {
 					workers:     cmd.Root().Int("workers"),
 				}
 
-				inst, resources, err := healthdGetResources(c, hparams)
+				hInst, hResources, err := healthdGetResources(c, hparams)
 				if err != nil {
 					globalClient.LogError("Creating healthd resources", "error", err)
 					return errLogged.Wrap(err)
 				}
 
-				stack.Add(resources...)
-				stack.Add(inst)
+				stack.Add(hResources...)
+				stack.Add(hInst)
 			}
 
 			c.LogDebug("Ensure", "resources", stack.All())

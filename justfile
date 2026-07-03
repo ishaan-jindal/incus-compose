@@ -92,11 +92,11 @@ incus *args:
     incus {{ args }}
 
 # Build a release binary
-build-release:
+build-release: lint
     go build -ldflags="-w -s -X github.com/lxc/incus-compose/cmd/incus-compose/version.Version=`git describe --tags --always --long --dirty="-dirty"`" -o bin/incus-compose ./cmd/incus-compose
 
 # Build a dev binary
-build:
+build: lint
     go build -o bin/incus-compose ./cmd/incus-compose
 
 # Build ic-healthd binary
