@@ -6,7 +6,7 @@ import (
 	"log/slog"
 )
 
-// Severity of an error, defaults to SeverityError
+// Severity of an error, defaults to SeverityError.
 const (
 	SeverityError = slog.LevelError
 	SeverityWarn  = slog.LevelWarn
@@ -27,9 +27,14 @@ func NewError(text string) *Error {
 	return &Error{sentinel: errors.New(text), text: text, severity: SeverityError}
 }
 
+// WithSeverity returns a new error withe given severity.
 func (e *Error) WithSeverity(severity slog.Level) *Error {
-	e.severity = severity
-	return e
+	return &Error{
+		sentinel: e.sentinel,
+		text:     e.text,
+		wrapped:  e.wrapped,
+		severity: severity,
+	}
 }
 
 // WithKindName adds resource kind and name context to the error.
@@ -38,6 +43,7 @@ func (e *Error) WithKindName(kind Kind, name string) *Error {
 		sentinel: e.sentinel,
 		text:     fmt.Sprintf("%v: %v(%v)", e.text, kind, name),
 		wrapped:  e.wrapped,
+		severity: e.severity,
 	}
 }
 
@@ -47,6 +53,7 @@ func (e *Error) WithText(text string) *Error {
 		sentinel: e.sentinel,
 		text:     fmt.Sprintf("%v %v", e.text, text),
 		wrapped:  e.wrapped,
+		severity: e.severity,
 	}
 }
 
@@ -56,6 +63,7 @@ func (e *Error) WithAction(action Action) *Error {
 		sentinel: e.sentinel,
 		text:     fmt.Sprintf("%v %v", e.text, action),
 		wrapped:  e.wrapped,
+		severity: e.severity,
 	}
 }
 
@@ -65,10 +73,11 @@ func (e *Error) WithResource(resource Resource) *Error {
 		sentinel: e.sentinel,
 		text:     fmt.Sprintf("%v: %v", e.text, resource),
 		wrapped:  e.wrapped,
+		severity: e.severity,
 	}
 }
 
-// Severity returns the errors severity, defaults to
+// Severity returns the errors severity, defaults to SeverityError.
 func (e *Error) Severity() slog.Level {
 	return e.severity
 }
@@ -154,7 +163,7 @@ var (
 	ErrNotFound = NewError("resource not found")
 
 	// ErrNotEnsured indicates an operation requires the resource to be ensured first.
-	ErrNotEnsured = NewError("resource not ensured")
+	ErrNotEnsured = NewError("resource not ensured").WithSeverity(SeverityWarn)
 
 	// ErrImageRequired indicates an instance requires an image.
 	ErrImageRequired = NewError("instances without an image are not yet supported")
@@ -176,4 +185,7 @@ var (
 
 	// ErrCreate indicates a resource creation error.
 	ErrCreate = NewError("create failed")
+
+	// ErrDelete indicates a resource deletion error.
+	ErrDelete = NewError("delete failed")
 )
