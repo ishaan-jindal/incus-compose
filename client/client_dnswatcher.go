@@ -80,9 +80,9 @@ func (c *Client) RegisterDNSWatcher() error {
 		elapsed := time.Since(lastRestart)
 		mu.Unlock()
 
-		if elapsed < 2*time.Second {
-			c.LogDebug("Waiting for DNSMasq to be ready", "resource", r, "time", 2*time.Second-elapsed)
-			time.Sleep(2*time.Second - elapsed)
+		if elapsed < time.Second {
+			c.LogDebug("Waiting for DNSMasq to be ready", "resource", r, "time", time.Second-elapsed)
+			time.Sleep(time.Second - elapsed)
 		}
 
 		return err
@@ -110,8 +110,8 @@ func (c *Client) RegisterDNSWatcher() error {
 				return ErrDNSWatcher.WithText("resource is not an *Instance")
 			}
 
-			// No need to do anything if service and incus name are the same.
-			if inst.ServiceName() == inst.IncusName() {
+			// No need to do anything if service and incus name are the same or service name is empty.
+			if inst.ServiceName() == inst.IncusName() || inst.ServiceName() == "" {
 				return nil
 			}
 
