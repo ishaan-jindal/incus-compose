@@ -170,8 +170,8 @@ func newExecCommand() *cli.Command {
 			iArgs = append(iArgs, args...)
 
 			if cmd.Bool("dry-run") {
-				fmt.Fprintf(cmd.Root().Writer, "%s %s", execPath, strings.Join(iArgs, " "))
-				return nil
+				_, err = fmt.Fprintf(cmd.Root().Writer, "%s %s", execPath, strings.Join(iArgs, " "))
+				return err
 			}
 
 			execCmd := exec.CommandContext(ctx, execPath, iArgs...) //nolint:gosec
