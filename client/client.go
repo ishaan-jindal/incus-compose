@@ -202,7 +202,10 @@ func (c *Client) IsConnected() bool {
 // to the same Incus resource (e.g. "nginx:alpine" vs "docker.io/library/nginx:alpine") return the same object.
 func (c *Client) Resource(kind Kind, name string, config Config) (Resource, error) {
 	// Fast path: check by raw name before constructing the resource.
-	if res := c.resources.Get(kind, name); res != nil {
+	if res := c.resources.Get(kind, name, false); res != nil {
+		return res, nil
+	}
+	if res := c.resources.Get(kind, name, true); res != nil {
 		return res, nil
 	}
 
@@ -230,8 +233,13 @@ func (c *Client) Resource(kind Kind, name string, config Config) (Resource, erro
 		return nil, err
 	}
 
+	// Deduplicate by Name().
+	if existing := c.resources.Get(kind, res.Name(), false); existing != nil {
+		return existing, nil
+	}
+
 	// Deduplicate by IncusName().
-	if existing := c.resources.Get(kind, res.IncusName()); existing != nil {
+	if existing := c.resources.Get(kind, res.IncusName(), true); existing != nil {
 		return existing, nil
 	}
 

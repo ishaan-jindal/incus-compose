@@ -290,13 +290,17 @@ func (s *ResourceStore) Remove(r Resource) {
 	})
 }
 
-// Get retrieves a resource by kind and its Incus-normalized name. Returns nil if not found.
-func (s *ResourceStore) Get(kind Kind, incusName string) Resource {
+// Get retrieves a resource by kind and its name. Returns nil if not found.
+func (s *ResourceStore) Get(kind Kind, name string, incus bool) Resource {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	idx := slices.IndexFunc(s.resources, func(r Resource) bool {
-		return r.Kind() == kind && r.IncusName() == incusName
+		if !incus {
+			return r.Kind() == kind && r.Name() == name
+		} else {
+			return r.Kind() == kind && r.IncusName() == name
+		}
 	})
 	if idx == -1 {
 		return nil
