@@ -328,7 +328,7 @@ func NewOfflineClient(ctx context.Context, name string) *Client {
 		globalClient: gc,
 		config:       config,
 		project:      name,
-		incusProject: sanitizeProjectName(name),
+		incusProject: SanitizeProjectName(name),
 		logger:       logger.With("project", name),
 	}
 }
@@ -470,7 +470,7 @@ func (c *GlobalClient) CliConfig() *cliconfig.Config {
 }
 
 func (c *GlobalClient) getProject(name string) (*Client, error) {
-	incusName := sanitizeProjectName(name)
+	incusName := SanitizeProjectName(name)
 
 	_, _, err := c.incus.GetProject(incusName)
 	if err != nil {
@@ -505,7 +505,7 @@ func EnsureProjectWithConfig(config map[string]string) EnsureProjectOption {
 }
 
 func (c *GlobalClient) createProject(name string, config map[string]string) (*Client, error) {
-	incusName := sanitizeProjectName(name)
+	incusName := SanitizeProjectName(name)
 
 	// Merge user-provided config with defaults
 	projectConfig := incusApi.ConfigMap{"features.profiles": "true"}
@@ -567,7 +567,7 @@ func (c *GlobalClient) DeleteProject(name string, force bool) error {
 		return ErrDisconnected
 	}
 
-	incusName := sanitizeProjectName(name)
+	incusName := SanitizeProjectName(name)
 
 	// c.logger.DebugContext(c.Ctx, "Deleting project", "name", name, "incus_name", incusName)
 
