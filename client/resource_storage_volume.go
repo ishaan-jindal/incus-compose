@@ -165,6 +165,12 @@ func (r *StorageVolume) Start(_ context.Context, _ ...Option) error {
 		return nil
 	}
 
+	// If the user overwrites security.shifted do not validate against the image.
+	_, ok := r.Config.Extensions["security.shifted"]
+	if ok {
+		return nil
+	}
+
 	// if r.Config.ImageResource == nil {
 	// 	return ErrVolumeMismatch.WithText("no image resource given")
 	// }
