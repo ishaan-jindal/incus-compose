@@ -30,7 +30,7 @@ func newIncusCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			incusProject := client.NewOfflineClient(ctx, p.Name).IncusProject()
+			incusProject := client.SanitizeProjectName(p.Name)
 
 			execPath, err := exec.LookPath("incus")
 			if err != nil {
