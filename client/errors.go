@@ -95,6 +95,9 @@ var (
 	// ErrUnknown indicates an unknown error occurred.
 	ErrUnknown = NewError("unknown")
 
+	// ErrRunning indicates a command on a running instance.
+	ErrRunning = NewError("running")
+
 	// ErrNotRunning indicates a command on a not running instance.
 	ErrNotRunning = NewError("not running")
 

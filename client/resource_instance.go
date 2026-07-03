@@ -353,12 +353,6 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 		r.GID = image.GID
 	}
 
-	// Resolve storage volumes before building the device map so that each
-	// disk device's Source is the volume name, not the raw host path.
-	if err := r.ensureVolumes(); err != nil {
-		return err
-	}
-
 	// Build pre-devices map after volumes are resolved.
 	devices, err := r.buildDevices()
 	if err != nil {
@@ -473,44 +467,9 @@ func (r *Instance) buildDevices() (map[string]map[string]string, error) {
 	return devices, nil
 }
 
-// ensureVolumes creates storage volumes referenced in Devices before the instance
-// is created, and updates each device's Source and Pool with the resolved values.
-func (r *Instance) ensureVolumes() error {
-	for i := range r.Config.Devices {
-		dev := &r.Config.Devices[i]
-		if dev.Config.DeviceType != InstanceDeviceTypeDisk {
-			continue
-		}
-
-		svc := dev.Config.Disk.StorageVolumeConfig
-		if svc == nil {
-			continue
-		}
-
-		volConfig := *svc
-		volConfig.Shifted = true
-		volConfig.ImageResource = r.image
-
-		volI, err := r.client.Resource(KindStorageVolume, dev.Config.Disk.Source, &volConfig)
-		if err != nil {
-			return ErrBadDeviceConfig.WithText("getting storage-volume resource").Wrap(err)
-		}
-
-		vol, ok := volI.(*StorageVolume)
-		if !ok {
-			return ErrUnsupportedAction.WithResource(volI)
-		}
-
-		dev.Config.Disk.Source = vol.IncusName()
-		dev.Config.Disk.StorageVolumeConfig.Pool = vol.Config.Pool
-	}
-
-	return nil
-}
-
 func (r *Instance) attachPostStartDevices(ctx context.Context) error {
 	// Resolve container IPs once - instance is running so this should be fast.
-	ips, err := r.WaitIPs(ctx, 30*time.Second)
+	ips, err := r.WaitIPs(ctx, dnsIPWaitTimeout)
 	if err != nil {
 		r.client.LogWarn("could not resolve IPs for post-start devices", "instance", r.incusName, "err", err)
 	}
@@ -797,13 +756,13 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 	}
 
 	if r.Running() {
-		return nil
+		return ErrRunning
 	}
 
 	op, err := r.conn.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
 		Action:  "start",
 		Timeout: options.incusTimeout(),
-	}, "")
+	}, r.ETag)
 	if err != nil {
 		return ErrOperation.WithText("starting instance").Wrap(err)
 	}
@@ -817,6 +776,10 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 	err = r.fetch()
 	if err != nil {
 		return err
+	}
+
+	if !r.Running() {
+		return ErrNotRunning.WithText("after a start")
 	}
 
 	if r.created {
@@ -1025,7 +988,7 @@ func (r *Instance) Stop(ctx context.Context, opts ...Option) error {
 			}
 		}
 
-		return r.client.hookAfter(ctx, ActionStop, r, options, nil)
+		return r.client.hookAfter(ctx, ActionStop, r, options, ErrNotRunning)
 	}
 
 	stopCtx, cancel := context.WithTimeout(ctx, options.Timeout)
@@ -1052,7 +1015,7 @@ func (r *Instance) stop(ctx context.Context, options Options) error {
 		Action:  "stop",
 		Force:   options.Force,
 		Timeout: options.incusTimeout(),
-	}, "")
+	}, r.ETag)
 	if err != nil {
 		return ErrOperation.WithText("stopping instance").Wrap(err)
 	}
