@@ -20,7 +20,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/avast/retry-go/v5"
 	incus "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 
@@ -48,25 +47,43 @@ func NewRunner(cfg *Config) (*Runner, error) {
 }
 
 // Run starts all health checkers and blocks until context is cancelled.
+// This is the main entry point, it should never exit except the context is done.
 func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
-	conn, err := r.connect(ctx)
-	if err != nil {
-		return fmt.Errorf("connecting to incus: %w", err)
-	}
-	r.conn = conn.UseProject(r.config.Projects[0])
-
-	slog.Debug("connected to incus", "project", r.config.Projects[0])
+	var (
+		conn incus.InstanceServer
+		err  error
+	)
 
 	for {
+		if conn == nil {
+			conn, err = r.connect(ctx)
+			if err != nil {
+				slog.Error("connecting to incus", "error", err)
+
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("failed to connect to incus: %w", err)
+				case <-time.After(time.Second):
+					continue
+				}
+			}
+			r.conn = conn
+		}
+
 		err = r.writeStatus(client.HealthStatusHealthy)
 		if err != nil {
 			slog.Warn("Failed to update the status", "error", err)
-			time.Sleep(500 * time.Millisecond)
-			continue
+
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("failed to update the status: %w", err)
+			case <-time.After(500 * time.Millisecond):
+				continue
+			}
 		}
 
 		r.startCheckers(ctx)
-		slog.Info("health daemon running", "instances", len(r.running))
+		slog.Info("Health daemon running", "instances", len(r.running))
 
 		select {
 		case <-ctx.Done():
@@ -195,16 +212,10 @@ func (r *Runner) connect(ctx context.Context) (incus.InstanceServer, error) {
 		return nil, fmt.Errorf("reading key: %w", err)
 	}
 
-	return retry.NewWithData[incus.InstanceServer](
-		retry.Context(ctx),
-		retry.Attempts(6),
-		retry.Delay(500*time.Millisecond),
-	).Do(func() (incus.InstanceServer, error) {
-		return incus.ConnectIncus(r.config.IncusURL, &incus.ConnectionArgs{
-			TLSClientCert:      string(certPEM),
-			TLSClientKey:       string(keyPEM),
-			InsecureSkipVerify: true,
-		})
+	return incus.ConnectIncus(r.config.IncusURL, &incus.ConnectionArgs{
+		TLSClientCert:      string(certPEM),
+		TLSClientKey:       string(keyPEM),
+		InsecureSkipVerify: true,
 	})
 }
 
@@ -266,40 +277,48 @@ func (r *Runner) register(token string) (incus.InstanceServer, error) {
 // valid instance are still registered so one broken instances cannot stop
 // the daemon.
 func (r *Runner) discover(conn incus.InstanceServer) (map[string]InstanceConfig, error) {
-	incusInstances, err := conn.GetInstances(incusApi.InstanceTypeAny)
-	if err != nil {
-		return nil, fmt.Errorf("listing instances: %w", err)
-	}
-
-	instances := make(map[string]InstanceConfig, len(incusInstances))
+	instances := map[string]InstanceConfig{}
 	var errs error
 
-	for _, inst := range incusInstances {
-		if inst.Config[client.HealthKeyPrefix+"daemon"] == "true" {
-			continue
-		}
+	for _, project := range r.config.Projects {
+		pConn := conn.UseProject(project)
 
-		restart := false
-		if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, inst.Config["user.restart"]) {
-			restart = true
-			if inst.Config[client.HealthKeyPrefix+"test"] == "" {
-				inst.Config[client.HealthKeyPrefix+"test"] = "[\"NONE\"]"
-			}
-		}
-
-		if inst.Config[client.HealthKeyPrefix+"test"] == "" && !restart {
-			continue
-		}
-
-		instConfig, err := parseInstance(inst.Config)
+		incusInstances, err := pConn.GetInstances(incusApi.InstanceTypeAny)
 		if err != nil {
-			errs = errors.Join(errs, fmt.Errorf("%s: %w", inst.Name, err))
+			errs = errors.Join(errs, fmt.Errorf("listing instances for project %v: %w", project, err))
 			continue
 		}
 
-		slog.Debug("Found instance", "instance", inst.Name, "config", instConfig)
+		slog.Debug("Found instances", "project", project, "count", len(incusInstances))
 
-		instances[inst.Name] = instConfig
+		for _, inst := range incusInstances {
+			if inst.Config[client.HealthKeyPrefix+"daemon"] == "true" {
+				continue
+			}
+
+			restart := false
+			if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, inst.Config["user.restart"]) {
+				restart = true
+				if inst.Config[client.HealthKeyPrefix+"test"] == "" {
+					inst.Config[client.HealthKeyPrefix+"test"] = "[\"NONE\"]"
+				}
+			}
+
+			if inst.Config[client.HealthKeyPrefix+"test"] == "" && !restart {
+				slog.Debug("Skipping instance: no test and no restart", "instance", inst.Name)
+				continue
+			}
+
+			instConfig, err := parseInstance(project, inst.Config)
+			if err != nil {
+				errs = errors.Join(errs, fmt.Errorf("%s: %w", inst.Name, err))
+				continue
+			}
+
+			slog.Debug("Found instance", "instance", inst.Name, "config", instConfig)
+
+			instances[inst.Name] = instConfig
+		}
 	}
 
 	return instances, errs
@@ -307,8 +326,9 @@ func (r *Runner) discover(conn incus.InstanceServer) (map[string]InstanceConfig,
 
 // parseInstance decodes user.healthcheck.* keys into a InstanceConfig.
 // Missing optional keys fall back to sensible defaults.
-func parseInstance(cfg map[string]string) (InstanceConfig, error) {
+func parseInstance(project string, cfg map[string]string) (InstanceConfig, error) {
 	svc := InstanceConfig{
+		Project:       project,
 		StartPeriod:   defaultStartPeriod,
 		StartInterval: defaultStartInterval,
 		Interval:      defaultInterval,
