@@ -35,11 +35,13 @@ incus-compose up [SERVICE...]
 | `--pull`               | Pull policy: `always` (refresh from registry), `missing`/`policy` (use cache if present), `never` (never pull); default: `policy` |
 | `--build`              | Rebuild build-configured service images before starting containers                                                                |
 | `--no-build`           | Do not build images; fail if a required built image is missing                                                                    |
+| `--builder`            | Preferred builder, binary name or absolute path (`INCUS_COMPOSE_BUILDER`); empty for auto-detect                                  |
 | `--no-deps`            | Don't start linked services (depends_on)                                                                                          |
 | `--timeout`            | Stop/start timeout (default: 1m)                                                                                                  |
 | `--dependency-timeout` | Max time to wait for `service_healthy` depends_on (default: 5m; `0` = no limit)                                                   |
 | `--scale`              | Scale service: `web=3` (repeatable)                                                                                               |
 | `--no-healthd`         | Don't create healthd sidecar for healthchecks                                                                                     |
+| `--external-healthd`   | Use an existing (unmanaged) healthd; don't create or look one up                                                                  |
 | `--healthd-image`      | Healthd OCI image (`INCUS_COMPOSE_HEALTHD_IMAGE`); `{version}` is replaced with the incus-compose version                         |
 | `--healthd-binary`     | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)                                                    |
 | `--healthd-incus`      | Incus API URL healthd connects to (`INCUS_COMPOSE_HEALTHD_INCUS`); overrides `x-incus-compose.healthd.incus`; bridge IP if unset  |
@@ -83,6 +85,8 @@ incus-compose down [SERVICE...]
 | `--images`     | Remove known images from the project (equivalent to `--rmi local`)       |
 | `--timeout`    | Stop timeout (default: 10s)                                              |
 | `--no-deps`    | Don't stop linked services (depends_on)                                  |
+| `--no-networks` | Don't touch networks                                                    |
+| `--external-healthd` | Use an existing (unmanaged) healthd; don't look one up             |
 | `--no-healthd` | Don't stop/remove healthd sidecar                                        |
 
 ## start
@@ -191,9 +195,14 @@ incus-compose exec [options] SERVICE COMMAND [ARGS...]
 | `-e`, `--env`     | Set environment variables `KEY=VALUE` (repeatable)                   |
 | `--index`         | Index of the container if service has multiple replicas (default: 0) |
 | `-T`, `--no-tty`  | Disable pseudo-TTY allocation                                        |
-| `--privileged`    | Give extended privileges to the process                              |
+| `--privileged`    | Give extended privileges to the process (accepted but not implemented) |
 | `-u`, `--user`    | Run the command as this user                                         |
+| `-g`, `--group`   | Run the command as this group                                        |
 | `-w`, `--workdir` | Path to workdir directory for this command                           |
+
+`exec` shells out to your local `incus` client and targets the instance via
+`INCUS_PROJECT`. It uses your local Incus remote configuration (`incus remote` /
+`INCUS_REMOTE`), not a connection configured through `INCUS_COMPOSE_URL`.
 
 ## ps
 

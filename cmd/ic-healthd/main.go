@@ -135,7 +135,7 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 	cfg.Projects = cmd.StringSlice("project")
 	cfg.Token = "<redacted>"
 
-	slog.Info("version", "version", version.Current())
+	slog.Info("Version", "version", version.Current(), "pid", os.Getpid())
 
 	slog.Debug("My config", "config", cfg)
 	cfg.Token = cmd.String("token")
@@ -149,7 +149,7 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	reload := make(chan struct{}, 8)
+	reload := make(chan struct{}, 1)
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
 	defer signal.Stop(sigChan)

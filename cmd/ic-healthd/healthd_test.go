@@ -221,7 +221,7 @@ func prepareHealthd(t *testing.T, c *client.Client) (func(), *Runner) {
 
 func TestMain(m *testing.M) {
 	logger := slog.New(slog.NewTextHandler(
-		os.Stdout,
+		os.Stderr,
 		&slog.HandlerOptions{Level: slog.LevelDebug - 4}),
 	)
 

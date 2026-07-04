@@ -51,10 +51,10 @@ func TestBuildCommandWithBuildFixture(t *testing.T) {
 	fixture := "../../test/fixtures/with-build/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", fixture, "build")
+	_, err := runCommand(t, ctx, pn, "-f", fixture, "build")
 	require.NoError(t, err)
 
 	c := projectClient(t, ctx, pn)
@@ -79,10 +79,10 @@ func TestBuildCommandWithServiceFilter(t *testing.T) {
 	fixture := "../../test/fixtures/with-build/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", fixture, "build", "app")
+	_, err := runCommand(t, ctx, pn, "-f", fixture, "build", "app")
 	require.NoError(t, err)
 
 	c := projectClient(t, ctx, pn)
@@ -104,10 +104,10 @@ func TestBuildCommandWithNoBuildServices(t *testing.T) {
 	fixture := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", fixture, "build")
+	_, err := runCommand(t, ctx, pn, "-f", fixture, "build")
 	require.NoError(t, err)
 }
 
@@ -120,10 +120,10 @@ func TestBuildCommandWithNoMatchingBuildServices(t *testing.T) {
 	fixture := "../../test/fixtures/with-build/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", fixture, "build", "missing")
+	_, err := runCommand(t, ctx, pn, "-f", fixture, "build", "missing")
 	require.Error(t, err)
 }
 
@@ -144,10 +144,10 @@ func TestBuildCommandWithNonBuildServiceFilter(t *testing.T) {
 	})
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "build", "sidecar")
+	_, err := runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "build", "sidecar")
 	require.Error(t, err)
 }
 
@@ -170,10 +170,10 @@ func TestBuildCommandRejectsMultiplePlatforms(t *testing.T) {
 	})
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "build")
+	_, err := runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "build")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "build.platforms with multiple platforms is not supported")
 }
@@ -196,10 +196,10 @@ func TestBuildCommandRejectsUnsupportedPlatform(t *testing.T) {
 	})
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "build")
+	_, err := runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "build")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unsupported build platform linux/unsupported")
 }
@@ -218,10 +218,10 @@ func TestBuildCommandReportsMissingBuilder(t *testing.T) {
 	})
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
 	})
 
-	_, _, err := runCommand(
+	_, err := runCommand(
 		t,
 		ctx,
 		pn,

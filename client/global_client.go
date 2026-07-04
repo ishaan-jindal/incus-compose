@@ -218,26 +218,6 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 
 // NewTestClient creates a new GlobalClient for testing.
 func NewTestClient(ctx context.Context) (*GlobalClient, error) {
-	var logger *slog.Logger
-
-	logFormat, ok := os.LookupEnv("LOG_FORMAT")
-	if !ok {
-		logFormat = "text"
-	}
-
-	switch logFormat {
-	case "json":
-		logger = slog.New(slog.NewJSONHandler(
-			os.Stderr,
-			&slog.HandlerOptions{Level: slog.LevelDebug - 4}),
-		)
-	default:
-		logger = slog.New(slog.NewTextHandler(
-			os.Stderr,
-			&slog.HandlerOptions{Level: slog.LevelDebug - 4}),
-		)
-	}
-
 	// Priority: INCUS_REMOTE -> INCUS_COMPOSE_URL -> "local" remote
 	var opts []ClientOption
 
@@ -256,7 +236,6 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 		}
 
 		opts = []ClientOption{
-			ClientLogger(logger),
 			ClientProvideConnection(server),
 		}
 	} else {
@@ -274,7 +253,6 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 		}
 
 		opts = []ClientOption{
-			ClientLogger(logger),
 			ClientProvideConnection(server),
 		}
 	}
@@ -284,8 +262,14 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 		opts = append(opts, ClientDefaultStoragePool(pool))
 	}
 
+	cacheProject := "incus-compose-tests-cache"
+	p, ok := os.LookupEnv("INCUS_COMPOSE_IMAGE_CACHE")
+	if ok {
+		cacheProject = p
+	}
+
 	// Use own cache project for tests.
-	opts = append(opts, ClientCacheProject("incus-compose-tests-cache"))
+	opts = append(opts, ClientCacheProject(cacheProject))
 
 	c := New(ctx, opts...)
 	if err := c.Connect(); err != nil {
@@ -297,39 +281,19 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 
 // NewOfflineClient creates a disconnected project client for resource planning.
 // It can create in-memory resources, but cannot run Incus operations.
-func NewOfflineClient(ctx context.Context, name string) *Client {
-	var logger *slog.Logger
-
-	logFormat, ok := os.LookupEnv("LOG_FORMAT")
-	if !ok {
-		logFormat = "text"
-	}
-
-	switch logFormat {
-	case "json":
-		logger = slog.New(slog.NewJSONHandler(
-			os.Stderr,
-			&slog.HandlerOptions{Level: slog.LevelDebug - 4}),
-		)
-	default:
-		logger = slog.New(slog.NewTextHandler(
-			os.Stderr,
-			&slog.HandlerOptions{Level: slog.LevelDebug - 4}),
-		)
-	}
-
+func NewOfflineClient(ctx context.Context, projectName string) *Client {
 	gc := New(ctx)
 	gc.unix = true
 	config := gc.config
-	config.DescriptionFormat = fmt.Sprintf(config.DescriptionFormat, name) + ":%s"
+	config.DescriptionFormat = fmt.Sprintf(config.DescriptionFormat, projectName) + ":%s"
 
 	return &Client{
 		ctx:          ctx,
 		globalClient: gc,
 		config:       config,
-		project:      name,
-		incusProject: SanitizeProjectName(name),
-		logger:       logger.With("project", name),
+		project:      projectName,
+		incusProject: SanitizeProjectName(projectName),
+		logger:       slog.Default().With("project", projectName),
 	}
 }
 

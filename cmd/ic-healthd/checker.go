@@ -16,7 +16,7 @@ import (
 
 // Checker monitors a single instance and restarts it when unhealthy.
 type Checker struct {
-	client       incus.InstanceServer
+	conn         incus.InstanceServer
 	name         string
 	config       InstanceConfig
 	failures     int
@@ -25,9 +25,9 @@ type Checker struct {
 }
 
 // NewChecker creates a new checker for the named instance.
-func NewChecker(myclient incus.InstanceServer, name string, cfg InstanceConfig) *Checker {
+func NewChecker(conn incus.InstanceServer, name string, cfg InstanceConfig) *Checker {
 	return &Checker{
-		client:       myclient,
+		conn:         conn.UseProject(cfg.Project),
 		name:         name,
 		config:       cfg,
 		restartDelay: cfg.RestartDelay,
@@ -71,7 +71,7 @@ func (c *Checker) Run(ctx context.Context, inStart bool, startInstance bool) {
 			}
 		}
 
-		inst, _, err := c.client.GetInstance(c.name)
+		inst, _, err := c.conn.GetInstance(c.name)
 		if err != nil ||
 			(inst != nil && inst.StatusCode != incusApi.Running) ||
 			(inst != nil && inst.Config[client.HealthStoppedKey] == "true") {
@@ -216,7 +216,7 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 
 // check executes the healthcheck command and returns true if healthy.
 func (c *Checker) check(ctx context.Context) error {
-	inst, _, err := c.client.GetInstanceState(c.name)
+	inst, _, err := c.conn.GetInstanceState(c.name)
 	if err != nil {
 		slog.Debug("fetching instance status error", "instance", c.name, "error", err)
 		return err
@@ -277,7 +277,7 @@ func (c *Checker) exec(ctx context.Context, cmd []string) (int, string, string, 
 		DataDone: make(chan bool),
 	}
 
-	op, err := c.client.ExecInstance(c.name, req, &args)
+	op, err := c.conn.ExecInstance(c.name, req, &args)
 	if err != nil {
 		return -1, "", "", err
 	}
@@ -314,7 +314,7 @@ func (c *Checker) writeStatus(status string) error {
 		return nil
 	}
 
-	inst, etag, err := c.client.GetInstance(c.name)
+	inst, etag, err := c.conn.GetInstance(c.name)
 	if err != nil {
 		return err
 	}
@@ -335,7 +335,7 @@ func (c *Checker) writeStatus(status string) error {
 	slog.Info("Status update", "instance", c.name, "current", status, "old", inst.Config[client.HealthStatusKey])
 
 	inst.Config[client.HealthStatusKey] = status
-	op, err := c.client.UpdateInstance(c.name, inst.Writable(), etag)
+	op, err := c.conn.UpdateInstance(c.name, inst.Writable(), etag)
 	if err != nil {
 		return err
 	}
@@ -351,7 +351,7 @@ func (c *Checker) writeStatus(status string) error {
 // isStopped reports whether the instance has user.healthcheck.stopped=true, meaning it was
 // intentionally stopped. Returns true on API error (instance gone counts as stopped).
 func (c *Checker) isStopped() bool {
-	inst, _, err := c.client.GetInstance(c.name)
+	inst, _, err := c.conn.GetInstance(c.name)
 	if err != nil {
 		return true
 	}
@@ -362,7 +362,7 @@ func (c *Checker) isStopped() bool {
 // only start; otherwise we stop (force) and start. We avoid the "restart"
 // action because it errors on a stopped instance.
 func (c *Checker) restart(_ context.Context) error {
-	state, _, err := c.client.GetInstanceState(c.name)
+	state, _, err := c.conn.GetInstanceState(c.name)
 	if err != nil {
 		return err
 	}
@@ -374,7 +374,7 @@ func (c *Checker) restart(_ context.Context) error {
 			Force:   true,
 		}
 
-		op, err := c.client.UpdateInstanceState(c.name, stopReq, "")
+		op, err := c.conn.UpdateInstanceState(c.name, stopReq, "")
 		if err != nil {
 			return err
 		}
@@ -389,7 +389,7 @@ func (c *Checker) restart(_ context.Context) error {
 		Timeout: -1,
 	}
 
-	op, err := c.client.UpdateInstanceState(c.name, startReq, "")
+	op, err := c.conn.UpdateInstanceState(c.name, startReq, "")
 	if err != nil {
 		return err
 	}

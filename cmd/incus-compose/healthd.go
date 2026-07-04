@@ -466,11 +466,11 @@ func healthdRegisterReloader(c *client.Client, h *client.Instance) error {
 			changed = false
 		}
 
+		mu.Lock()
 		if !changed || reloading {
+			mu.Unlock()
 			return err
 		}
-
-		mu.Lock()
 
 		reloading = true
 

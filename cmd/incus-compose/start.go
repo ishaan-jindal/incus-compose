@@ -62,6 +62,10 @@ func newStartCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
+			// We start all resources, just ignore that warning but let progress know them (so add before - LIFO - progress runs before).
+			c.IgnoreError(client.ActionStart, client.ErrRunning)
+			c.IgnoreError(client.ActionEnsure, client.ErrNotFound)
+
 			stdout := cmd.Root().Writer
 			stderr := cmd.Root().ErrWriter
 

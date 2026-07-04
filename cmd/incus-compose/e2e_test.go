@@ -39,7 +39,7 @@ func skipNotSameHost(t *testing.T, gc *client.GlobalClient) {
 	}
 }
 
-func runCommand(t *testing.T, ctx context.Context, projectName string, args ...string) (*bytes.Buffer, *bytes.Buffer, error) {
+func runCommand(t *testing.T, ctx context.Context, projectName string, args ...string) (*bytes.Buffer, error) {
 	t.Helper()
 
 	projectName = strings.ToLower(strings.ReplaceAll(projectName, "/", "-"))
@@ -49,13 +49,12 @@ func runCommand(t *testing.T, ctx context.Context, projectName string, args ...s
 	slog.DebugContext(ctx, "Running", "args", mArgs)
 
 	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
 	cmd := newRootCommand()
 	cmd.Writer = stdout
-	cmd.ErrWriter = stderr
+	cmd.ErrWriter = os.Stderr
 	err := cmd.Run(ctx, mArgs)
 
-	return stdout, stderr, err
+	return stdout, err
 }
 
 // normalizeListOutput removes dynamic content (IP addresses, network hashes) for snapshot comparison.
@@ -190,10 +189,10 @@ func TestConfigCommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			stdout, stderr, err := runCommand(t, context.Background(), "test-local-config", tt.args...)
+			stdout, err := runCommand(t, context.Background(), "test-local-config", tt.args...)
 
 			if tt.wantErr {
-				require.Error(t, err, "Stdout: %s --- Stderr: %s", stdout.String(), stderr.String())
+				require.Error(t, err, "Stdout: %s", stdout.String())
 			} else {
 				require.NoError(t, err)
 			}
@@ -245,7 +244,7 @@ func TestConfigFilterByService(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			stdout, _, err := runCommand(t, context.Background(), "test-local-config-filter", tt.args...)
+			stdout, err := runCommand(t, context.Background(), "test-local-config-filter", tt.args...)
 			require.NoError(t, err)
 
 			if tt.fixture != "" {
@@ -266,7 +265,7 @@ func TestUpDownUpSimpleNginx(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -312,7 +311,7 @@ func TestUpDownUpSimpleNginx(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stdout, _, err := runCommand(t, ctx, pn, tt.args...)
+			stdout, err := runCommand(t, ctx, pn, tt.args...)
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -334,7 +333,7 @@ func TestNormalLifecycle(t *testing.T) {
 	compose := "../../test/fixtures/two-services/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -358,7 +357,7 @@ func TestNormalLifecycle(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stdout, _, err := runCommand(t, ctx, pn, tt.args...)
+			stdout, err := runCommand(t, ctx, pn, tt.args...)
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -403,10 +402,10 @@ func TestUpDownscaleRemovesInstancesAndDNS(t *testing.T) {
 	require.NotEmpty(t, networks)
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	c := projectClient(t, ctx, pn)
@@ -419,7 +418,7 @@ func TestUpDownscaleRemovesInstancesAndDNS(t *testing.T) {
 	before := dnsServiceIPs(t, c, networks, "web")
 	require.NotEmpty(t, before, "web should have DNS records for 3 replicas")
 
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--scale=web=1")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--scale=web=1")
 	require.NoError(t, err)
 
 	survivor, err := c.InstanceExists("web-1")
@@ -449,11 +448,11 @@ func TestUpReconcilesToReplicas(t *testing.T) {
 	compose := "../../test/fixtures/nginx-downscale/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	// Baseline: deploy.replicas=3.
-	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	c := projectClient(t, ctx, pn)
@@ -469,22 +468,22 @@ func TestUpReconcilesToReplicas(t *testing.T) {
 	assertCount(3)
 
 	// Manual downscale to 1.
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--scale=web=1")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--scale=web=1")
 	require.NoError(t, err)
 	assertCount(1)
 
 	// Plain up restores replicas=3 (scales back up).
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 	assertCount(3)
 
 	// Manual upscale to 5.
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--scale=web=5")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--scale=web=5")
 	require.NoError(t, err)
 	assertCount(5)
 
 	// Plain up reconciles back down to replicas=3.
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 	assertCount(3)
 }

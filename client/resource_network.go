@@ -342,35 +342,12 @@ func (r *Network) Delete(ctx context.Context, opts ...Option) error {
 		return r.client.hookAfter(ctx, ActionDelete, r, options, ErrNotFound.Wrap(err))
 	}
 
-	if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
-		r.IncusNetwork = nil
-		r.ETag = ""
-
-		r.client.resources.Remove(r)
-		return r.client.hookAfter(ctx, ActionDelete, r, options, ErrDelete.Wrap(err))
-	}
-
 	err := r.conn.DeleteNetwork(r.incusName)
-	err = r.client.hookAfter(
-		ctx,
-		ActionDelete,
-		r,
-		options,
-		err,
-	)
-	if err != nil {
-		r.IncusNetwork = nil
-		r.ETag = ""
-
-		r.client.resources.Remove(r)
-		return r.client.hookAfter(ctx, ActionDelete, r, options, ErrDelete.Wrap(err))
-	}
-
 	r.IncusNetwork = nil
 	r.ETag = ""
 
 	r.client.resources.Remove(r)
-	return r.client.hookAfter(ctx, ActionDelete, r, options, nil)
+	return r.client.hookAfter(ctx, ActionDelete, r, options, err)
 }
 
 // UpdateDNSAliases reads raw.dnsmasq from Incus, replaces records for

@@ -458,10 +458,10 @@ func extractAndStoreOCIConfig(ctx context.Context, server incusClient.InstanceSe
 				}
 			}()
 		} else {
-			slog.Warn("Failed to create a temp instance for an image (OP)", "fingerprint", fingerprint[16:])
+			slog.Warn("Failed to create a temp instance for an image (1)", "fingerprint", fingerprint[16:], "error", err)
 		}
 	} else {
-		slog.Warn("Failed to create a temp instance for an image (Create)", "fingerprint", fingerprint[16:])
+		slog.Warn("Failed to create a temp instance for an image (2)", "fingerprint", fingerprint[16:], "error", err)
 	}
 
 	// fetch

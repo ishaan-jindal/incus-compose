@@ -31,10 +31,10 @@ func TestBindMounts(t *testing.T) {
 	skipNotSameHost(t, gc)
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	c, err := gc.EnsureProject(pn)
@@ -70,7 +70,7 @@ func TestBindMountErrorsOnRemote(t *testing.T) {
 		t.Skip("this test requires the incus server to be on a remote host")
 	}
 
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.Error(t, err)
 }
 
@@ -88,10 +88,10 @@ func TestSeededBindMounts(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	c, err := gc.EnsureProject(pn)
@@ -126,10 +126,10 @@ func TestBindMountNoShift(t *testing.T) {
 	skipNotSameHost(t, gc)
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	c, err := gc.EnsureProject(pn)

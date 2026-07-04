@@ -90,11 +90,6 @@ jobs:
             -- -count=1 -parallel "$TEST_PROCS" \
             -covermode=atomic -coverprofile="$REPORTS_DIR/cover.out" -v 2>&1
 
-      - name: Publish coverage
-        run: |
-          echo '# Coverage\n' >> $GITHUB_STEP_SUMMARY
-          go tool cover -func="$REPORTS_DIR/cover.out" >> $GITHUB_STEP_SUMMARY
-
       - name: Publish test results
         if: always()
         uses: dorny/test-reporter@v3
@@ -103,3 +98,9 @@ jobs:
           path: ${{ env.REPORTS_DIR }}/junit.xml
           reporter: java-junit
           fail-on-error: false
+
+      - name: Publish coverage
+        if: always()
+        run: |
+          echo -e '# Coverage\n' >> $GITHUB_STEP_SUMMARY
+          go tool cover -func="$REPORTS_DIR/cover.out" >> $GITHUB_STEP_SUMMARY

@@ -3,12 +3,25 @@ package client
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	logger := slog.New(slog.NewTextHandler(
+		os.Stderr,
+		&slog.HandlerOptions{Level: slog.LevelDebug - 4}),
+	)
+
+	slog.SetDefault(logger)
+
+	code := m.Run()
+	os.Exit(code)
+}
 
 func skipLocal(t *testing.T) {
 	t.Helper()

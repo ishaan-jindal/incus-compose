@@ -34,6 +34,7 @@ type Config struct {
 
 // InstanceConfig holds healthcheck configuration for a single instance.
 type InstanceConfig struct {
+	Project       string
 	Test          []string
 	StartPeriod   time.Duration
 	StartInterval time.Duration

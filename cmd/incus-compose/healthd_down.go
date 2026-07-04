@@ -100,17 +100,17 @@ func newHealthdDownCommand() *cli.Command {
 
 			c.LogDebug("Ensure", "resources", stack.All())
 
-			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, cmd.Root().Writer, stderr); err != nil {
+			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, stdout, stderr); err != nil {
 				c.LogError("Ensuring healthd", "error", err)
 				return errLogged.Wrap(err)
 			}
 
-			if err := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, cmd.Root().Writer, stderr, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout"))); err != nil {
+			if err := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, stdout, stderr, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout"))); err != nil {
 				c.LogError("Stopping healthd resources", "error", err)
 				return errLogged.Wrap(err)
 			}
 
-			if err := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, cmd.Root().Writer, stderr, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout"))); err != nil {
+			if err := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, stdout, stderr, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout"))); err != nil {
 				c.LogError("Deleting healthd resources", "error", err)
 				return errLogged.Wrap(err)
 			}

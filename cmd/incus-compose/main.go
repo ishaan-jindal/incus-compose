@@ -317,7 +317,6 @@ func newRootCommand() *cli.Command {
 			}
 
 			opts := []client.ClientOption{
-				client.ClientLogger(slog.Default()),
 				client.ClientProvideInstanceServer(server),
 				client.ClientCacheProject(cmd.String("image-cache")),
 				client.ClientDefaultStoragePool(cmd.String("storage-pool")),
