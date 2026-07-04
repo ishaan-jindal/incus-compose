@@ -71,8 +71,6 @@ func TestExample(t *testing.T) {
 	t.Parallel()
 	skipExamples(t)
 
-	tname := t.Name()
-
 	examples := []struct {
 		name string
 		dir  string
@@ -80,10 +78,6 @@ func TestExample(t *testing.T) {
 		{
 			name: "hugo",
 			dir:  "./hugo/",
-		},
-		{
-			name: "immich",
-			dir:  "./immich/",
 		},
 		{
 			name: "immich",
@@ -103,15 +97,13 @@ func TestExample(t *testing.T) {
 		t.Run(example.name, func(t *testing.T) {
 			t.Parallel()
 
-			projectName := tname + "-" + example.name
-
 			ctx := context.Background()
 			t.Cleanup(func() {
-				_, _, _ = runCommand(t, ctx, projectName, "--project-directory", example.dir, "down", "--project")
+				_, _, _ = runCommand(t, ctx, t.Name(), "--project-directory", example.dir, "down", "--project")
 			})
 
 			args := []string{"--project-directory", example.dir, "up", "--detach", "--timeout", "15m", "--dependency-timeout", "15m"}
-			_, stderr, err := runCommand(t, ctx, projectName, args...)
+			_, stderr, err := runCommand(t, ctx, t.Name(), args...)
 			if err != nil {
 				_, err = fmt.Fprint(os.Stderr, stderr)
 				if err != nil {
@@ -121,7 +113,7 @@ func TestExample(t *testing.T) {
 			}
 
 			args = []string{"--project-directory", example.dir, "list", "--format", "json"}
-			stdout, _, err := runCommand(t, ctx, projectName, args...)
+			stdout, _, err := runCommand(t, ctx, t.Name(), args...)
 			require.NoError(t, err)
 
 			snapshotter.SnapshotT(t, normalizeListOutput(t, stdout))
