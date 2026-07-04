@@ -134,7 +134,7 @@ func newExecCommand() *cli.Command {
 				return errLogged.Wrap(client.ErrNotFound.WithText("service instance not found"))
 			}
 
-			if cmd.Int("index") > len(instances) {
+			if cmd.Int("index") >= len(instances) || cmd.Int("index") < 0 {
 				c.LogError("Not enough instances", "have", len(instances), "expected", cmd.Int("index"))
 				return errLogged.Wrap(client.ErrNotFound.WithText("not enough instances"))
 			}
