@@ -27,7 +27,7 @@ It then:
 
 1. Resolves the Incus bridge healthd should attach to (see [Network Configuration](#network-configuration)).
 2. Creates a restricted Incus trust token scoped to the project.
-3. Starts the `ic-healthd` sidecar, attaches it to the bridge, and injects the token as a secret.
+3. Starts the `ic-healthd` sidecar, attaches it to the bridge, and injects the token (plus the Incus API URL and project) as environment variables.
 4. ic-healthd authenticates once (token consumed) and persists the resulting cert.
 5. ic-healthd discovers which instances to watch by reading the Incus API.
 6. ic-healthd runs the health loop and writes the result to `user.healthcheck.status`.
@@ -218,6 +218,82 @@ Uses `images:alpine/edge` instead of the published OCI image and pushes the
 local binary into the container before start. Useful when iterating on ic-healthd
 itself.
 
+## Running ic-healthd Directly
+
+When `incus-compose up` creates the sidecar it injects the daemon's configuration
+as environment variables. You can also run `ic-healthd run` yourself - as a binary
+or a separately managed container, e.g. to debug against a live project - and point
+incus-compose at it with `up --external-healthd` / `down --external-healthd` so
+incus-compose uses healthd features but does not create or look up the sidecar.
+
+The `run` command reads these flags, each with a matching env var (incus-compose
+sets the env vars on the sidecar automatically):
+
+| Flag            | Env var                             | Default               | Description                                                  |
+| --------------- | ----------------------------------- | --------------------- | ------------------------------------------------------------ |
+| `--incus`       | `INCUS_COMPOSE_HEALTHD_INCUS`       | -                     | Incus API URL to connect to                                  |
+| `--token`       | `INCUS_COMPOSE_HEALTHD_TOKEN`       | -                     | Trust token used to register the client cert                 |
+| `--project`     | `INCUS_COMPOSE_HEALTHD_PROJECTS`    | -                     | Project(s) to manage (repeatable)                            |
+| `--data-dir`    | `INCUS_COMPOSE_HEALTHD_DATA_DIR`    | `/var/lib/ic-healthd` | Persistent directory for the generated cert/key              |
+| `--secrets-dir` | `INCUS_COMPOSE_HEALTHD_SECRETS_DIR` | `/etc/ic-healthd`     | Tmpfs directory holding the one-time registration token file |
+| `--debug`       | `INCUS_COMPOSE_HEALTHD_DEBUG`       | `false`               | Verbose logging                                              |
+
+The token is consumed on first run: ic-healthd registers its generated client
+certificate, persists the cert/key to `--data-dir`, and reuses them afterwards.
+In the normal flow incus-compose supplies it via `INCUS_COMPOSE_HEALTHD_TOKEN`;
+when running the daemon by hand pass `--token` (or drop a token file in
+`--secrets-dir`).
+
+### Standalone on the host
+
+The fastest edit-run-reload loop when hacking on the daemon: run `ic-healthd` on
+the host and attach a project to it with `--external-healthd`.
+
+> The daemon registers over the Incus HTTPS API, so the default remote must expose
+> an HTTPS address (not just the local unix socket).
+
+1. Build and start the daemon; the token is minted inline and passed via
+   `INCUS_COMPOSE_HEALTHD_TOKEN`:
+
+   ```bash
+   # The Incus project to watch (its Incus name).
+   export INCUS_COMPOSE_HEALTHD_PROJECTS=many-dependencies
+
+   mkdir -p ./work/{secrets,data}
+   rm -f ./work/data/*
+
+   # HTTPS address of the default remote.
+   export INCUS_COMPOSE_HEALTHD_INCUS=$(default=$(incus remote get-default); incus remote list --format=json | jq -r '."'$default'" .Addrs[0]')
+   # A restricted, project-scoped trust token.
+   export INCUS_COMPOSE_HEALTHD_TOKEN="$(incus -q config trust add manual_healthd --projects=$INCUS_COMPOSE_HEALTHD_PROJECTS --restricted)"
+
+   just build-healthd
+   ./bin/ic-healthd run --debug --secrets-dir=./work/secrets/ --data-dir=./work/data/
+   ```
+
+   On first run it consumes the token and writes the cert/key to `./work/data`,
+   reusing them afterwards (delete `./work/data/*` to re-register).
+
+2. Note the PID from the startup log (or use `pidof ic-healthd`):
+
+   ```
+   time=2026-07-04T15:47:24.177+02:00 level=INFO msg=Version version=v1.0.0-beta.20-29-g57f305c-dirty pid=446206
+   ```
+
+3. In another terminal, bring the project up against the running daemon.
+   `--external-healthd` makes incus-compose use healthd features without creating
+   or looking up a sidecar of its own:
+
+   ```bash
+   just run -P examples/many-dependencies/ up --external-healthd
+   ```
+
+4. Reload the daemon after changing config keys by sending it SIGHUP:
+
+   ```bash
+   kill -HUP <pid-from-step-2>
+   ```
+
 ## Sidecar Image
 
 Default image: `ghcr.io/lxc/incus-compose/ic-healthd:{version}`
@@ -317,19 +393,6 @@ A broken or missing healthd means that status never arrives and `up` blocks unti
    # or keep healthd but skip the wait:
    incus-compose up --no-deps
    ```
-
-### Iterating on the daemon itself
-
-When changing ic-healthd code, push a locally built binary instead of the
-published image:
-
-```bash
-just build-healthd
-incus-compose healthd down
-incus-compose --debug up --healthd-binary ./bin/ic-healthd
-```
-
-See [Development: Local Binary](#development-local-binary).
 
 ## Troubleshooting
 

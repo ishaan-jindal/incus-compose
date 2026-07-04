@@ -100,6 +100,12 @@ Every global flag can be set via an environment variable. Flags given on the com
 | `INCUS_COMPOSE_IMAGE_CACHE`  | `--image-cache`  | Incus project for image cache (default: `default`)            |
 | `INCUS_COMPOSE_STORAGE_POOL` | `--storage-pool` | Default storage pool (default: `detect`)                      |
 
+### Build
+
+| Variable                | Flag        | Description                                                                             |
+| ----------------------- | ----------- | --------------------------------------------------------------------------------------- |
+| `INCUS_COMPOSE_BUILDER` | `--builder` | Preferred builder binary or path (e.g. `podman`, `docker`); empty = auto-detect. See [Builds](build.md). |
+
 ### Display and Debugging
 
 | Variable                | Flag        | Description                                                      |
@@ -117,6 +123,10 @@ Every global flag can be set via an environment variable. Flags given on the com
 | `INCUS_COMPOSE_HEALTHD_BINARY`  | `--healthd-binary`  | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)   |
 | `INCUS_COMPOSE_HEALTHD_INCUS`   | `--healthd-incus`   | Incus API URL healthd connects to (default: bridge IP + client port)             |
 | `INCUS_COMPOSE_HEALTHD_NETWORK` | `--healthd-network` | Network healthd attaches to: `<project>:<network>`, a bridge, or empty (default) |
+
+The ic-healthd daemon itself reads a further set of `INCUS_COMPOSE_HEALTHD_*`
+variables (`_TOKEN`, `_PROJECTS`, `_DATA_DIR`, `_SECRETS_DIR`, `_DEBUG`), which
+incus-compose injects into the sidecar. See [Running ic-healthd Directly](healthd.md#running-ic-healthd-directly).
 
 ### Examples
 
