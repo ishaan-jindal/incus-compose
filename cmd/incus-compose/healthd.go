@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -39,26 +38,21 @@ type healthdParams struct {
 	workers     int
 }
 
-// closingBufferReader wraps bytes.Reader to add a no-op Close.
-type closingBufferReader struct {
-	*bytes.Reader
-}
+// // closingBufferReader wraps bytes.Reader to add a no-op Close.
+// type closingBufferReader struct {
+// 	*bytes.Reader
+// }
 
-// Close is a noop.
-func (cb *closingBufferReader) Close() error {
-	return nil
-}
-
-// healthdCertName returns the name used for this project's healthd certificate in the Incus trust store.
-func healthdCertName(c *client.Client) string {
-	return "ic-healthd-" + c.IncusProject()
-}
+// // Close is a noop.
+// func (cb *closingBufferReader) Close() error {
+// 	return nil
+// }
 
 // healthdCreateToken creates a restricted token for the healthd to use.
 func healthdCreateToken(c *client.Client) (string, error) {
 	req := incusApi.CertificatesPost{
 		CertificatePut: incusApi.CertificatePut{
-			Name:       healthdCertName(c),
+			Name:       "ic-healthd-" + c.IncusProject(),
 			Type:       "client",
 			Restricted: true,
 			Projects:   []string{c.IncusProject()},
@@ -97,7 +91,7 @@ func healthdRevokeCert(c *client.Client) error {
 		return fmt.Errorf("listing certificates: %w", err)
 	}
 
-	want := healthdCertName(c)
+	want := "ic-healthd-" + c.IncusProject()
 	for _, cert := range certs {
 		if cert.Name != want {
 			continue
@@ -268,10 +262,6 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 		if params.incus != nil {
 			incusURL = params.incus
 		} else {
-			if !c.IsRemote() {
-				return errors.New("healthd works only with a https connection, provide one with INCUS_COMPOSE_HEALTHD_INCUS")
-			}
-
 			// First use core.https_address if it has a host.
 			addr, err := c.Global().HTTPSAddress()
 			if err == nil {
@@ -286,6 +276,10 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 
 			// Else use the connections port and the bridges ip.
 			if incusURL == nil {
+				if !c.IsRemote() {
+					return errors.New("healthd works only with a https connection, provide one with INCUS_COMPOSE_HEALTHD_INCUS")
+				}
+
 				u, err := c.Global().URL()
 				if err != nil {
 					return fmt.Errorf("failed to get the url: %w", err)
@@ -306,8 +300,6 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			}
 		}
 
-		inst.Config.Extensions["user.healthd.incusurl"] = incusURL.String()
-
 		token, err := healthdCreateToken(c)
 		if err != nil {
 			c.LogWarn("Failed to get a token", "error", err)
@@ -318,13 +310,20 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			inst.Config.Files = make(map[string]client.InstanceFile)
 		}
 
-		inst.Config.Files["/etc/ic-healthd/token"] = client.InstanceFile{
-			Content: &closingBufferReader{bytes.NewReader([]byte(token))},
-			UID:     -1,
-			GID:     -1,
-			Mode:    0o400,
-			DirMode: 0o700,
+		inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_INCUS"] = incusURL.String()
+		inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_TOKEN"] = token
+		inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_PROJECTS"] = c.IncusProject()
+		if c.IsDebugging() {
+			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_DEBUG"] = "true"
 		}
+
+		// inst.Config.Files["/etc/ic-healthd/token"] = client.InstanceFile{
+		// 	Content: &closingBufferReader{bytes.NewReader([]byte(token))},
+		// 	UID:     -1,
+		// 	GID:     -1,
+		// 	Mode:    0o400,
+		// 	DirMode: 0o700,
+		// }
 
 		inst.Config.Devices = append(inst.Config.Devices, client.InstanceDevice{
 			Name: "eth0",
@@ -333,11 +332,6 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 				NetworkName: netRes.IncusName(),
 			},
 		})
-
-		flags := []string{fmt.Sprintf(" --incus=%s --project=%s", incusURL.String(), c.IncusProject())}
-		if c.IsDebugging() {
-			flags = append(flags, " --debug")
-		}
 
 		if params.binary != "" {
 			f, err := filepath.Abs(params.binary)
@@ -354,7 +348,7 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			}
 		} else {
 			// c.LogDebug("Setting entrypoint")
-			inst.Config.Extensions["oci.entrypoint"] = "/usr/local/bin/ic-healthd run" + strings.Join(flags, " ")
+			inst.Config.Extensions["oci.entrypoint"] = "/usr/local/bin/ic-healthd run"
 		}
 
 		return err
@@ -366,14 +360,9 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 		}
 
 		if params.binary != "" {
-			flags := []string{fmt.Sprintf(" --incus=%s --project=%s", inst.Config.Extensions["user.healthd.incusurl"], c.IncusProject())}
-			if c.IsDebugging() {
-				flags = append(flags, " --debug")
-			}
-
 			cmd := []string{
 				"sh", "-c",
-				`nohup /usr/local/bin/ic-healthd run` + strings.Join(flags, " ") + `> /var/log/ic-healthd.log 2>&1 &`,
+				`nohup /usr/local/bin/ic-healthd run > /var/log/ic-healthd.log 2>&1 &`,
 			}
 			execReq := incusApi.InstanceExecPost{
 				Command:     cmd,

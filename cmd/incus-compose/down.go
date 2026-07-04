@@ -43,6 +43,10 @@ func newDownCommand() *cli.Command {
 				Usage: "Don't stop linked services",
 			},
 			&cli.BoolFlag{
+				Name:  "external-healthd",
+				Usage: "Use healthd but do not try to lookup it",
+			},
+			&cli.BoolFlag{
 				Name:  "no-networks",
 				Usage: "Don't touch networks",
 			},
@@ -154,6 +158,10 @@ func newDownCommand() *cli.Command {
 			runOpts := []client.Option{
 				client.OptionForce(),
 				client.OptionTimeout(cmd.Duration("timeout")),
+			}
+
+			if cmd.Bool("external-healthd") {
+				runOpts = append(runOpts, client.OptionExternalHealthd())
 			}
 
 			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, stdout, stderr, runOpts...)

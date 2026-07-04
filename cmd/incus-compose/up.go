@@ -76,6 +76,10 @@ func newUpCommand() *cli.Command {
 				Name:  "no-healthd",
 				Usage: "Don't create healthd sidecar for healthchecks",
 			},
+			&cli.BoolFlag{
+				Name:  "external-healthd",
+				Usage: "Use healthd but do not try to create or lookup it",
+			},
 			&cli.StringFlag{
 				Name:    "healthd-image",
 				Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
@@ -140,7 +144,8 @@ func newUpCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			if err := c.Open(); err != nil {
+			err = c.Open()
+			if err != nil {
 				globalClient.LogError("Opening the project client", "error", err)
 				return errLogged.Wrap(err)
 			}
@@ -160,7 +165,8 @@ func newUpCommand() *cli.Command {
 			rc.IgnoreError(client.ActionDelete, client.ErrNotFound)
 
 			// Register the DNS Watcher after the progress renderer so progress waits for the dns changes.
-			if err := c.RegisterDNSWatcher(); err != nil {
+			err = c.RegisterDNSWatcher()
+			if err != nil {
 				globalClient.LogError("Registering the DNS watcher", "project", p.Name, "error", err)
 				return errLogged.Wrap(err)
 			}
@@ -185,8 +191,12 @@ func newUpCommand() *cli.Command {
 			// With --no-deps the linked services are out of scope, so don't wait on
 			// healthd dependency conditions (depends_on: service_healthy) that maybe can't
 			// be satisfied because those dependencies were never started.
-			if !usesHealthd || cmd.Bool("no-deps") {
+			if !cmd.Bool("external-healthd") && (!usesHealthd || cmd.Bool("no-deps")) {
 				runOptions = append(runOptions, client.OptionNoHealthd())
+			}
+
+			if cmd.Bool("external-healthd") {
+				runOptions = append(runOptions, client.OptionExternalHealthd())
 			}
 
 			if cmd.Bool("recreate") {
@@ -292,7 +302,7 @@ func newUpCommand() *cli.Command {
 			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")), client.StackFailFast())
 			stack.AddOrdered(order, myResources)
 
-			if usesHealthd {
+			if usesHealthd && !cmd.Bool("external-healthd") {
 				healthdIncus, healthdNetwork := p.HealthdConfig()
 				if cmd.String("healthd-incus") != "" {
 					healthdIncus = cmd.String("healthd-incus")
