@@ -181,11 +181,6 @@ purge-projects:
     remote="${INCUS_REMOTE:-local}"
     projects=$(incus project list "${remote}:" -f json | jq -r '.[] .name')
 
-    if [[ -z "${projects}" ]]; then
-        echo "No projects found."
-        exit 1
-    fi
-
     echo "Deleting projects on remote '${remote}':"
     while IFS= read -r project; do
         if [[ $project != "default" ]] && [[ $project != "incus-compose-tests-cache" ]] then
