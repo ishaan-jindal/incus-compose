@@ -45,15 +45,20 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Test
+      - name: Cleanup
         run: |
+          just purge-projects || true
+          just purge-networks || true
           mkdir -p "$REPORTS_DIR"
 
+      - name: Test
+        run: |
           gotestsum \
             --packages="./..." \
+            --jsonfile "$REPORTS_DIR/result.json" \
             --junitfile "$REPORTS_DIR/junit.xml" \
             -- -count=1 -parallel "$TEST_PROCS" \
-            -covermode=atomic -coverprofile="$REPORTS_DIR/cover.out" -v 2>&1
+            -covermode=atomic -v 2>&1
 
       - name: Publish test results
         if: always()
@@ -67,8 +72,7 @@ jobs:
       - name: Publish coverage
         if: always()
         run: |
-          echo -e '# Coverage\n' >> $GITHUB_STEP_SUMMARY
-          go tool cover -func="$REPORTS_DIR/cover.out" >> $GITHUB_STEP_SUMMARY
+          go-testreport -input "$REPORTS_DIR/result.json" >> $GITHUB_STEP_SUMMARY
 
   test-example:
     strategy:
@@ -105,6 +109,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+
+      - name: Cleanup
+        run: |
+          just purge-projects || true
+          just purge-networks || true
 
       - name: Test
         run: |
