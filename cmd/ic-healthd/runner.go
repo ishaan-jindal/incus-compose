@@ -57,12 +57,14 @@ func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
 
 	slog.Debug("connected to incus", "project", r.config.Projects[0])
 
-	err = r.writeStatus(client.HealthStatusHealthy)
-	if err != nil {
-		return err
-	}
-
 	for {
+		err = r.writeStatus(client.HealthStatusHealthy)
+		if err != nil {
+			slog.Warn("Failed to update the status", "error", err)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
 		r.startCheckers(ctx)
 		slog.Info("health daemon running", "instances", len(r.running))
 
@@ -97,7 +99,8 @@ func (r *Runner) findHealthd() (string, error) {
 func (r *Runner) writeStatus(status string) error {
 	name, err := r.findHealthd()
 	if err != nil {
-		return fmt.Errorf("finding healthd: %w", err)
+		// Maybe running as binary, ignore writestatus.
+		return nil
 	}
 
 	slog.Debug("Writing status", "healthd", name, "status", status)
@@ -155,16 +158,23 @@ func (r *Runner) connect(ctx context.Context) (incus.InstanceServer, error) {
 	certDataPath := filepath.Join(r.config.DataDir, certFile)
 	keyDataPath := filepath.Join(r.config.DataDir, keyFile)
 
-	if !fileExists(certDataPath) && fileExists(tokenPath) {
+	if !fileExists(certDataPath) && (r.config.Token != "" || fileExists(tokenPath)) {
 		slog.Debug("fresh token performing first-run registration")
 
-		conn, err := retry.NewWithData[incus.InstanceServer](
-			retry.Context(ctx),
-			retry.Attempts(6),
-			retry.Delay(500*time.Millisecond),
-		).Do(func() (incus.InstanceServer, error) {
-			return r.register(tokenPath)
-		})
+		token := r.config.Token
+		if token == "" {
+			slog.Debug("Reading the token from a file")
+			tokenBytes, err := os.ReadFile(tokenPath)
+			if err != nil {
+				return nil, fmt.Errorf("reading token: %w", err)
+			}
+			token = strings.TrimSpace(string(tokenBytes))
+			if token == "" {
+				return nil, errors.New("token file is empty")
+			}
+		}
+
+		conn, err := r.register(token)
 		if err != nil {
 			return nil, fmt.Errorf("first-run registration: %w", err)
 		}
@@ -204,16 +214,7 @@ func (r *Runner) connect(ctx context.Context) (incus.InstanceServer, error) {
 // applies the restrictions stored in the token metadata, and returns trusted=true.
 // The cert/key are persisted to the data dir only after successful registration,
 // so a failed attempt is retried on the next run.
-func (r *Runner) register(tokenPath string) (incus.InstanceServer, error) {
-	tokenBytes, err := os.ReadFile(tokenPath)
-	if err != nil {
-		return nil, fmt.Errorf("reading token: %w", err)
-	}
-	token := strings.TrimSpace(string(tokenBytes))
-	if token == "" {
-		return nil, errors.New("token file is empty")
-	}
-
+func (r *Runner) register(token string) (incus.InstanceServer, error) {
 	certPEM, keyPEM, err := generateClientCert()
 	if err != nil {
 		return nil, fmt.Errorf("generating cert: %w", err)
