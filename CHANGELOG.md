@@ -1,0 +1,513 @@
+# Changelog
+
+All notable changes to incus-compose are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+Version numbering moved from `0.0.1` to `1.0.0` at beta11 (1.0.0 is the intended
+final version), and the beta suffix gained a dot (`beta.16`) from beta.16 onward
+for correct semver ordering. Headings below preserve each release's announced form.
+
+## [1.0.0-beta.21] - 2026-07-04
+
+Standalone and bugfixed healthd, more x-incus reach, a native exec, and an error-severity system so recoverable problems warn instead of aborting.
+
+E2E suite green, ~60% coverage.
+
+### Added
+
+- `x-incus` extensions now pass through on service networks, service volumes, and
+  devices, plus direct `tmpfs` on services (same verbatim key/value passthrough as
+  instances and networks).
+- Standalone `ic-healthd`: it now has its own tests and can run on its own. Env
+  vars renamed to the `INCUS_COMPOSE_HEALTHD_*` prefix, and a `--token` flag was added.
+- Error-severity system: `Clone()` and `IgnoreError()` let commands demote
+  non-fatal problems to warnings instead of hard failures. `up`/`down`/`start`/
+  `stop`/`restart` no longer abort on errors that don't matter.
+- `StackFailFast()` and `Stack.SetOptions()`.
+- Exported `SanitizeProjectName()`.
+
+### Changed
+
+- `exec` uses the native `incus exec` implementation instead of the in-house MVP
+  terminal (~250 lines removed): better TTY handling and parity with the `incus` CLI.
+- Overridden network names are honored for normal networks too, not just special cases.
+- OCI config is extracted after a build; resource dedup now keys on both `Name()`
+  and `IncusName()`.
+
+### Fixed
+
+- Instance volumes land on the correct storage pool.
+- `security.shifted` is left alone when the user has set it.
+- `progress.bypass()` for all stdout/stderr fixes garbled output (#37).
+- DNS watcher is skipped when the service name equals the Incus name; no watcher
+  for empty service names.
+
+## [1.0.0-beta.20] - 2026-06-30
+
+Internal project/stack refactor plus network-readiness and healthd reliability
+fixes.
+
+E2E suite green, ~50% coverage.
+
+### Added
+
+- Instances wait for the network before starting via `raw.lxc=lxc.start.delay=1`,
+  fixing flaky startups where services came up before DNS/networking was usable.
+
+### Changed
+
+- Reworked the ordering logic for `up`/`down`/`start`/`stop`, with and without
+  dependencies. Deliberate asymmetry: `up`/`down` follow `depends_on` by default
+  (`--no-deps` limits to the named service); `start`/`stop`/`restart` act on the
+  named service only (`--with-deps` makes them follow `depends_on`).
+- Project no longer returns a `Stack`; the CLI now owns stack assembly, with a new
+  helper that adds resources in priority order.
+- Exported `SanitizeNetworkName`.
+
+### Fixed
+
+- DNS update retries once on an ETag mismatch (concurrent-update race).
+- `user.healthchecking.stopped` updates go through a cleaner path; the hacky PATCH
+  workaround is gone.
+
+### Removed
+
+- deb/rpm/apk packages. Releases now ship the tarball/binary and install script only.
+
+## [1.0.0-beta.19] - 2026-06-29
+
+Mostly CLI and healthd fixes, plus event-driven log following.
+
+### Added
+
+- Event-driven `logs --follow`: uses the Incus events API to attach and detach log
+  streams as instances start and stop, no longer exiting when instances go away and
+  picking up new instances automatically (#3).
+
+### Changed
+
+- `down --project` now deletes all resources (instances, networks, volumes, and the
+  healthd sidecar) instead of relying on incus to do so.
+- `--debug` no longer shows progress bars (they interfered with debug output).
+- DNS watcher waits up to 5s after a dnsmasq restart before starting the next instance.
+
+### Fixed
+
+- healthd: restart counting during the start period, instance tracking after
+  cancellation, and the `healthd up`/`healthd down` lifecycle (#5).
+
+### Removed
+
+- Automatic retry on client operations.
+- The unnecessary `--with-deps` flag from `logs`.
+
+### Docs
+
+- Added a Terms section (#4); updated example healthchecks with `start_*` directives;
+  immich example now waits for DNS readiness and drops tini.
+
+## [1.0.0-beta.18] - 2026-06-28
+
+### Changed
+
+- **Breaking:** renamed the `--project-directory` shorthand from `-pd` to `-P`.
+- **Breaking:** `core.https_address` is now required (the server must be reachable
+  over the network for image caching); the CLI warns when connecting over a unix socket.
+- Lowered the default `--workers` from 10 back to 4 to avoid storage IO contention on
+  cold-cache / large-image starts.
+- Use the non-`v` version for the healthd image while keeping the `v` prefix for
+  incus-compose itself.
+
+### Fixed
+
+- Retry various client/CLI operations and tune the default timeouts; increased the
+  delay between start/stop retries.
+- `up --recreate` no longer recreates networks.
+- `ic-healthd` no longer shows up as an orphan in `ps` output.
+- healthd always restarts checkers on reload so new settings take effect.
+- Silenced two noisy debug logs.
+
+## [1.0.0-beta.17] - 2026-06-27
+
+Hotfix on top of beta.16, focused on the health-check sidecar.
+
+### Added
+
+- Opt-out of volume shifting (`security.shifted`) for cases where matching IDs
+  inside the container don't matter.
+
+### Fixed
+
+- `ic-healthd` now runs inside the project stack and attaches to the project's own
+  network (the project default unless overridden via `x-incus-compose.healthd.network`),
+  ensured just before regular instances. Network extra options are no longer lost.
+
+## [1.0.0-beta.16] - 2026-06-26
+
+Requires updating via the install script (version format changed to `beta.XX` for
+a correct semver version).
+
+### Added
+
+- `list` now has a separate `HEALTH` column instead of appending health to `STATUS`
+  (columns: KIND, NAME, INCUSNAME, IMAGE, STATUS, HEALTH, ADDRESSES).
+- Every instance reports a health value; services without a healthcheck show
+  "Unknown" rather than a blank.
+- `up`/`start` wait for the healthcheck to report healthy after starting an instance
+  that defines one (polled every 500ms, bounded by `--timeout`), making
+  `depends_on: service_healthy` reliable.
+- `ic-healthd` reports its own status (healthy on start, unhealthy on shutdown) and
+  locates the daemon instance via a `user.healthcheck.daemon` marker.
+- New `--healthd-incus` flag / `INCUS_COMPOSE_HEALTHD_INCUS` env var to set the API
+  URL the sidecar connects to (empty = auto-detect the IP from the attached bridge).
+- New top-level `x-incus-compose.healthd` extension (`incus` API URL and `network`
+  as `<project>:<network>` or a plain bridge name; both default to the project's own
+  network and the connection's port).
+
+### Changed
+
+- **Breaking:** compose now defaults to incus listening on all interfaces; set
+  `INCUS_COMPOSE_HEALTHD_INCUS` to override.
+- `up` reconciles the service count in both directions, matching `docker compose up`.
+  Instances above the desired count (`deploy.replicas` or `--scale`) are torn down,
+  highest index first. A manual `--scale N` applies only to that invocation (#12).
+- Default `--timeout` raised from 10s to 1 minute.
+
+### Removed
+
+- **Breaking:** the defunct `x-incus-compose.network-profile` extension (replaced by
+  `x-incus-compose.healthd`).
+
+## [1.0.0-beta15] - 2026-06-23
+
+### Added
+
+- `self-update` command: checks GitHub releases and updates the binary in place
+  (release builds only, when the binary directory is writable).
+- Environment variables for all CLI flags; every global flag can now be set via
+  `INCUS_COMPOSE_*` (e.g. `INCUS_COMPOSE_FILE`, `INCUS_COMPOSE_PROJECT_NAME`,
+  `INCUS_COMPOSE_DEBUG`).
+- Configurable worker count via `--workers` / `INCUS_COMPOSE_WORKERS` (default 10).
+
+### Fixed
+
+- `.incus.yaml` overlay loading: `docker-compose.incus.yaml` and `compose.incus.yaml`
+  overlays were not loaded correctly (#6).
+- Progress display and error rendering improvements (#7).
+- healthd retry calculation: `retries = start_period / start_interval`.
+- Small client-package cleanups.
+
+### Docs
+
+- Improved healthd documentation.
+
+## [1.0.0-beta14] - 2026-06-22
+
+### Added
+
+- Network project/profile support: `x-incus-compose.network.project` and
+  `x-incus-compose.network.profile` control which Incus project and profile healthd uses.
+
+### Changed
+
+- **Breaking:** bind-mounts are no longer seeded by default; they now default to
+  non-seeded (simple disk device pass-through). Set `x-incus-compose.seed: true` on
+  the volume to restore copying files into the instance.
+
+### Fixed
+
+- Client connection stability: fixed several data races (reused `ProtocolIncus`,
+  `noColor` context var, random string generation).
+- Network profile fallback: use `devices.eth0.parent` when `devices.eth0.network`
+  isn't available in a profile.
+- More robust healthd discovery (`FindHealthd`).
+- Switched to `errors.As()` for proper error unwrapping.
+
+### Internal
+
+- Removed all remaining testify/suite usage; refactored `serviceToInstance()` into
+  smaller helpers; split `project/project.go` into smaller files; removed dangling
+  test fixtures; updated snapshots for the new bind-mount behavior.
+
+## [1.0.0-beta13] - 2026-06-17
+
+### Changed
+
+- incus-compose is now part of the **lxc** organization on GitHub.
+- The `main` branch entered a feature freeze ahead of 1.0.0.
+
+### Fixed
+
+- Do not assume the availability of `incusbr0`.
+
+## [1.0.0-beta12] - 2026-06-13
+
+### Added
+
+- `--image-cache` global flag (`INCUS_COMPOSE_IMAGE_CACHE`) to point the image cache
+  at a different Incus project (default: `default`).
+- `--rmi` / `--images` on `down` to remove project images on teardown, matching
+  docker compose behaviour.
+- Extra storage volume config support via `x-incus-compose`.
+
+### Fixed
+
+- `--with-deps` scoping: `up`/`down` follow `depends_on` automatically; all other
+  commands require an explicit `--with-deps`.
+- Healthd is now skipped when no services require it.
+- Build image name corrected to `localhost/<service>`.
+
+## [1.0.0-beta11] - 2026-06-11
+
+Moved to 1.0.0 from 0.0.1 (1.0.0 will be the final version). Mostly a
+health/dependency/lifecycle hardening release.
+
+### Added
+
+- Healthy-dependency support: `up` wires `service_healthy` dependencies into start
+  ordering/waiting; new `--dependency-timeout` flag.
+- Healthd expanded and rewritten: now runs when services use restart policies or are
+  depended on via `service_healthy`, not only for an explicit healthcheck. Supports
+  `start_period`, `start_interval`, `interval`, `timeout`, and `retries`; health
+  state standardized via `user.healthcheck.status`.
+- `shm_size` maps to a `/dev/shm` tmpfs device.
+- `container_name` support: used as the Incus instance name; scaled services become
+  `container_name-1`, `container_name-2`, etc.
+- Added `examples/many-dependencies` and `examples/wikijs`; moved
+  `test/fixtures/immich` to `examples/immich`; timestamped test logs under
+  `test/logs/`; added `just test-slow`.
+
+### Changed
+
+- **Breaking:** removed the direct Incus URL env vars from the documented/runtime
+  connection flow (`INCUS_COMPOSE_URL`, `INCUS_COMPOSE_CERT`, `INCUS_COMPOSE_KEY`).
+  Use Incus CLI remotes instead (`--remote`, `INCUS_REMOTE`, or the default remote).
+- **Breaking:** timeout flags changed from integer seconds to Go duration values
+  internally (`up`, `down`, `start`, `stop`, `restart`, healthd paths); use explicit
+  durations like `--timeout 10s`.
+- **Breaking:** healthd sidecar name changed to `{project}-ic-healthd`; scripts
+  expecting plain `ic-healthd` need updating.
+- Improved CLI progress: healthd commands participate, progress moved to stdout and
+  is less likely to corrupt logs.
+- DNS watcher rewritten for concurrent per-action updates; instance IP handling
+  refactored to support multiple interfaces/IP sets.
+
+### Fixed
+
+- `exec` now targets the requested service instead of possibly choosing the wrong
+  instance from the stack.
+- `list`/`ps` output is sorted for deterministic output (#46).
+- Progress no longer overwrites logs (#43), plus several writer/stdout/stderr fixes.
+- Healthd stability: graceful deletion/reload, checker optimization, and the normal
+  checker now starts correctly after the start-period checker succeeds.
+- Instance lifecycle: fixes around already-running instances and recreate; Incus
+  timeout `0` means "do not wait", so the internal default now maps to `-1` where needed.
+- Storage volumes: better shifted-volume validation, delayed from `Ensure()` to
+  `Start()` where runtime UID/GID data is available.
+- Image properties are copied correctly instead of sharing/mutating state.
+- Several fixes around deleting project, external, and managed/dangling networks.
+- Uses `errors.Is(err, ErrNotFound)` in more places; better debug logging and wrapping.
+
+## [0.0.1-beta10] - 2026-06-08
+
+Making Compose workflows more complete: local image builds, better progress
+feedback, and improved healthcheck restart behavior.
+
+### Added
+
+- Compose `build:` support. New commands and flags: `incus-compose build`,
+  `incus-compose build <svc...>`, `up --build`, `up --no-build`. See `docs/build.md`.
+- Progress output for all operations in the CLI.
+
+### Changed
+
+- **Breaking:** no more Windows client support (a consequence of adding build; file
+  an issue if you need it).
+- **Breaking:** storage volume names changed to `vol-{name}` (was `{project}-{name}`),
+  hashed if longer than 59 chars. Existing volumes are not migrated automatically.
+- `ic-healthd` restart backoff (5s -> 10s -> 20s -> 40s -> 60s max) avoids tight
+  restart loops for unhealthy services.
+- `restart: unless-stopped` handled more correctly: `stop` marks `user.stopped=true`,
+  `start` clears it, and `ic-healthd` skips automatic restarts while a service was
+  intentionally stopped.
+
+### Fixed
+
+- Bind-mounted directories now resolve through the actual Incus storage volume name.
+- Copied files/directories use more normal permissions: `0644` / `0755`.
+- Fixed a UID/GID copy bug.
+
+## [0.0.1-beta9] - 2026-06-07
+
+Major image-handling rework, plus volume/bind-mount and healthd changes.
+
+### Changed
+
+- OCI config is extracted at download time: UID, GID, entrypoint, and cwd are read
+  from a temporary stopped container right after download and stored as image
+  properties (`oci.uid`, `oci.gid`, etc.) via `UpdateImage`; later runs read them
+  back from properties with no extra container.
+- Two-stage image cache restored (source -> cache project -> instance project),
+  along with `docs/architecture/client/image.md`.
+- Deferred source/cache detection: `GetImageServer` and `EnsureProject` moved from
+  `newImage()` into `Ensure()`, so no network connections happen during the
+  configuration phase (fixing CI slowness).
+- Resource deduplication: `ResourceStore.Get` now compares by `IncusName()`, so
+  normalized references (`docker.io/nginx:alpine` vs `docker.io/library/nginx:alpine`)
+  return the same object, preventing duplicate alias races.
+- Bind-mount files are pushed post-start via `InstanceFile`; bind-mount directories
+  become storage volumes with `HostPath` seeding on create. `PostDevices` and
+  `ActionPostEnsure` are removed; volumes live in `Devices` and are ensured before
+  `CreateInstanceFromImage`.
+- Healthd resource removed: the `client.Healthd` wrapper is replaced by
+  `healthdUp`/`healthdDown` helpers in `cmd/incus-compose/healthd.go`. `KindHealthd`,
+  `HealthdConfig`, and `resource_healthd.go` are deleted.
+- Healthd instance is prefixed with the project name to prevent cross-project collisions.
+
+### Fixed
+
+- Skip token registration when a cert already exists (prevents repeated
+  re-registration on `ic-healthd` restart).
+- `down` network-listing failure during `--project` delete is demoted to a warning;
+  a nil-check prevents a panic when listing fails.
+
+### Internal
+
+- justfile version tags gained `--long --dirty` for healthd builds.
+
+### Breaking
+
+- Removed the project name from storage volume names (manual migration required;
+  note beta10 renamed volumes again to `vol-{name}`).
+
+## [0.0.1-beta8] - 2026-06-06
+
+### Added
+
+- `list --healthd`: opt-in flag to include the `ic-healthd` sidecar in list output.
+- `up --detach|-d`: detach after starting services; logs are printed if not detached (#38).
+- `incus-compose incus proxy`: pass-through command (`incus --project={name} <xyz>`) (#37).
+- Image name in `ps`/`list`: the IMAGE column is populated for all instances,
+  including the healthd sidecar, without requiring Image resources in read-only
+  stacks (stored as `user.image_alias` at creation, resolved from
+  `volatile.base_image` as a fallback).
+- healthd resource limits: the sidecar is capped at 1 CPU and 50 MB RAM by default
+  (required for project-wide limits).
+- `ic-healthd` now compiles in and prints its version.
+- `oci-registry-cache` promoted to a standalone helper project.
+
+### Changed
+
+- `healthd restart` works as intended: kill a service and healthd brings it back.
+- **Breaking:** `--no-pull` replaced by `--pull` (string flag) for docker compose
+  compatibility.
+
+### Fixed
+
+- `down` no longer deletes externally-managed networks.
+- healthd: fixed API endpoint resolution when connecting to the Incus socket (#39).
+- Various fixes for projects that attach to pre-existing external networks.
+
+## [0.0.1-beta7] - 2026-06-05
+
+### Added
+
+- `incus-compose healthd` subcommand group for direct sidecar management:
+  `logs` (stream), `reload` (reload health-check config), `restart`, `up`
+  (recreate, `--recreate` supported), and `down`.
+- External network name override via `x-incus-compose.network`: networks can declare
+  their real Incus name independently of the compose key. Name resolution uses a
+  4-candidate probe (raw and sanitized, for both the override and the compose name)
+  and locks in the first match.
+
+### Fixed
+
+- serviceName truncation regression: hyphenated service names (e.g. `my-service`)
+  were incorrectly stripped. Only trailing `-{n}` integer suffixes (the scaled
+  instance convention) are now removed.
+- `ic-healthd` now appears in `list`/`ps` output.
+- Hardcoded default storage pool: `ic-healthd` resources now use the client's
+  configured `DefaultStoragePool` instead of always `"default"`.
+- `up --recreate` on a healthd container no longer loses `--incus`/`--project` OCI
+  entrypoint flags; `ResourceStore.Remove()` is now called on every `Delete()`.
+
+## [0.0.1-beta5] / [0.0.1-beta6] - 2026-06-04
+
+### Added
+
+- Automatic loading of a `compose.incus.yaml` override file when present next to the
+  main Compose file, keeping upstream Docker Compose files unchanged while adding
+  Incus-specific configuration in a separate file.
+
+### Changed
+
+- The `ic-healthd` image now uses `busybox:glibc` instead of `scratch`.
+
+## [0.0.1-beta4] - 2026-06-04
+
+### Added
+
+- `x-incus` options: Compose services can pass raw Incus instance config directly
+  through to Incus (memory/CPU limits, nesting, security flags, etc.).
+- Automatic loading of the default incus profile.
+- Project-wide `x-incus-compose.network-profile` support (disables a per-project
+  default network/bridge).
+- healthd reload on service changes.
+
+### Fixed
+
+- Network creation race that could cause dnsmasq failures in CI (avoids immediately
+  updating a newly-created network before the old dnsmasq released its socket).
+- `down` now deletes compose-managed networks when the project is brought down,
+  fixing dangling networks.
+- `up --no-pull` is now respected correctly (also ~2x faster test runs, 3min from 6min).
+
+### Testing
+
+- Test coverage +17% (35% -> 52%).
+
+## [0.0.1-beta3] - 2026-06-03
+
+### Added
+
+- Kernel-mode NAT proxy for port proxies via `x-incus.nat-proxy` (#30).
+- DHCP ranges and static IPv4 / IPv6 addresses on network creation.
+
+### Fixed
+
+- Healthd status in `ps`/`list`.
+- Scaling now prunes dangling instances when `up --scale` lowers the count (#34).
+- `logs` omits old logs then follows when `--follow` is set.
+- Small fixes to keep CI green.
+
+## [0.0.1-beta1] - 2026-06-01
+
+Initial public beta. A ground-up Docker Compose workflow for Incus, inspired by
+Brian Ketelsen's proof-of-concept.
+
+### Added
+
+- Familiar commands: `up`, `down`, `start`, `stop`, `restart`, `list` (and `ps`),
+  `logs`, `exec`, `config`, plus `build`, `healthd`, `incus` (pass-through), and
+  `self-update`.
+- Compose project parsing via compose-go, with automatic `compose.incus.yaml`
+  overrides and `x-incus` / `x-incus-compose` extensions for raw Incus options.
+- Native OCI image pulling from docker.io, ghcr.io, and other registries.
+- Two-stage image cache in a dedicated Incus project (survives `down`/`up`, avoids
+  registry rate limits).
+- Local image building via Podman/Docker.
+- Bridge networks with automatic name sanitization.
+- Static IPv4/IPv6 addresses with automatic DHCP ranges.
+- Port forwarding via proxy devices or kernel NAT mode.
+- Storage volumes with UID/GID shifting; bind mounts (pass-through by default,
+  optional seeding).
+- Health checks, restart policies, and `depends_on: service_healthy` ordering via
+  the `ic-healthd` sidecar.
+- Service scaling with `up --scale` and orphan pruning.
+- Incus project isolation.
+- Resource limits and other advanced compose features (`shm_size`,
+  `container_name`, etc.).
+- Configuration via `INCUS_COMPOSE_*` environment variables for every flag, with a
+  configurable parallel worker count.
