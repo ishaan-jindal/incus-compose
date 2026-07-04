@@ -75,18 +75,7 @@ sudo -u runner -iH
 which golangci-lint
 ```
 
-## 6. Install just - _runner user_
-
-```bash
-mkdir just; pushd just
-curl -fsSL -o just.tar.gz https://github.com/casey/just/releases/download/1.55.1/just-1.55.1-x86_64-unknown-linux-musl.tar.gz
-tar xf just.tar.gz
-mv just ~/.local/bin/
-popd
-rm -rf just
-```
-
-## 7. Install other tools and configure podman - _runner user_
+## 6. Install other tools and configure podman - _runner user_
 
 ```bash
 go install gotest.tools/gotestsum@latest
@@ -100,7 +89,7 @@ loginctl enable-linger runner
 
 restart the container/vm.
 
-## 8. Initialise the nested Incus daemon — _runner user_
+## 7. Initialise the nested Incus daemon — _runner user_
 
 Accept the defaults unless you have a reason not to.
 
@@ -108,7 +97,7 @@ Accept the defaults unless you have a reason not to.
 incus admin init
 ```
 
-## 9. Add OCI registry remotes — _runner user_
+## 8. Add OCI registry remotes — _runner user_
 
 These point at your registry mirrors so images can be pulled by short name.
 
@@ -119,7 +108,7 @@ incus remote add --protocol=oci ghcr.io https://ghcr-registry.$DOMAIN
 incus remote add --protocol=oci registry.gitlab.com https://gitlab-registry.$DOMAIN
 ```
 
-## 10. Enable HTTPS access to the local daemon — _runner user_
+## 9. Enable HTTPS access to the local daemon — _runner user_
 
 Generate a client certificate, trust it, find the bridge IP, expose the daemon
 over HTTPS, and add a remote pointing at it.
@@ -133,7 +122,7 @@ incus config set core.https_address=:8443
 incus remote add local-https $IP --accept-certificate
 ```
 
-## 11. Download the GitHub Actions runner — _runner user_
+## 10. Download the GitHub Actions runner — _runner user_
 
 ```bash
 mkdir actions-runner; cd actions-runner
@@ -142,7 +131,7 @@ tar xf actions-runner.tar.gz; rm -f actions-runner.tar.gz
 exit
 ```
 
-## 12. Install runner dependencies — _container (root)_
+## 11. Install runner dependencies — _container (root)_
 
 The dependency installer needs root, so run it after the `exit` above.
 
@@ -150,7 +139,7 @@ The dependency installer needs root, so run it after the `exit` above.
 /home/runner/actions-runner/bin/installdependencies.sh
 ```
 
-## 13. Register the runner — _runner user_
+## 12. Register the runner — _runner user_
 
 Get a registration token from the repository's **Settings → Actions → Runners →
 New self-hosted runner**, then register:
@@ -200,7 +189,7 @@ Enter name of work folder: [press Enter for _work]
 √ Settings Saved.
 ```
 
-## 14. Run the runner as a service — _container (root)_
+## 13. Run the runner as a service — _container (root)_
 
 ```bash
 exit
