@@ -485,8 +485,9 @@ func (c *GlobalClient) getProject(name string) (*Client, error) {
 type EnsureProjectOption func(*ensureProjectOptions)
 
 type ensureProjectOptions struct {
-	create bool
-	config map[string]string
+	create      bool
+	config      map[string]string
+	skipHealthd bool
 }
 
 // EnsureProjectWithCreate enables project creation if the project doesn't exist.
@@ -501,6 +502,13 @@ func EnsureProjectWithCreate() EnsureProjectOption {
 func EnsureProjectWithConfig(config map[string]string) EnsureProjectOption {
 	return func(opts *ensureProjectOptions) {
 		opts.config = config
+	}
+}
+
+// EnsureProjectWithSkipHealthd skips as the name says any healthd calls.
+func EnsureProjectWithSkipHealthd() EnsureProjectOption {
+	return func(opts *ensureProjectOptions) {
+		opts.skipHealthd = true
 	}
 }
 

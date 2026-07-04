@@ -91,7 +91,7 @@ func (c *GlobalClient) newProjectClient(name, incusName string, created bool) (*
 	if c.IsDebugging() {
 		// Debug logging hooks
 		c.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-			c.LogDebug(string(action), "kind", r.Kind(), "name", r.Name(), "incus_name", r.IncusName(), "action", action, "created", r.Created())
+			c.LogDebug("Running", "action", action, "kind", r.Kind(), "name", r.Name(), "incus_name", r.IncusName())
 			return err
 		})
 		c.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
@@ -100,6 +100,7 @@ func (c *GlobalClient) newProjectClient(name, incusName string, created bool) (*
 				return err
 			}
 
+			c.LogDebug("Run", "action", action, "kind", r.Kind(), "name", r.Name(), "incus_name", r.IncusName(), "created", r.Created())
 			return nil
 		})
 	}
@@ -364,7 +365,7 @@ func (c *Client) FindHealthd() (string, error) {
 	}
 
 	if c.incus == nil {
-		return "", ErrNotFound
+		return "", ErrNotFound.WithText(": within FindHealthd")
 	}
 
 	instances, err := c.incus.GetInstances("")
@@ -379,7 +380,7 @@ func (c *Client) FindHealthd() (string, error) {
 		}
 	}
 
-	return "", ErrNotFound
+	return "", ErrNotFound.WithText(": within FindHealthd")
 }
 
 // InstanceExists reports whether an instance with the given name exists in Incus.

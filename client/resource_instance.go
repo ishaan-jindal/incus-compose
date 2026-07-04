@@ -34,8 +34,8 @@ type InstanceFile struct {
 	File    string
 	Content io.ReadSeekCloser
 
-	UID     int64
-	GID     int64
+	UID     int64 // Uses oci.uid if -1 has been given.
+	GID     int64 // Uses oci.gid if -1 has been given.
 	Mode    int
 	NoMKDir bool
 	DirMode int
@@ -545,7 +545,7 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 
 	if r.Running() {
 		if options.Healthd {
-			err := r.setHealthCheckingStopped(ctx, false)
+			err := r.SetHealthCheckingStopped(ctx, false)
 			if err != nil {
 				return r.client.hookAfter(ctx, ActionStart, r, options, err)
 			}
@@ -563,7 +563,7 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 	}
 
 	if options.Healthd {
-		err := r.setHealthCheckingStopped(ctx, false)
+		err := r.SetHealthCheckingStopped(ctx, false)
 		if err != nil {
 			return r.client.hookAfter(ctx, ActionStart, r, options, err)
 		}
@@ -602,30 +602,32 @@ func (r *Instance) waitForHealthCheck(ctx context.Context, action Action, option
 		defer cancel()
 	}
 
-	// Wait for healthd to be available for 3 seconds.
-	err := retry.New(
-		retry.Context(ctx),
-		retry.Attempts(6),
-		retry.Delay(500*time.Millisecond),
-	).Do(func() error {
-		healthd, err := r.client.FindHealthd()
+	if !options.ExternalHealthd {
+		// Wait for healthd to be available for 3 seconds.
+		err := retry.New(
+			retry.Context(ctx),
+			retry.Attempts(6),
+			retry.Delay(500*time.Millisecond),
+		).Do(func() error {
+			healthd, err := r.client.FindHealthd()
+			if err != nil {
+				return err
+			}
+
+			hInstState, _, err := r.conn.GetInstanceState(healthd)
+			if err != nil {
+				return fmt.Errorf("failed to get the healthd '%v' instance state: %w", healthd, err)
+			}
+
+			if hInstState.StatusCode != incusApi.Running {
+				return fmt.Errorf("healthd '%v' not running cannot wait for it to check dependencies", healthd)
+			}
+
+			return nil
+		})
 		if err != nil {
 			return err
 		}
-
-		hInstState, _, err := r.conn.GetInstanceState(healthd)
-		if err != nil {
-			return fmt.Errorf("failed to get the healthd '%v' instance state: %w", healthd, err)
-		}
-
-		if hInstState.StatusCode != incusApi.Running {
-			return fmt.Errorf("healthd '%v' not running cannot wait for it to check dependencies", healthd)
-		}
-
-		return nil
-	})
-	if err != nil {
-		return err
 	}
 
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -660,30 +662,32 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 		return nil
 	}
 
-	// Wait for healthd to be available for 3 seconds.
-	err := retry.New(
-		retry.Context(ctx),
-		retry.Attempts(6),
-		retry.Delay(500*time.Millisecond),
-	).Do(func() error {
-		healthd, err := r.client.FindHealthd()
+	if !options.ExternalHealthd {
+		// Wait for healthd to be available for 3 seconds.
+		err := retry.New(
+			retry.Context(ctx),
+			retry.Attempts(6),
+			retry.Delay(500*time.Millisecond),
+		).Do(func() error {
+			healthd, err := r.client.FindHealthd()
+			if err != nil {
+				return err
+			}
+
+			hInstState, _, err := r.conn.GetInstanceState(healthd)
+			if err != nil {
+				return fmt.Errorf("failed to get the healthd '%v' instance state: %w", healthd, err)
+			}
+
+			if hInstState.StatusCode != incusApi.Running {
+				return fmt.Errorf("healthd '%v' not running cannot wait for it to check dependencies", healthd)
+			}
+
+			return nil
+		})
 		if err != nil {
 			return err
 		}
-
-		hInstState, _, err := r.conn.GetInstanceState(healthd)
-		if err != nil {
-			return fmt.Errorf("failed to get the healthd '%v' instance state: %w", healthd, err)
-		}
-
-		if hInstState.StatusCode != incusApi.Running {
-			return fmt.Errorf("healthd '%v' not running cannot wait for it to check dependencies", healthd)
-		}
-
-		return nil
-	})
-	if err != nil {
-		return err
 	}
 
 	timeout := options.DependencyTimeout
@@ -995,7 +999,7 @@ func (r *Instance) Stop(ctx context.Context, opts ...Option) error {
 
 	if !r.Running() {
 		if options.Healthd {
-			err := r.setHealthCheckingStopped(ctx, true)
+			err := r.SetHealthCheckingStopped(ctx, true)
 			if err != nil {
 				return r.client.hookAfter(ctx, ActionStop, r, options, err)
 			}
@@ -1010,7 +1014,7 @@ func (r *Instance) Stop(ctx context.Context, opts ...Option) error {
 	err := r.stop(stopCtx, options)
 
 	if options.Healthd {
-		err := r.setHealthCheckingStopped(ctx, true)
+		err := r.SetHealthCheckingStopped(ctx, true)
 		if err != nil {
 			return r.client.hookAfter(ctx, ActionStop, r, options, err)
 		}
@@ -1042,10 +1046,10 @@ func (r *Instance) stop(ctx context.Context, options Options) error {
 	return r.fetch()
 }
 
-// setHealthCheckingStopped writes the user.healthcheck.stopped config key on
+// SetHealthCheckingStopped writes the user.healthcheck.stopped config key on
 // the instance. Patches only this key; a full UpdateInstance races with incusd
 // writing volatile config keys around start/stop (ETag mismatch under load).
-func (r *Instance) setHealthCheckingStopped(ctx context.Context, stopped bool) error {
+func (r *Instance) SetHealthCheckingStopped(ctx context.Context, stopped bool) error {
 	if err := r.fetch(); err != nil {
 		return err
 	}

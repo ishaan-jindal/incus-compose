@@ -56,6 +56,9 @@ type Options struct {
 
 	// Healthd indicates that we use healthd features.
 	Healthd bool
+
+	// ExternalHealthd indicates that we have an unmanaged healthd.
+	ExternalHealthd bool
 }
 
 // incusTimeout converts Timeout to the seconds value expected by the Incus
@@ -134,6 +137,13 @@ func OptionBuild(info BuildInfo) Option {
 func OptionNoHealthd() Option {
 	return func(o *Options) {
 		o.Healthd = false
+	}
+}
+
+// OptionExternalHealthd indicates that we have an unmanaged healthd.
+func OptionExternalHealthd() Option {
+	return func(o *Options) {
+		o.ExternalHealthd = true
 	}
 }
 
