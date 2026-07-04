@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/lxc/incus-compose/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/lxc/incus-compose/actions?query=event%3Apush+branch%3Amain)
 [![Go Reference](https://pkg.go.dev/badge/github.com/lxc/incus-compose.svg)](https://pkg.go.dev/github.com/lxc/incus-compose)
-[![Go Report Card](https://goreportcard.com/badge/github.com/lxc/incus-compose)](https://goreportcard.com/report/github.com/lxc/incus-compose)
+[![Coverage 60%](https://img.shields.io/badge/coverage-60%25-orange)](https://github.com/lxc/incus-compose/actions/workflows/test-release.yml)
 
 Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` implements the Compose specification for the Incus ecosystem, allowing you to define and run multi-container applications using the same `docker-compose.yml` files you already know.
 
@@ -76,6 +76,7 @@ Full docs index: [docs/README.md](docs/README.md)
 - **[Architecture](docs/architecture.md)** - How it works under the hood
 - **[Why Incus?](docs/why-incus.md)** - Benefits over Docker
 - **[Contributing](CONTRIBUTING.md)** - Contributing to incus-compose
+- **[Changelog](CHANGELOG.md)** - Changelog since 0.0.1-beta1
 
 ## Architecture
 
