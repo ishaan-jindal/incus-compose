@@ -217,40 +217,44 @@ func TestSlowStartStopRestartWithDeps(t *testing.T) {
 		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	// Bring everything up and healthy.
-	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
-	require.NoError(t, err)
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "up",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name: "restart",
+			args: []string{"-f", compose, "restart", "--with-deps", "nginx"},
+		},
+		{
+			name: "stop manually",
+			args: []string{"-f", compose, "stop", "nginx", "backend1", "backend2"},
+		},
+		{
+			name: "start deps",
+			args: []string{"-f", compose, "start", "--with-deps", "nginx"},
+		},
+		{
+			name: "stop deps",
+			args: []string{"-f", compose, "stop", "--with-deps", "backend1"},
+		},
+	}
 
-	// restart --with-deps is a smoke check while everything is running.
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "restart", "--with-deps", "nginx")
-	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			require.NoError(t, err)
 
-	// Stop all services (no cascade requested) -> nothing running.
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "stop", "nginx", "backend1", "backend2")
-	require.NoError(t, err)
-	stdout, _, err := runCommand(t, ctx, pn, "-f", compose, "ps", "--quiet")
-	require.NoError(t, err)
-	require.Empty(t, cleanLines(t, stdout.String()))
-
-	// start nginx it should start everything as it depends on backend1 and backend2.
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "start", "nginx")
-	require.NoError(t, err)
-	stdout, _, err = runCommand(t, ctx, pn, "-f", compose, "ps", "--quiet")
-	require.NoError(t, err)
-	names := cleanLines(t, stdout.String())
-	require.Contains(t, names, "nginx-1")
-	require.Contains(t, names, "backend1-1")
-	require.Contains(t, names, "backend2-1")
-
-	// stop backend1 --with-deps also stops its dependant (nginx); backend2 stays.
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "stop", "--with-deps", "backend1")
-	require.NoError(t, err)
-	stdout, _, err = runCommand(t, ctx, pn, "-f", compose, "ps", "--quiet")
-	require.NoError(t, err)
-	names = cleanLines(t, stdout.String())
-	require.Contains(t, names, "backend2-1")
-	require.NotContains(t, names, "nginx-1")
-	require.NotContains(t, names, "backend1-1")
+			stdout, _, err := runCommand(t, ctx, pn,
+				"-f", compose, "list", "--format", "json",
+			)
+			require.NoError(t, err)
+			snapshotter.SnapshotT(t, normalizeListOutput(t, stdout))
+		})
+	}
 }
 
 func TestSlowUpDownGrafana(t *testing.T) {
@@ -267,30 +271,97 @@ func TestSlowUpDownGrafana(t *testing.T) {
 	})
 
 	tests := []struct {
-		name    string
-		args    []string
-		wantErr bool
+		name string
+		args []string
 	}{
 		{
-			name:    "up grafana",
-			args:    []string{"-f", compose, "up", "--detach"},
-			wantErr: false,
+			name: "up grafana",
+			args: []string{"-f", compose, "up", "--detach"},
 		},
 		{
-			name:    "list grafana",
-			args:    []string{"-f", compose, "list"},
-			wantErr: false,
+			name: "list grafana",
+			args: []string{"-f", compose, "list"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, err := runCommand(t, ctx, pn, tt.args...)
-			if tt.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestSlowUpUp(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipSlow(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "up",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name: "up2",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestSlowDownDown(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipSlow(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "up",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name: "down1",
+			args: []string{"-f", compose, "down"},
+		},
+		{
+			name: "down2",
+			args: []string{"-f", compose, "down"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			require.NoError(t, err)
 		})
 	}
 }
@@ -498,52 +569,50 @@ func TestSlowLifecycleSimpleNginx(t *testing.T) {
 	})
 
 	tests := []struct {
-		name string
-		args []string
+		name     string
+		args     []string
+		snapshot bool
 	}{
 		{
 			name: "up",
 			args: []string{"-f", compose, "up", "--detach"},
 		},
 		{
-			name: "ps table",
-			args: []string{"-f", compose, "ps", "--all"},
+			name:     "ps json",
+			args:     []string{"-f", compose, "ps", "--format", "json", "--all"},
+			snapshot: true,
 		},
 		{
-			name: "ps json",
-			args: []string{"-f", compose, "ps", "--all", "--format", "json"},
+			name:     "ps quiet",
+			args:     []string{"-f", compose, "ps", "--format", "json", "--all", "--quiet"},
+			snapshot: true,
 		},
 		{
-			name: "ps quiet",
-			args: []string{"-f", compose, "ps", "--all", "--quiet"},
-		},
-		{
-			name: "ps services",
-			args: []string{"-f", compose, "ps", "--all", "--services"},
+			name:     "ps services",
+			args:     []string{"-f", compose, "ps", "--format", "json", "--all", "--services"},
+			snapshot: true,
 		},
 		{
 			name: "stop service",
 			args: []string{"-f", compose, "stop", "web"},
 		},
 		{
-			name: "ps stopped",
-			args: []string{"-f", compose, "ps", "--all"},
+			name:     "ps stopped",
+			args:     []string{"-f", compose, "ps", "--format", "json", "--all"},
+			snapshot: true,
 		},
 		{
 			name: "start service",
 			args: []string{"-f", compose, "start", "web"},
 		},
 		{
-			name: "exec dry run",
-			args: []string{"-f", compose, "exec", "--dry-run", "web", "echo", "hello"},
+			name:     "exec dry run",
+			args:     []string{"-f", compose, "exec", "--dry-run", "web", "echo", "hello"},
+			snapshot: true,
 		},
-		// {
-		// 	name: "restart service",
-		// 	args: []string{"-f", compose, "restart", "web"},
-		// },
 		{
-			name: "logs service",
-			args: []string{"-f", compose, "logs", "web"},
+			name: "restart service",
+			args: []string{"-f", compose, "restart", "web"},
 		},
 		{
 			name: "down resources",
@@ -553,8 +622,12 @@ func TestSlowLifecycleSimpleNginx(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			stdout, _, err := runCommand(t, ctx, pn, tt.args...)
 			require.NoError(t, err)
+
+			if tt.snapshot {
+				snapshotter.SnapshotT(t, normalizeListOutput(t, stdout))
+			}
 		})
 	}
 }

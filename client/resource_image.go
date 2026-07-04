@@ -557,6 +557,10 @@ func (r *Image) ensureBuild(ctx context.Context, args Options) error {
 		// !args.Create and BuildAuto: leave err non-nil (not found, don't create).
 	}
 
+	if err == nil {
+		err = extractAndStoreOCIConfig(ctx, r.conn, r.IncusAlias.Target, r.client.Config().DefaultStoragePool)
+	}
+
 	err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
 	return err
 }

@@ -67,7 +67,7 @@ func newProfile(c *Client, name string, configGetter Config) (*Profile, error) {
 
 	profile := &Profile{
 		BaseResource: NewBaseResource(KindProfile, name, PriorityProfile),
-		incusName:    sanitizeProjectName(name),
+		incusName:    SanitizeProjectName(name),
 		client:       c,
 		Config:       *config,
 	}

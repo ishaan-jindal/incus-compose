@@ -56,6 +56,9 @@ type Options struct {
 
 	// Healthd indicates that we use healthd features.
 	Healthd bool
+
+	// ExternalHealthd indicates that we have an unmanaged healthd.
+	ExternalHealthd bool
 }
 
 // incusTimeout converts Timeout to the seconds value expected by the Incus
@@ -134,6 +137,13 @@ func OptionBuild(info BuildInfo) Option {
 func OptionNoHealthd() Option {
 	return func(o *Options) {
 		o.Healthd = false
+	}
+}
+
+// OptionExternalHealthd indicates that we have an unmanaged healthd.
+func OptionExternalHealthd() Option {
+	return func(o *Options) {
+		o.ExternalHealthd = true
 	}
 }
 
@@ -290,13 +300,17 @@ func (s *ResourceStore) Remove(r Resource) {
 	})
 }
 
-// Get retrieves a resource by kind and its Incus-normalized name. Returns nil if not found.
-func (s *ResourceStore) Get(kind Kind, incusName string) Resource {
+// Get retrieves a resource by kind and its name. Returns nil if not found.
+func (s *ResourceStore) Get(kind Kind, name string, incus bool) Resource {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	idx := slices.IndexFunc(s.resources, func(r Resource) bool {
-		return r.Kind() == kind && r.IncusName() == incusName
+		if !incus {
+			return r.Kind() == kind && r.Name() == name
+		}
+
+		return r.Kind() == kind && r.IncusName() == name
 	})
 	if idx == -1 {
 		return nil

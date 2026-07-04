@@ -94,6 +94,9 @@ type InstanceDeviceConfig struct {
 	Tmpfs InstanceDeviceTmpfsConfig
 
 	ExtraConfig map[string]string
+
+	// Extensions contains direct device configuration options.
+	Extensions map[string]string
 }
 
 // InstanceDevice represents an instance device configuration.
@@ -162,6 +165,8 @@ func (d *InstanceDevice) toNicDevice() (map[string]string, error) {
 		device["ipv6.address"] = d.Config.Ipv6Address
 	}
 
+	maps.Copy(device, d.Config.Extensions)
+
 	return device, nil
 }
 
@@ -186,6 +191,8 @@ func (d *InstanceDevice) toProxyDevice() (map[string]string, error) {
 	if cfg.Nat {
 		device["nat"] = "true"
 	}
+
+	maps.Copy(device, d.Config.Extensions)
 
 	return device, nil
 }
@@ -213,6 +220,8 @@ func (d *InstanceDevice) toDiskDevice() (map[string]string, error) {
 		device["readonly"] = "true"
 	}
 
+	maps.Copy(device, d.Config.Extensions)
+
 	return device, nil
 }
 
@@ -228,6 +237,8 @@ func (d *InstanceDevice) toTmpfsDevice() (map[string]string, error) {
 	if cfg.Size != "" {
 		device["size"] = cfg.Size
 	}
+
+	maps.Copy(device, d.Config.Extensions)
 
 	return device, nil
 }

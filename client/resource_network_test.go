@@ -477,15 +477,17 @@ func TestNetworkDelete(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name   string
-		ensure bool
+		name    string
+		ensure  bool
+		wantErr bool
 	}{
 		{
 			name:   "after ensure",
 			ensure: true,
 		},
 		{
-			name: "not ensured no error",
+			name:    "not ensured error",
+			wantErr: true,
 		},
 	}
 
@@ -502,7 +504,12 @@ func TestNetworkDelete(t *testing.T) {
 				require.True(t, r.IsEnsured())
 			}
 
-			require.NoError(t, RunAction(ctx, r, ActionDelete, OptionForce()))
+			err = RunAction(ctx, r, ActionDelete, OptionForce())
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
 			require.False(t, r.IsEnsured())
 		})
 	}

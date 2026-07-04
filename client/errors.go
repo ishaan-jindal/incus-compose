@@ -3,6 +3,13 @@ package client
 import (
 	"errors"
 	"fmt"
+	"log/slog"
+)
+
+// Severity of an error, defaults to SeverityError.
+const (
+	SeverityError = slog.LevelError
+	SeverityWarn  = slog.LevelWarn
 )
 
 // Error is a sentinel-based error type that supports context enrichment.
@@ -10,11 +17,24 @@ type Error struct {
 	sentinel error
 	text     string
 	wrapped  error
+
+	// severity indicates how important that error is, defaults to error.
+	severity slog.Level
 }
 
 // NewError creates a new sentinel error.
 func NewError(text string) *Error {
-	return &Error{sentinel: errors.New(text), text: text}
+	return &Error{sentinel: errors.New(text), text: text, severity: SeverityError}
+}
+
+// WithSeverity returns a new error withe given severity.
+func (e *Error) WithSeverity(severity slog.Level) *Error {
+	return &Error{
+		sentinel: e.sentinel,
+		text:     e.text,
+		wrapped:  e.wrapped,
+		severity: severity,
+	}
 }
 
 // WithKindName adds resource kind and name context to the error.
@@ -23,6 +43,7 @@ func (e *Error) WithKindName(kind Kind, name string) *Error {
 		sentinel: e.sentinel,
 		text:     fmt.Sprintf("%v: %v(%v)", e.text, kind, name),
 		wrapped:  e.wrapped,
+		severity: e.severity,
 	}
 }
 
@@ -32,6 +53,7 @@ func (e *Error) WithText(text string) *Error {
 		sentinel: e.sentinel,
 		text:     fmt.Sprintf("%v %v", e.text, text),
 		wrapped:  e.wrapped,
+		severity: e.severity,
 	}
 }
 
@@ -41,6 +63,7 @@ func (e *Error) WithAction(action Action) *Error {
 		sentinel: e.sentinel,
 		text:     fmt.Sprintf("%v %v", e.text, action),
 		wrapped:  e.wrapped,
+		severity: e.severity,
 	}
 }
 
@@ -50,7 +73,13 @@ func (e *Error) WithResource(resource Resource) *Error {
 		sentinel: e.sentinel,
 		text:     fmt.Sprintf("%v: %v", e.text, resource),
 		wrapped:  e.wrapped,
+		severity: e.severity,
 	}
+}
+
+// Severity returns the errors severity, defaults to SeverityError.
+func (e *Error) Severity() slog.Level {
+	return e.severity
 }
 
 // Error implements the error interface.
@@ -95,8 +124,11 @@ var (
 	// ErrUnknown indicates an unknown error occurred.
 	ErrUnknown = NewError("unknown")
 
+	// ErrRunning indicates a command on a running instance.
+	ErrRunning = NewError("resource is already running").WithSeverity(SeverityWarn)
+
 	// ErrNotRunning indicates a command on a not running instance.
-	ErrNotRunning = NewError("not running")
+	ErrNotRunning = NewError("resource is not running").WithSeverity(SeverityWarn)
 
 	// ErrUnknownConfig indicates an unknown config for a resource.
 	ErrUnknownConfig = NewError("unknown config for resource")
@@ -131,7 +163,7 @@ var (
 	ErrNotFound = NewError("resource not found")
 
 	// ErrNotEnsured indicates an operation requires the resource to be ensured first.
-	ErrNotEnsured = NewError("resource not ensured")
+	ErrNotEnsured = NewError("resource not ensured").WithSeverity(SeverityWarn)
 
 	// ErrImageRequired indicates an instance requires an image.
 	ErrImageRequired = NewError("instances without an image are not yet supported")
@@ -153,4 +185,7 @@ var (
 
 	// ErrCreate indicates a resource creation error.
 	ErrCreate = NewError("create failed")
+
+	// ErrDelete indicates a resource deletion error.
+	ErrDelete = NewError("delete failed")
 )

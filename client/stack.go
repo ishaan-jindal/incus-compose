@@ -19,6 +19,7 @@ type StackRunArgs struct {
 type StackOptions struct {
 	Workers        int
 	SortDescending bool
+	FailFast       bool
 }
 
 // StackOption configures stack options.
@@ -34,13 +35,17 @@ func StackSortDescending() StackOption {
 	return func(o *StackOptions) { o.SortDescending = true }
 }
 
+// StackFailFast instructs the stack to fail on first error.
+func StackFailFast() StackOption {
+	return func(o *StackOptions) { o.FailFast = true }
+}
+
 // Stack manages a collection of resource operations.
 // Resources are executed in priority order with proper dependency handling.
 type Stack struct {
 	client *Client
 
-	workers        int
-	sortDescending bool
+	options StackOptions
 
 	resources []Resource
 	seen      map[Resource]struct{}
@@ -48,19 +53,25 @@ type Stack struct {
 
 // NewStack creates a new Stack for the given project.
 func NewStack(c *Client, opts ...StackOption) *Stack {
-	options := &StackOptions{
+	options := StackOptions{
 		Workers: 4,
 	}
 
 	for _, o := range opts {
-		o(options)
+		o(&options)
 	}
 
 	return &Stack{
-		client:         c,
-		workers:        options.Workers,
-		sortDescending: options.SortDescending,
-		seen:           make(map[Resource]struct{}),
+		client:  c,
+		options: options,
+		seen:    make(map[Resource]struct{}),
+	}
+}
+
+// SetOptions allows you to override options for the current stack.
+func (s *Stack) SetOptions(opts ...StackOption) {
+	for _, o := range opts {
+		o(&s.options)
 	}
 }
 
@@ -99,11 +110,11 @@ func (s *Stack) All() []Resource {
 
 // Sort sets the sort order.
 func (s *Stack) Sort(desc bool) {
-	s.sortDescending = desc
+	s.options.SortDescending = desc
 }
 
 func (s *Stack) sort() {
-	if s.sortDescending {
+	if s.options.SortDescending {
 		sort.SliceStable(s.resources, func(i, j int) bool {
 			return s.resources[i].Priority() > s.resources[j].Priority()
 		})
@@ -148,14 +159,14 @@ func (s *Stack) runBatch(ctx context.Context, batch []Resource, kind Kind, actio
 	// Execute batches in order
 	var errs error
 
-	pool := NewWorkerPool(s.workers)
+	pool := NewWorkerPool(s.options.Workers)
 	for _, r := range batch {
 		task := r // capture for closure
 		pool.Submit(func() error {
 			return RunAction(ctx, task, action, opts...)
 		})
 	}
-	if err := pool.Run(PoolRunArgs{FailFast: false}); err != nil {
+	if err := pool.Run(PoolRunArgs{FailFast: s.options.FailFast}); err != nil {
 		errs = errors.Join(errs, err)
 	}
 
@@ -182,7 +193,12 @@ func (s *Stack) Run(ctx context.Context, action Action, stdout io.Writer, stderr
 
 	for _, batch := range batches {
 		kind := batch[0].Kind()
-		errs = errors.Join(errs, s.runBatch(ctx, batch, kind, action, opts...))
+		err := s.runBatch(ctx, batch, kind, action, opts...)
+		errs = errors.Join(errs, err)
+
+		if err != nil && s.options.FailFast {
+			return errs
+		}
 	}
 
 	return errs
@@ -191,10 +207,9 @@ func (s *Stack) Run(ctx context.Context, action Action, stdout io.Writer, stderr
 // ForAction returns a new stack with resources filtered for the given action.
 func (s *Stack) ForAction(action Action) *Stack {
 	result := &Stack{
-		client:         s.client,
-		workers:        s.workers,
-		sortDescending: s.sortDescending,
-		seen:           make(map[Resource]struct{}),
+		client:  s.client,
+		options: s.options,
+		seen:    make(map[Resource]struct{}),
 	}
 
 	for _, r := range s.All() {
@@ -210,10 +225,9 @@ func (s *Stack) ForAction(action Action) *Stack {
 // it allows custom filtering with the filter hook.
 func (s *Stack) ForActionF(action Action, filter func(r Resource) bool) *Stack {
 	result := &Stack{
-		client:         s.client,
-		workers:        s.workers,
-		sortDescending: s.sortDescending,
-		seen:           make(map[Resource]struct{}),
+		client:  s.client,
+		options: s.options,
+		seen:    make(map[Resource]struct{}),
 	}
 
 	if filter == nil {

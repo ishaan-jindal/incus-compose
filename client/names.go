@@ -8,9 +8,9 @@ import (
 	"github.com/gosimple/slug"
 )
 
-// sanitizeProjectName converts a string to a valid Incus project name.
+// SanitizeProjectName converts a string to a valid Incus project name.
 // Replaces underscores with hyphens and removes special characters via slug.
-func sanitizeProjectName(name string) string {
+func SanitizeProjectName(name string) string {
 	safe := slug.Make(name)
 	safe = strings.ReplaceAll(safe, "_", "-")
 	return safe

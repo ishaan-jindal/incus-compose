@@ -69,7 +69,7 @@ jobs:
       INCUS_REMOTE: local-https
       INCUS_COMPOSE_IMAGE_CACHE: incus-compose-tests-cache
       NO_COLOR: 1
-      TEST_PROCS: 1
+      TEST_PROCS: 2
     steps:
       - uses: actions/checkout@v6
         with:
@@ -84,10 +84,16 @@ jobs:
         run: |
           mkdir -p "$REPORTS_DIR"
 
-          gotestsum --rerun-fails \
+          gotestsum \
             --packages="./..." \
             --junitfile "$REPORTS_DIR/junit.xml" \
-            -- -count=1 -parallel "$TEST_PROCS" -v 2>&1
+            -- -count=1 -parallel "$TEST_PROCS" \
+            -covermode=atomic -coverprofile="$REPORTS_DIR/cover.out" -v 2>&1
+
+      - name: Publish coverage
+        run: |
+          echo '# Coverage\n' >> $GITHUB_STEP_SUMMARY
+          go tool cover -func="$REPORTS_DIR/cover.out" >> $GITHUB_STEP_SUMMARY
 
       - name: Publish test results
         if: always()

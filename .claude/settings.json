@@ -13,6 +13,7 @@
       "Bash(grep:*)",
       "Bash(rg:*)",
       "Bash(go doc:*)",
+      "Bash(go vet:*)",
       "Bash(diff:*)",
       "Read(**)",
       "Write(**)",

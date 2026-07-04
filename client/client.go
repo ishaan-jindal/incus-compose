@@ -8,6 +8,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -90,7 +91,7 @@ func (c *GlobalClient) newProjectClient(name, incusName string, created bool) (*
 	if c.IsDebugging() {
 		// Debug logging hooks
 		c.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-			c.LogDebug(string(action), "kind", r.Kind(), "name", r.Name(), "incus_name", r.IncusName(), "action", action, "created", r.Created())
+			c.LogDebug("Running", "action", action, "kind", r.Kind(), "name", r.Name(), "incus_name", r.IncusName())
 			return err
 		})
 		c.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
@@ -99,11 +100,39 @@ func (c *GlobalClient) newProjectClient(name, incusName string, created bool) (*
 				return err
 			}
 
+			c.LogDebug("Run", "action", action, "kind", r.Kind(), "name", r.Name(), "incus_name", r.IncusName(), "created", r.Created())
 			return nil
 		})
 	}
 
 	return cp, nil
+}
+
+// Clone returns a copy of the client, where you can add independent hooks and resources.
+// Resources are NOT shared.
+func (c *Client) Clone() *Client {
+	return &Client{
+		ctx:          c.ctx,
+		globalClient: c.globalClient,
+		config:       c.config,
+		project:      c.project,
+		incusProject: c.incusProject,
+		created:      c.created,
+		incus:        c.incus,
+		imageCache:   c.imageCache,
+		logger:       c.logger,
+
+		hookBefore: c.hookBefore,
+		hookAfter:  c.hookAfter,
+
+		hookOperation:       c.hookOperation,
+		hookRemoteOperation: c.hookRemoteOperation,
+
+		hookConnected: c.hookConnected,
+		hookDone:      c.hookDone,
+
+		healthd: c.healthd,
+	}
 }
 
 // Global returns the GlobalClient associated with this project client.
@@ -202,7 +231,10 @@ func (c *Client) IsConnected() bool {
 // to the same Incus resource (e.g. "nginx:alpine" vs "docker.io/library/nginx:alpine") return the same object.
 func (c *Client) Resource(kind Kind, name string, config Config) (Resource, error) {
 	// Fast path: check by raw name before constructing the resource.
-	if res := c.resources.Get(kind, name); res != nil {
+	if res := c.resources.Get(kind, name, false); res != nil {
+		return res, nil
+	}
+	if res := c.resources.Get(kind, name, true); res != nil {
 		return res, nil
 	}
 
@@ -230,18 +262,18 @@ func (c *Client) Resource(kind Kind, name string, config Config) (Resource, erro
 		return nil, err
 	}
 
+	// Deduplicate by Name().
+	if existing := c.resources.Get(kind, res.Name(), false); existing != nil {
+		return existing, nil
+	}
+
 	// Deduplicate by IncusName().
-	if existing := c.resources.Get(kind, res.IncusName()); existing != nil {
+	if existing := c.resources.Get(kind, res.IncusName(), true); existing != nil {
 		return existing, nil
 	}
 
 	c.resources.Add(res)
 	return res, nil
-}
-
-// ResetResources resets the resource store to start fresh.
-func (c *Client) ResetResources() {
-	c.resources = ResourceStore{}
 }
 
 // AddHookBefore adds a hook that will be executed before any action.
@@ -299,6 +331,21 @@ func (c *Client) AddHookDone(hook func(err error) error) {
 	c.hookDone = newHook
 }
 
+// IgnoreError ignores an "warning" errors for the given kind and the rest of the session.
+func (c *Client) IgnoreError(iAction Action, iErr error) {
+	c.AddHookAfter(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
+		if err != nil && iAction == action {
+			ok := errors.Is(err, iErr)
+			if ok {
+				c.LogDebug("Ignoring error", "action", action, "kind", r.Kind(), "name", r.Name(), "incus_name", r.IncusName(), "created", r.Created(), "error", err)
+				return nil
+			}
+		}
+
+		return err
+	})
+}
+
 // Open fires the connected hooks. Call once after registering all hooks,
 // before running any stack actions.
 func (c *Client) Open() error {
@@ -318,7 +365,7 @@ func (c *Client) FindHealthd() (string, error) {
 	}
 
 	if c.incus == nil {
-		return "", ErrNotFound
+		return "", ErrNotFound.WithText(": within FindHealthd")
 	}
 
 	instances, err := c.incus.GetInstances("")
@@ -333,7 +380,7 @@ func (c *Client) FindHealthd() (string, error) {
 		}
 	}
 
-	return "", ErrNotFound
+	return "", ErrNotFound.WithText(": within FindHealthd")
 }
 
 // InstanceExists reports whether an instance with the given name exists in Incus.

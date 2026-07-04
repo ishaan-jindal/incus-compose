@@ -69,8 +69,14 @@ func buildLoadOptions(cmd *cli.Command) []project.LoadOption {
 	}
 
 	if cfile != "" {
-		incusCFile := filepath.Join(filepath.Dir(cfile), strings.TrimSuffix(filepath.Base(cfile), filepath.Ext(cfile))+".incus"+filepath.Ext(cfile))
-		if _, err := os.Stat(incusCFile); err == nil {
+		incusCFile := filepath.Join(
+			filepath.Dir(cfile),
+			strings.TrimSuffix(
+				filepath.Base(cfile),
+				filepath.Ext(cfile))+".incus"+filepath.Ext(cfile),
+		)
+		_, err := os.Stat(incusCFile)
+		if err == nil {
 			files = append(files, incusCFile)
 		}
 	}

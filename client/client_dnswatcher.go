@@ -13,7 +13,7 @@ import (
 
 // dnsIPWaitTimeout bounds how long to wait for a freshly started instance to
 // acquire its DHCP lease before recording its DNS address.
-const dnsIPWaitTimeout = 15 * time.Second
+const dnsIPWaitTimeout = 5 * time.Second
 
 // DNSmasqParse parses raw.dnsmasq address lines into a service->[]IP map.
 func DNSmasqParse(raw string) map[string][]string {
@@ -80,9 +80,9 @@ func (c *Client) RegisterDNSWatcher() error {
 		elapsed := time.Since(lastRestart)
 		mu.Unlock()
 
-		if elapsed < 2*time.Second {
-			c.LogDebug("Waiting for DNSMasq to be ready", "resource", r, "time", 2*time.Second-elapsed)
-			time.Sleep(2*time.Second - elapsed)
+		if elapsed < time.Second {
+			c.LogDebug("Waiting for DNSMasq to be ready", "resource", r, "time", time.Second-elapsed)
+			time.Sleep(time.Second - elapsed)
 		}
 
 		return err
@@ -108,6 +108,11 @@ func (c *Client) RegisterDNSWatcher() error {
 			inst, ok := r.(*Instance)
 			if !ok {
 				return ErrDNSWatcher.WithText("resource is not an *Instance")
+			}
+
+			// No need to do anything if service and incus name are the same or service name is empty.
+			if inst.ServiceName() == inst.IncusName() || inst.ServiceName() == "" {
+				return nil
 			}
 
 			svcKey := inst.ServiceName()

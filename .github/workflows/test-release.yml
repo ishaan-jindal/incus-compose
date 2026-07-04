@@ -34,7 +34,7 @@ jobs:
       INCUS_COMPOSE_IMAGE_CACHE: incus-compose-tests-cache
       NO_COLOR: 1
       INCUS_COMPOSE_TEST_SLOW: 1
-      TEST_PROCS: 1
+      TEST_PROCS: 2
     steps:
       - uses: actions/checkout@v6
         with:
@@ -49,10 +49,16 @@ jobs:
         run: |
           mkdir -p "$REPORTS_DIR"
 
-          gotestsum --rerun-fails \
+          gotestsum \
             --packages="./..." \
             --junitfile "$REPORTS_DIR/junit.xml" \
-            -- -count=1 -parallel "$TEST_PROCS" -timeout 30m -v 2>&1
+            -- -count=1 -parallel "$TEST_PROCS" \
+            -covermode=atomic -coverprofile="$REPORTS_DIR/cover.out" -v 2>&1
+
+      - name: Publish coverage
+        run: |
+          echo '# Coverage\n' >> $GITHUB_STEP_SUMMARY
+          go tool cover -func="$REPORTS_DIR/cover.out" >> $GITHUB_STEP_SUMMARY
 
       - name: Publish test results
         if: always()
@@ -69,13 +75,13 @@ jobs:
       matrix:
         include:
           - name: Hugo
-            args: "-run TestExampleHugo"
+            args: "-run TestExample/hugo"
           - name: Immich
-            args: "-run TestExampleImmich -timeout 20m"
+            args: "-run TestExample/immich -timeout 20m"
           - name: ManyDependencies
-            args: "-run TestExampleManyDependencies"
+            args: "-run TestExample/many-dependencies"
           - name: WikiJS
-            args: "-run TestExampleWikijs"
+            args: "-run TestExample/wikijs"
     runs-on: [self-hosted, incus-compose]
     timeout-minutes: 60
     permissions:
@@ -87,7 +93,7 @@ jobs:
       NO_COLOR: 1
       INCUS_COMPOSE_TEST_SLOW: 1
       INCUS_COMPOSE_TEST_EXAMPLES: 1
-      TEST_PROCS: 1
+      TEST_PROCS: 2
       EXAMPLE: TestExampleHugo
     steps:
       - uses: actions/checkout@v6
@@ -103,8 +109,8 @@ jobs:
         run: |
           mkdir -p "$REPORTS_DIR"
 
-          gotestsum --rerun-fails \
-            --packages="./..." \
+          gotestsum \
+            --packages="./examples/..." \
             --junitfile "$REPORTS_DIR/junit.xml" \
             -- -count=1 -parallel "$TEST_PROCS" -timeout 20m \
                ${{ matrix.args }} 2>&1

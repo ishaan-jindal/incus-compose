@@ -36,8 +36,8 @@ test-slow folder="./..." *args:
 
 # Run example tests.
 [env("INCUS_COMPOSE_TEST_EXAMPLES", "1")]
-test-examples folder="./..." *args:
-    @just test {{ folder }} {{ args }}
+test-examples *args:
+    @just test ./examples/... {{ args }}
 
 # Run all tests, includes direct incus, slow and examples tests.
 [env("INCUS_COMPOSE_TEST_EXAMPLES", "1")]
@@ -92,11 +92,11 @@ incus *args:
     incus {{ args }}
 
 # Build a release binary
-build-release:
+build-release: lint
     go build -ldflags="-w -s -X github.com/lxc/incus-compose/cmd/incus-compose/version.Version=`git describe --tags --always --long --dirty="-dirty"`" -o bin/incus-compose ./cmd/incus-compose
 
 # Build a dev binary
-build:
+build: lint
     go build -o bin/incus-compose ./cmd/incus-compose
 
 # Build ic-healthd binary
@@ -188,11 +188,30 @@ purge-projects:
 
     echo "Deleting projects on remote '${remote}':"
     while IFS= read -r project; do
-        if [ "${project}" != "default" ]; then
+        if [[ $project != "default" ]] && [[ $project != "incus-compose-tests-cache" ]] then
           echo "  Deleting: ${project}"
-          echo "yes" | incus project delete -f "${remote}:${project}"
+          echo -e "yes\n" | incus project delete -f "${remote}:${project}"
         fi
     done <<< "${projects}"
+    echo "Done."
+
+purge-tokens:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    remote="${INCUS_REMOTE:-local}"
+    tokens=$(incus config trust list-tokens "${remote}:" -f json | jq -r '.[] .client_name')
+
+    if [[ -z "${tokens}" ]]; then
+        echo "No tokens found."
+        exit 1
+    fi
+
+    echo "Revoking tokens on remote '${remote}':"
+    while IFS= read -r token; do
+        echo "  Revoking: ${token}"
+        incus config trust revoke-token "${remote}:${token}"
+    done <<< "${tokens}"
     echo "Done."
 
 # Run this before you commit/push.

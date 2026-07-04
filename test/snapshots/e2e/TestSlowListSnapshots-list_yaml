@@ -10,7 +10,7 @@
   name: web
   description: 'incus-compose: testslowlistsnapshots:web-1'
   incus_name: web-1
-  image: docker.io/library/nginx:alpine
+  image: docker.io/nginx:alpine
   status: Running
   health: Unknown
   addresses:

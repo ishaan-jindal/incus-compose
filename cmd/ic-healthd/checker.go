@@ -69,10 +69,6 @@ func (c *Checker) Run(ctx context.Context, inStart bool, startInstance bool) {
 			if err := c.restart(ctx); err != nil {
 				slog.Error("restart failed", "instance", c.name, "error", err)
 			}
-		} else if c.isStopped() {
-			if err := c.writeStatus(client.HealthStatusStopped); err != nil {
-				slog.Debug("updating healthcheck status", "instance", c.name, "error", err)
-			}
 		}
 
 		inst, _, err := c.client.GetInstance(c.name)
@@ -336,7 +332,7 @@ func (c *Checker) writeStatus(status string) error {
 		return nil
 	}
 
-	slog.Debug("Writing status", "instance", c.name, "status", status, "old-status", inst.Config[client.HealthStatusKey])
+	slog.Info("Status update", "instance", c.name, "current", status, "old", inst.Config[client.HealthStatusKey])
 
 	inst.Config[client.HealthStatusKey] = status
 	op, err := c.client.UpdateInstance(c.name, inst.Writable(), etag)

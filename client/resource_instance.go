@@ -34,8 +34,8 @@ type InstanceFile struct {
 	File    string
 	Content io.ReadSeekCloser
 
-	UID     int64
-	GID     int64
+	UID     int64 // Uses oci.uid if -1 has been given.
+	GID     int64 // Uses oci.gid if -1 has been given.
 	Mode    int
 	NoMKDir bool
 	DirMode int
@@ -178,8 +178,7 @@ func (r *Instance) Created() bool {
 	return r.created
 }
 
-// ServiceName returns the compose service name by stripping the trailing
-// "-{index}" from the instance name ("database-1" -> "database").
+// ServiceName returns the compose service name which has been set by the config.
 func (r *Instance) ServiceName() string {
 	return r.Config.ServiceName
 }
@@ -353,12 +352,6 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 		r.GID = image.GID
 	}
 
-	// Resolve storage volumes before building the device map so that each
-	// disk device's Source is the volume name, not the raw host path.
-	if err := r.ensureVolumes(); err != nil {
-		return err
-	}
-
 	// Build pre-devices map after volumes are resolved.
 	devices, err := r.buildDevices()
 	if err != nil {
@@ -473,44 +466,9 @@ func (r *Instance) buildDevices() (map[string]map[string]string, error) {
 	return devices, nil
 }
 
-// ensureVolumes creates storage volumes referenced in Devices before the instance
-// is created, and updates each device's Source and Pool with the resolved values.
-func (r *Instance) ensureVolumes() error {
-	for i := range r.Config.Devices {
-		dev := &r.Config.Devices[i]
-		if dev.Config.DeviceType != InstanceDeviceTypeDisk {
-			continue
-		}
-
-		svc := dev.Config.Disk.StorageVolumeConfig
-		if svc == nil {
-			continue
-		}
-
-		volConfig := *svc
-		volConfig.Shifted = true
-		volConfig.ImageResource = r.image
-
-		volI, err := r.client.Resource(KindStorageVolume, dev.Config.Disk.Source, &volConfig)
-		if err != nil {
-			return ErrBadDeviceConfig.WithText("getting storage-volume resource").Wrap(err)
-		}
-
-		vol, ok := volI.(*StorageVolume)
-		if !ok {
-			return ErrUnsupportedAction.WithResource(volI)
-		}
-
-		dev.Config.Disk.Source = vol.IncusName()
-		dev.Config.Disk.StorageVolumeConfig.Pool = vol.Config.Pool
-	}
-
-	return nil
-}
-
 func (r *Instance) attachPostStartDevices(ctx context.Context) error {
 	// Resolve container IPs once - instance is running so this should be fast.
-	ips, err := r.WaitIPs(ctx, 30*time.Second)
+	ips, err := r.WaitIPs(ctx, dnsIPWaitTimeout)
 	if err != nil {
 		r.client.LogWarn("could not resolve IPs for post-start devices", "instance", r.incusName, "err", err)
 	}
@@ -587,13 +545,13 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 
 	if r.Running() {
 		if options.Healthd {
-			err := r.setHealthCheckingStopped(ctx, false)
+			err := r.SetHealthCheckingStopped(ctx, false)
 			if err != nil {
 				return r.client.hookAfter(ctx, ActionStart, r, options, err)
 			}
 		}
 
-		return r.client.hookAfter(ctx, ActionStart, r, options, nil)
+		return r.client.hookAfter(ctx, ActionStart, r, options, ErrRunning)
 	}
 
 	startCtx, cancel := context.WithTimeout(ctx, options.Timeout)
@@ -605,7 +563,7 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 	}
 
 	if options.Healthd {
-		err := r.setHealthCheckingStopped(ctx, false)
+		err := r.SetHealthCheckingStopped(ctx, false)
 		if err != nil {
 			return r.client.hookAfter(ctx, ActionStart, r, options, err)
 		}
@@ -644,30 +602,32 @@ func (r *Instance) waitForHealthCheck(ctx context.Context, action Action, option
 		defer cancel()
 	}
 
-	// Wait for healthd to be available for 3 seconds.
-	err := retry.New(
-		retry.Context(ctx),
-		retry.Attempts(6),
-		retry.Delay(500*time.Millisecond),
-	).Do(func() error {
-		healthd, err := r.client.FindHealthd()
+	if !options.ExternalHealthd {
+		// Wait for healthd to be available for 3 seconds.
+		err := retry.New(
+			retry.Context(ctx),
+			retry.Attempts(6),
+			retry.Delay(500*time.Millisecond),
+		).Do(func() error {
+			healthd, err := r.client.FindHealthd()
+			if err != nil {
+				return err
+			}
+
+			hInstState, _, err := r.conn.GetInstanceState(healthd)
+			if err != nil {
+				return fmt.Errorf("failed to get the healthd '%v' instance state: %w", healthd, err)
+			}
+
+			if hInstState.StatusCode != incusApi.Running {
+				return fmt.Errorf("healthd '%v' not running cannot wait for it to check dependencies", healthd)
+			}
+
+			return nil
+		})
 		if err != nil {
 			return err
 		}
-
-		hInstState, _, err := r.conn.GetInstanceState(healthd)
-		if err != nil {
-			return fmt.Errorf("failed to get the healthd '%v' instance state: %w", healthd, err)
-		}
-
-		if hInstState.StatusCode != incusApi.Running {
-			return fmt.Errorf("healthd '%v' not running cannot wait for it to check dependencies", healthd)
-		}
-
-		return nil
-	})
-	if err != nil {
-		return err
 	}
 
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -702,30 +662,32 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 		return nil
 	}
 
-	// Wait for healthd to be available for 3 seconds.
-	err := retry.New(
-		retry.Context(ctx),
-		retry.Attempts(6),
-		retry.Delay(500*time.Millisecond),
-	).Do(func() error {
-		healthd, err := r.client.FindHealthd()
+	if !options.ExternalHealthd {
+		// Wait for healthd to be available for 3 seconds.
+		err := retry.New(
+			retry.Context(ctx),
+			retry.Attempts(6),
+			retry.Delay(500*time.Millisecond),
+		).Do(func() error {
+			healthd, err := r.client.FindHealthd()
+			if err != nil {
+				return err
+			}
+
+			hInstState, _, err := r.conn.GetInstanceState(healthd)
+			if err != nil {
+				return fmt.Errorf("failed to get the healthd '%v' instance state: %w", healthd, err)
+			}
+
+			if hInstState.StatusCode != incusApi.Running {
+				return fmt.Errorf("healthd '%v' not running cannot wait for it to check dependencies", healthd)
+			}
+
+			return nil
+		})
 		if err != nil {
 			return err
 		}
-
-		hInstState, _, err := r.conn.GetInstanceState(healthd)
-		if err != nil {
-			return fmt.Errorf("failed to get the healthd '%v' instance state: %w", healthd, err)
-		}
-
-		if hInstState.StatusCode != incusApi.Running {
-			return fmt.Errorf("healthd '%v' not running cannot wait for it to check dependencies", healthd)
-		}
-
-		return nil
-	})
-	if err != nil {
-		return err
 	}
 
 	timeout := options.DependencyTimeout
@@ -742,6 +704,11 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
+
+	logTicker := time.NewTicker(2 * time.Second)
+	defer logTicker.Stop()
+
+	startTimeout := time.After(timeout / 3)
 
 	for depName, requiredStatus := range r.Config.Dependencies {
 		r.client.LogDebug("Waiting for dependency", "instance", r.incusName, "dep", depName, "status", requiredStatus)
@@ -760,15 +727,24 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 			}
 
 			select {
+			case <-startTimeout:
+				if inst.StatusCode != incusApi.Running {
+					cancel()
+					return fmt.Errorf("dependency '%v' not running after %s", depName, timeout/3)
+				}
 			case <-ticker.C:
-				if err == nil {
-					r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "status", inst.Config[HealthStatusKey])
-				} else {
-					r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "error", err)
+				select {
+				case <-logTicker.C:
+					if err == nil {
+						r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "status", inst.Config[HealthStatusKey])
+					} else {
+						r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "error", err)
+					}
+				default:
 				}
 			case <-ctx.Done():
 				cancel()
-				return fmt.Errorf("dependency %q did not reach status %q within %s", depName, requiredStatus, timeout)
+				return fmt.Errorf("dependency '%v' did not reach status %q within %s", depName, requiredStatus, timeout)
 			}
 		}
 	}
@@ -797,46 +773,50 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 	}
 
 	if r.Running() {
-		return nil
+		return ErrRunning
 	}
 
 	op, err := r.conn.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
 		Action:  "start",
 		Timeout: options.incusTimeout(),
-	}, "")
+	}, r.ETag)
 	if err != nil {
-		return ErrOperation.WithText("starting instance").Wrap(err)
+		return ErrOperation.WithText("creating an instance start operation").Wrap(err)
 	}
 
 	// The operation completes once the instance is running or failed to start.
 	err = r.client.hookOperation(ctx, ActionStart, r, options, op, err)
 	if err != nil {
-		return err
+		return ErrOperation.WithText("starting an instance").Wrap(err)
 	}
 
 	err = r.fetch()
 	if err != nil {
-		return err
+		return ErrOperation.WithText("fetch after create").Wrap(err)
+	}
+
+	if !r.Running() {
+		return ErrNotRunning.WithText("after a start")
 	}
 
 	if r.created {
 		if err := r.PushFiles(ctx); err != nil {
-			return err
+			return ErrCreate.WithText("push files").Wrap(err)
 		}
 
 		// Push secrets after instance is running
 		if len(r.Config.Secrets) > 0 {
 			err := r.PushSecrets(ctx)
 			if err != nil {
-				return err
+				return ErrCreate.WithText("push secrets").Wrap(err)
 			}
 		}
-	}
 
-	if r.created && len(r.Config.PostStartDevices) > 0 {
-		err := r.attachPostStartDevices(ctx)
-		if err != nil {
-			return err
+		if len(r.Config.PostStartDevices) > 0 {
+			err := r.attachPostStartDevices(ctx)
+			if err != nil {
+				return ErrCreate.WithText("post start").Wrap(err)
+			}
 		}
 	}
 
@@ -1019,13 +999,13 @@ func (r *Instance) Stop(ctx context.Context, opts ...Option) error {
 
 	if !r.Running() {
 		if options.Healthd {
-			err := r.setHealthCheckingStopped(ctx, true)
+			err := r.SetHealthCheckingStopped(ctx, true)
 			if err != nil {
 				return r.client.hookAfter(ctx, ActionStop, r, options, err)
 			}
 		}
 
-		return r.client.hookAfter(ctx, ActionStop, r, options, nil)
+		return r.client.hookAfter(ctx, ActionStop, r, options, ErrNotRunning)
 	}
 
 	stopCtx, cancel := context.WithTimeout(ctx, options.Timeout)
@@ -1034,7 +1014,7 @@ func (r *Instance) Stop(ctx context.Context, opts ...Option) error {
 	err := r.stop(stopCtx, options)
 
 	if options.Healthd {
-		err := r.setHealthCheckingStopped(ctx, true)
+		err := r.SetHealthCheckingStopped(ctx, true)
 		if err != nil {
 			return r.client.hookAfter(ctx, ActionStop, r, options, err)
 		}
@@ -1052,7 +1032,7 @@ func (r *Instance) stop(ctx context.Context, options Options) error {
 		Action:  "stop",
 		Force:   options.Force,
 		Timeout: options.incusTimeout(),
-	}, "")
+	}, r.ETag)
 	if err != nil {
 		return ErrOperation.WithText("stopping instance").Wrap(err)
 	}
@@ -1066,10 +1046,10 @@ func (r *Instance) stop(ctx context.Context, options Options) error {
 	return r.fetch()
 }
 
-// setHealthCheckingStopped writes the user.healthcheck.stopped config key on
+// SetHealthCheckingStopped writes the user.healthcheck.stopped config key on
 // the instance. Patches only this key; a full UpdateInstance races with incusd
 // writing volatile config keys around start/stop (ETag mismatch under load).
-func (r *Instance) setHealthCheckingStopped(ctx context.Context, stopped bool) error {
+func (r *Instance) SetHealthCheckingStopped(ctx context.Context, stopped bool) error {
 	if err := r.fetch(); err != nil {
 		return err
 	}
@@ -1122,7 +1102,7 @@ func (r *Instance) Delete(ctx context.Context, opts ...Option) error {
 		r.ETag = ""
 
 		r.client.resources.Remove(r)
-		return r.client.hookAfter(ctx, ActionDelete, r, options, nil)
+		return r.client.hookAfter(ctx, ActionDelete, r, options, ErrNotEnsured)
 	}
 
 	op, err := r.conn.DeleteInstance(r.incusName)

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"slices"
 	"strconv"
@@ -88,7 +87,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 
 	instCfg := &client.InstanceConfig{
 		ServiceName:      service.Name,
-		Image:            image.IncusName(),
+		Image:            image.Name(),
 		Full:             options.Full,
 		Resources:        slices.Clone(resources),
 		Extensions:       config,
@@ -256,12 +255,17 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 	resources := []client.Resource{}
 
 	ethIdx := 0
-	for name := range maps.Keys(service.Networks) {
+	for name, sNet := range service.Networks {
 		netConfig := &client.NetworkConfig{}
 		if networkDef, ok := p.Networks[name]; ok {
 			netConfig.External = bool(networkDef.External)
 			netConfig.Extensions = networkExtensions(networkDef)
 			netConfig.OverrideName = xICInstanceNetwork(networkDef)
+		}
+
+		extensions := map[string]string{}
+		if sNet != nil && sNet.Extensions != nil {
+			extensions = xIncusExtensions(sNet.Extensions)
 		}
 
 		network, err := c.Resource(client.KindNetwork, name, netConfig)
@@ -273,6 +277,7 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 		nicConfig := client.InstanceDeviceConfig{
 			DeviceType: client.InstanceDeviceTypeNic,
 			Network:    network,
+			Extensions: extensions,
 		}
 
 		if svcNet := service.Networks[name]; svcNet != nil {
@@ -487,11 +492,11 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 			}
 		}
 
-		extensions := volumeXIncusExtensions(p.Volumes[cVol.Source].Extensions)
+		extensions := xIncusExtensions(p.Volumes[cVol.Source].Extensions)
 
 		// Inline x-incus on the volume entry takes precedence over the named
 		// volume definition (this is the only place binds can set it).
-		for k, v := range volumeXIncusExtensions(cVol.Extensions) {
+		for k, v := range xIncusExtensions(cVol.Extensions) {
 			if extensions == nil {
 				extensions = map[string]string{}
 			}
@@ -507,10 +512,16 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 		switch cVol.Type {
 		case "volume":
 			volDef := p.Volumes[cVol.Source]
+
+			pool := volumeXIncusComposePool(volDef)
+			if pool == "" {
+				pool = c.Config().DefaultStoragePool
+			}
+
 			volConfig := &client.StorageVolumeConfig{
 				Shifted:       shifted,
 				ImageResource: image,
-				Pool:          volumeXIncusComposePool(volDef),
+				Pool:          pool,
 				Extensions:    extensions,
 			}
 
@@ -556,12 +567,13 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 						DirMode: 0o755,
 					}
 				} else {
-					devName := "bind-seed-" + client.SanitizeIncusName(cVol.Source, client.MaxIncusNameLen-10)
+					devName := "vol-seed-" + client.SanitizeIncusName(cVol.Source, client.MaxIncusNameLen-10)
 
 					volConfig := &client.StorageVolumeConfig{
 						Shifted:       shifted,
 						ImageResource: image,
 						HostPath:      cVol.Source,
+						Pool:          c.Config().DefaultStoragePool,
 					}
 
 					v, err := c.Resource(client.KindStorageVolume, "bind-"+cVol.Source, volConfig)
@@ -631,6 +643,22 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 			err := fmt.Errorf("Unknown volume type %q for service %q", cVol.Type, service.Name)
 			errs = errors.Join(errs, err)
 			continue
+		}
+	}
+
+	// Another declaration for tmpfs devices.
+	if len(service.Tmpfs) > 0 {
+		for idx, tmpfsPath := range service.Tmpfs {
+			devices = append(devices, client.InstanceDevice{
+				Name: fmt.Sprintf("tmpfs-%d", idx),
+				Config: client.InstanceDeviceConfig{
+					DeviceType: client.InstanceDeviceTypeTmpfs,
+					Tmpfs: client.InstanceDeviceTmpfsConfig{
+						Path: tmpfsPath,
+						Size: strconv.FormatInt(32*1024, 10),
+					},
+				},
+			})
 		}
 	}
 
@@ -866,11 +894,11 @@ func networkExtensions(networkDef types.NetworkConfig) map[string]string {
 	return result
 }
 
-// volumeXIncusExtensions extracts the x-incus extension map from a compose
+// xIncusExtensions extracts the x-incus extension map from a compose
 // volume definition or inline volume entry and returns it as a flat
 // map[string]string for use as Incus volume config. Keys and values are taken
 // verbatim from the x-incus YAML block.
-func volumeXIncusExtensions(ext types.Extensions) map[string]string {
+func xIncusExtensions(ext types.Extensions) map[string]string {
 	var raw map[string]any
 	ok, err := ext.Get("x-incus", &raw)
 	if !ok || err != nil || len(raw) == 0 {
