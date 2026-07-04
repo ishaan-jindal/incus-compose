@@ -71,6 +71,7 @@ jobs:
           go tool cover -func="$REPORTS_DIR/cover.out" >> $GITHUB_STEP_SUMMARY
 
   test-example:
+    needs: test-slow
     strategy:
       fail-fast: false
       matrix:
