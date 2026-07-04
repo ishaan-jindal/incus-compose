@@ -21,13 +21,13 @@ func TestNoDanglingNetworksAfterDown(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	require.NoError(t, err)
 
 	gc, err := client.NewTestClient(ctx)
@@ -57,10 +57,10 @@ func TestExecSelectsCorrectInstance(t *testing.T) {
 	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -74,7 +74,7 @@ func TestExecSelectsCorrectInstance(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.service, func(t *testing.T) {
-			stdout, _, err := runCommand(t, ctx, pn, "-f", compose, "exec", "--no-tty", tt.service, "hostname")
+			stdout, err := runCommand(t, ctx, pn, "-f", compose, "exec", "--no-tty", tt.service, "hostname")
 			require.NoError(t, err)
 			if strings.TrimSpace(stdout.String()) != tt.wantHost {
 				t.Errorf("got hostname %q, want %q", strings.TrimSpace(stdout.String()), tt.wantHost)
@@ -95,7 +95,7 @@ func TestSlowStartStopIdempotent(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -126,7 +126,7 @@ func TestSlowStartStopIdempotent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			_, err := runCommand(t, ctx, pn, tt.args...)
 			require.NoError(t, err)
 		})
 	}

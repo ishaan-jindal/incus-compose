@@ -34,13 +34,13 @@ func TestSlowUpNoDeps(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--no-deps", "nginx")
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--no-deps", "nginx")
 	require.NoError(t, err)
 
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "ps", "--quiet")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "ps", "--quiet")
 	require.NoError(t, err)
 
 	c := projectClient(t, ctx, pn)
@@ -70,10 +70,10 @@ func TestSlowUpDeps(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "nginx")
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "nginx")
 	require.NoError(t, err)
 
 	c := projectClient(t, ctx, pn)
@@ -103,13 +103,13 @@ func TestSlowDownNoDeps(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "down", "--no-deps", "backend1")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "down", "--no-deps", "backend1")
 	require.NoError(t, err)
 
 	c := projectClient(t, ctx, pn)
@@ -139,10 +139,10 @@ func TestSlowDownDeps(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	c := projectClient(t, ctx, pn)
@@ -150,7 +150,7 @@ func TestSlowDownDeps(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, exists)
 
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "down", "backend1")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "down", "backend1")
 	require.NoError(t, err)
 
 	exists, err = c.InstanceExists("backend2-1")
@@ -176,13 +176,13 @@ func TestSlowPsDeps(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
-	stdoutNoDeps, _, err := runCommand(t, ctx, pn, "-f", compose, "ps", "--services", "nginx")
+	stdoutNoDeps, err := runCommand(t, ctx, pn, "-f", compose, "ps", "--services", "nginx")
 	require.NoError(t, err)
 
 	noDeps := cleanLines(t, stdoutNoDeps.String())
@@ -190,7 +190,7 @@ func TestSlowPsDeps(t *testing.T) {
 	require.NotContains(t, noDeps, "backend1")
 	require.NotContains(t, noDeps, "backend2")
 
-	stdoutDeps, _, err := runCommand(t, ctx, pn, "-f", compose, "ps", "--services", "--with-deps", "nginx")
+	stdoutDeps, err := runCommand(t, ctx, pn, "-f", compose, "ps", "--services", "--with-deps", "nginx")
 	require.NoError(t, err)
 
 	withDeps := cleanLines(t, stdoutDeps.String())
@@ -214,7 +214,7 @@ func TestSlowStartStopRestartWithDeps(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -245,10 +245,10 @@ func TestSlowStartStopRestartWithDeps(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			_, err := runCommand(t, ctx, pn, tt.args...)
 			require.NoError(t, err)
 
-			stdout, _, err := runCommand(t, ctx, pn,
+			stdout, err := runCommand(t, ctx, pn,
 				"-f", compose, "list", "--format", "json",
 			)
 			require.NoError(t, err)
@@ -267,7 +267,7 @@ func TestSlowUpDownGrafana(t *testing.T) {
 	compose := "../../test/fixtures/grafana/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -286,7 +286,7 @@ func TestSlowUpDownGrafana(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			_, err := runCommand(t, ctx, pn, tt.args...)
 			require.NoError(t, err)
 		})
 	}
@@ -302,7 +302,7 @@ func TestSlowUpUp(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -321,7 +321,7 @@ func TestSlowUpUp(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			_, err := runCommand(t, ctx, pn, tt.args...)
 			require.NoError(t, err)
 		})
 	}
@@ -337,7 +337,7 @@ func TestSlowDownDown(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -360,7 +360,7 @@ func TestSlowDownDown(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			_, err := runCommand(t, ctx, pn, tt.args...)
 			require.NoError(t, err)
 		})
 	}
@@ -381,11 +381,11 @@ func TestSlowDownProjectDeletesNetworks(t *testing.T) {
 	cleaned := false
 	t.Cleanup(func() {
 		if !cleaned {
-			_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+			_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 		}
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	c := projectClient(t, ctx, pn)
@@ -397,7 +397,7 @@ func TestSlowDownProjectDeletesNetworks(t *testing.T) {
 		require.NoError(t, err, "for network %q", name)
 	}
 
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	require.NoError(t, err)
 	cleaned = true
 
@@ -419,7 +419,7 @@ func TestSlowUpRecreate(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -441,7 +441,7 @@ func TestSlowUpRecreate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			_, err := runCommand(t, ctx, pn, tt.args...)
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -461,7 +461,7 @@ func TestSlowUpUpRecreate(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -493,7 +493,7 @@ func TestSlowUpUpRecreate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			_, err := runCommand(t, ctx, pn, tt.args...)
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -513,7 +513,7 @@ func TestSlowUpRecreateDown(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -545,7 +545,7 @@ func TestSlowUpRecreateDown(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			_, err := runCommand(t, ctx, pn, tt.args...)
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -565,7 +565,7 @@ func TestSlowLifecycleSimpleNginx(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -622,7 +622,7 @@ func TestSlowLifecycleSimpleNginx(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stdout, _, err := runCommand(t, ctx, pn, tt.args...)
+			stdout, err := runCommand(t, ctx, pn, tt.args...)
 			require.NoError(t, err)
 
 			if tt.snapshot {
@@ -642,7 +642,7 @@ func TestSlowUpDownScale(t *testing.T) {
 	compose := "../../test/fixtures/nginx-scale/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -664,7 +664,7 @@ func TestSlowUpDownScale(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			_, err := runCommand(t, ctx, pn, tt.args...)
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -684,7 +684,7 @@ func TestSlowUpDownDownscale(t *testing.T) {
 	compose := "../../test/fixtures/nginx-scale/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -706,7 +706,7 @@ func TestSlowUpDownDownscale(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			_, err := runCommand(t, ctx, pn, tt.args...)
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -726,7 +726,7 @@ func TestSlowUpDownWithScale(t *testing.T) {
 	compose := "../../test/fixtures/nginx-scale/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -748,7 +748,7 @@ func TestSlowUpDownWithScale(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			_, err := runCommand(t, ctx, pn, tt.args...)
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -767,11 +767,11 @@ func TestSlowListSnapshots(t *testing.T) {
 	pn := t.Name()
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
-	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -790,7 +790,7 @@ func TestSlowListSnapshots(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stdout, _, err := runCommand(t, ctx, pn, tt.args...)
+			stdout, err := runCommand(t, ctx, pn, tt.args...)
 			require.NoError(t, err)
 			snapshotter.SnapshotT(t, normalizeListOutput(t, stdout))
 		})
@@ -818,7 +818,7 @@ func TestSlowExternalNetwork(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -840,7 +840,7 @@ func TestSlowExternalNetwork(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			_, err := runCommand(t, ctx, pn, tt.args...)
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -860,7 +860,7 @@ func TestSlowUpDownWithIncusOptions(t *testing.T) {
 	compose := "../../test/fixtures/with-incus-options/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -882,7 +882,7 @@ func TestSlowUpDownWithIncusOptions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			_, err := runCommand(t, ctx, pn, tt.args...)
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -902,7 +902,7 @@ func TestSlowUpDownWithProjectOptions(t *testing.T) {
 	compose := "../../test/fixtures/with-project-options/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -924,7 +924,7 @@ func TestSlowUpDownWithProjectOptions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			_, err := runCommand(t, ctx, pn, tt.args...)
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -944,7 +944,7 @@ func TestSlowUpDownWithSecrets(t *testing.T) {
 	compose := "../../test/fixtures/with-secrets/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -966,7 +966,7 @@ func TestSlowUpDownWithSecrets(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			_, err := runCommand(t, ctx, pn, tt.args...)
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -986,13 +986,13 @@ func TestSlowDownImages(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "down")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "down")
 	require.NoError(t, err)
 
 	c := projectClient(t, ctx, pn)
@@ -1000,10 +1000,10 @@ func TestSlowDownImages(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, client.RunAction(ctx, r, client.ActionEnsure), "image should survive plain down")
 
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "down", "--images")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "down", "--images")
 	require.NoError(t, err)
 
 	r, err = c.Resource(client.KindImage, "docker.io/nginx:alpine", &client.ImageConfig{})
@@ -1021,7 +1021,7 @@ func TestSlowUpDownWithVolume(t *testing.T) {
 	compose := "../../test/fixtures/with-volume/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -1043,7 +1043,7 @@ func TestSlowUpDownWithVolume(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			_, err := runCommand(t, ctx, pn, tt.args...)
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {

@@ -44,27 +44,27 @@ func TestStressHealthdDownUp(t *testing.T) {
 	compose := "../../test/fixtures/healthd-debug/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
 	// Bring the project (and the healthd sidecar) up once.
-	_, stderr, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
-	require.NoErrorf(t, err, "initial up failed: %s", stderr.String())
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err, "initial up failed")
 
 	t.Run("down-then-up", func(t *testing.T) {
 		for i := range iter {
-			_, stderr, err := runCommand(t, ctx, pn, "-f", compose, "healthd", "down")
-			require.NoErrorf(t, err, "iteration %d: healthd down failed: %s", i, stderr.String())
+			_, err := runCommand(t, ctx, pn, "-f", compose, "healthd", "down")
+			require.NoErrorf(t, err, "iteration %d: healthd down failed", i)
 
-			_, stderr, err = runCommand(t, ctx, pn, "-f", compose, "healthd", "up")
-			require.NoErrorf(t, err, "iteration %d: healthd up failed: %s", i, stderr.String())
+			_, err = runCommand(t, ctx, pn, "-f", compose, "healthd", "up")
+			require.NoErrorf(t, err, "iteration %d: healthd up failed", i)
 		}
 	})
 
 	t.Run("recreate", func(t *testing.T) {
 		for i := range iter {
-			_, stderr, err := runCommand(t, ctx, pn, "-f", compose, "healthd", "up", "--recreate")
-			require.NoErrorf(t, err, "iteration %d: healthd up --recreate failed: %s", i, stderr.String())
+			_, err := runCommand(t, ctx, pn, "-f", compose, "healthd", "up", "--recreate")
+			require.NoErrorf(t, err, "iteration %d: healthd up --recreate failed", i)
 		}
 	})
 }
