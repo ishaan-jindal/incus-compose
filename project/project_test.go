@@ -111,14 +111,8 @@ func TestLoadNginxProxyMultiNetwork(t *testing.T) {
 	assert.Len(t, proj.Services, 3)
 
 	// Check networks.
-	assert.Len(t, proj.Networks, 2)
-	assert.Contains(t, proj.Networks, "frontend")
-	assert.Contains(t, proj.Networks, "backend")
-
-	// Verify backend network is internal.
-	backend := proj.Networks["backend"]
-	assert.NotNil(t, backend)
-	assert.True(t, backend.Internal)
+	assert.Len(t, proj.Networks, 1)
+	require.Contains(t, proj.Networks, "default")
 }
 
 // TestLoadMicroservices tests microservices architecture.

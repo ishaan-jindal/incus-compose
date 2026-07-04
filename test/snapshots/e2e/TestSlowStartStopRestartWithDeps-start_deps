@@ -1,19 +1,9 @@
 [
   {
     "kind": "network",
-    "name": "frontend",
+    "name": "default",
     "description": "",
-    "incus_name": "ic-hzyf65box5",
-    "image": "",
-    "status": "Exists",
-    "health": "",
-    "addresses": []
-  },
-  {
-    "kind": "network",
-    "name": "backend",
-    "description": "",
-    "incus_name": "ic-khc4upjyuq",
+    "incus_name": "ic-k6y2h62mws",
     "image": "",
     "status": "Exists",
     "health": "",
@@ -52,7 +42,6 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      "",
       ""
     ]
   }

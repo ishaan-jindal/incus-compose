@@ -3,7 +3,7 @@
     "kind": "network",
     "name": "default",
     "description": "",
-    "incus_name": "ic-disntepo4s",
+    "incus_name": "ic-7zvrmnu6m2",
     "image": "",
     "status": "Exists",
     "health": "",
@@ -22,9 +22,9 @@
   {
     "kind": "instance",
     "name": "database",
-    "description": "incus-compose: testexamplewikijs:database-1",
+    "description": "incus-compose: testexample-wikijs:database-1",
     "incus_name": "database-1",
-    "image": "docker.io/library/postgres:18.4-alpine3.23",
+    "image": "postgres:18.4-alpine3.23",
     "status": "Running",
     "health": "Healthy",
     "addresses": [
@@ -34,7 +34,7 @@
   {
     "kind": "instance",
     "name": "wiki",
-    "description": "incus-compose: testexamplewikijs:wiki-1",
+    "description": "incus-compose: testexample-wikijs:wiki-1",
     "incus_name": "wiki-1",
     "image": "ghcr.io/requarks/wiki:2.5.314",
     "status": "Running",

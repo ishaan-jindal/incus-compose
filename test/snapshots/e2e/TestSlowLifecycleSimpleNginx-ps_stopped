@@ -1,0 +1,10 @@
+[
+  {
+    "service": "web",
+    "name": "web-1",
+    "incus_name": "web-1",
+    "image": "docker.io/nginx:alpine",
+    "status": "Stopped"
+  }
+]
+

@@ -3,7 +3,7 @@
     "kind": "network",
     "name": "default",
     "description": "",
-    "incus_name": "ic-eb52kjw5iq",
+    "incus_name": "ic-d3bya4w3fq",
     "image": "",
     "status": "Exists",
     "health": "",
@@ -42,9 +42,9 @@
   {
     "kind": "instance",
     "name": "machine-learning",
-    "description": "incus-compose: testexampleimmich:machine_learning",
+    "description": "incus-compose: testexample-immich:machine_learning",
     "incus_name": "machine-learning",
-    "image": "ghcr.io/immich-app/immich-machine-learning:v2",
+    "image": "ghcr.io/immich-app/immich-machine-learning:v3.0.1",
     "status": "Running",
     "health": "Healthy",
     "addresses": [
@@ -54,9 +54,9 @@
   {
     "kind": "instance",
     "name": "microservices",
-    "description": "incus-compose: testexampleimmich:microservices",
+    "description": "incus-compose: testexample-immich:microservices",
     "incus_name": "microservices",
-    "image": "ghcr.io/immich-app/immich-server:v2",
+    "image": "ghcr.io/immich-app/immich-server:v3.0.1",
     "status": "Running",
     "health": "Healthy",
     "addresses": [
@@ -66,9 +66,9 @@
   {
     "kind": "instance",
     "name": "database",
-    "description": "incus-compose: testexampleimmich:postgres",
+    "description": "incus-compose: testexample-immich:postgres",
     "incus_name": "postgres",
-    "image": "ghcr.io/immich-app/postgres@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23",
+    "image": "ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23",
     "status": "Running",
     "health": "Healthy",
     "addresses": [
@@ -78,9 +78,9 @@
   {
     "kind": "instance",
     "name": "redis",
-    "description": "incus-compose: testexampleimmich:redis",
+    "description": "incus-compose: testexample-immich:redis",
     "incus_name": "redis",
-    "image": "docker.io/valkey/valkey@sha256:3b55fbaa0cd93cf0d9d961f405e4dfcc70efe325e2d84da207a0a8e6d8fde4f9",
+    "image": "docker.io/valkey/valkey:9@sha256:3b55fbaa0cd93cf0d9d961f405e4dfcc70efe325e2d84da207a0a8e6d8fde4f9",
     "status": "Running",
     "health": "Healthy",
     "addresses": [
@@ -90,9 +90,9 @@
   {
     "kind": "instance",
     "name": "server",
-    "description": "incus-compose: testexampleimmich:server",
+    "description": "incus-compose: testexample-immich:server",
     "incus_name": "server",
-    "image": "ghcr.io/immich-app/immich-server:v2",
+    "image": "ghcr.io/immich-app/immich-server:v3.0.1",
     "status": "Running",
     "health": "Healthy",
     "addresses": [

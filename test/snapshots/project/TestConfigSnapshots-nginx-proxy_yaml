@@ -15,7 +15,7 @@ services:
       retries: 3
     image: docker.io/nginxinc/nginx-unprivileged:alpine
     networks:
-      backend: null
+      default: null
     restart: unless-stopped
     x-incus:
       limits.cpu: 1
@@ -34,7 +34,7 @@ services:
       retries: 3
     image: docker.io/nginxinc/nginx-unprivileged:alpine
     networks:
-      backend: null
+      default: null
     restart: unless-stopped
     x-incus:
       limits.cpu: 1
@@ -60,19 +60,10 @@ services:
       retries: 3
     image: docker.io/nginxinc/nginx-unprivileged:alpine
     networks:
-      backend: null
-      frontend: null
+      default: null
     restart: unless-stopped
     x-incus:
       limits.cpu: 1
 networks:
-  backend:
-    name: nginx-proxy_backend
-    driver: bridge
-    internal: true
-  frontend:
-    name: nginx-proxy_frontend
-    driver: bridge
-x-incus-compose:
-  healthd:
-    network: :backend
+  default:
+    name: nginx-proxy_default

@@ -25,11 +25,9 @@
     "description": "incus-compose: testslowstartstoprestartwithdeps:backend2-1",
     "incus_name": "backend2-1",
     "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
-    "status": "Running",
+    "status": "Stopped",
     "health": "Healthy",
-    "addresses": [
-      ""
-    ]
+    "addresses": []
   },
   {
     "kind": "instance",
