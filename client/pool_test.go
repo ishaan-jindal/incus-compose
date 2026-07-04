@@ -111,6 +111,28 @@ func TestWorkerPoolFailFast(t *testing.T) {
 	assert.Equal(t, int32(1), executed.Load(), "should stop after first error")
 }
 
+// TestWorkerPoolFailFastReturnsFirstError verifies fail-fast returns the first
+// error without waiting for slow in-flight tasks to finish.
+func TestWorkerPoolFailFastReturnsFirstError(t *testing.T) {
+	pool := NewWorkerPool(4)
+
+	pool.Submit(func() error { return errors.New("fast failure") })
+	for i := 0; i < 3; i++ {
+		pool.Submit(func() error {
+			time.Sleep(time.Second)
+			return nil
+		})
+	}
+
+	start := time.Now()
+	err := pool.Run(PoolRunArgs{FailFast: true})
+	elapsed := time.Since(start)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "fast failure")
+	assert.Less(t, elapsed, time.Second, "should return before the slow tasks finish")
+}
+
 // TestWorkerPoolConcurrency verifies tasks run concurrently.
 func TestWorkerPoolConcurrency(t *testing.T) {
 	pool := NewWorkerPool(4)

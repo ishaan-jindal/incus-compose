@@ -135,14 +135,13 @@ func newUpCommand() *cli.Command {
 				client.EnsureProjectWithCreate(),
 				client.EnsureProjectWithConfig(p.ProjectConfig()),
 			)
-			defer func() {
-				_ = c.Done()
-			}()
-
 			if err != nil {
 				globalClient.LogError("Getting the incus project", "error", err)
 				return errLogged.Wrap(err)
 			}
+			defer func() {
+				_ = c.Done()
+			}()
 
 			err = c.Open()
 			if err != nil {

@@ -77,17 +77,17 @@ the image cache are kept (use `--project` to remove everything, including volume
 incus-compose down [SERVICE...]
 ```
 
-| Option         | Description                                                              |
-| -------------- | ------------------------------------------------------------------------ |
-| `--project`    | Remove the project (and volumes)                                         |
-| `--volumes`    | Alias for `--project` (docker compose compat)                            |
-| `--rmi`        | Remove images used by services: `local` or `all` (docker compose compat) |
-| `--images`     | Remove known images from the project (equivalent to `--rmi local`)       |
-| `--timeout`    | Stop timeout (default: 10s)                                              |
-| `--no-deps`    | Don't stop linked services (depends_on)                                  |
-| `--no-networks` | Don't touch networks                                                    |
-| `--external-healthd` | Use an existing (unmanaged) healthd; don't look one up             |
-| `--no-healthd` | Don't stop/remove healthd sidecar                                        |
+| Option               | Description                                                              |
+| -------------------- | ------------------------------------------------------------------------ |
+| `--project`          | Remove the project (and volumes)                                         |
+| `--volumes`          | Alias for `--project` (docker compose compat)                            |
+| `--rmi`              | Remove images used by services: `local` or `all` (docker compose compat) |
+| `--images`           | Remove known images from the project (equivalent to `--rmi local`)       |
+| `--timeout`          | Stop timeout (default: 10s)                                              |
+| `--no-deps`          | Don't stop linked services (depends_on)                                  |
+| `--no-networks`      | Don't touch networks                                                     |
+| `--external-healthd` | Use an existing (unmanaged) healthd; don't look one up                   |
+| `--no-healthd`       | Don't stop/remove healthd sidecar                                        |
 
 ## start
 
@@ -188,17 +188,17 @@ Execute a command in a running instance.
 incus-compose exec [options] SERVICE COMMAND [ARGS...]
 ```
 
-| Option            | Description                                                          |
-| ----------------- | -------------------------------------------------------------------- |
-| `-d`, `--detach`  | Run command in the background                                        |
-| `--dry-run`       | Execute command in dry run mode                                      |
-| `-e`, `--env`     | Set environment variables `KEY=VALUE` (repeatable)                   |
-| `--index`         | Index of the container if service has multiple replicas (default: 0) |
-| `-T`, `--no-tty`  | Disable pseudo-TTY allocation                                        |
+| Option            | Description                                                            |
+| ----------------- | ---------------------------------------------------------------------- |
+| `-d`, `--detach`  | Run command in the background                                          |
+| `--dry-run`       | Execute command in dry run mode                                        |
+| `-e`, `--env`     | Set environment variables `KEY=VALUE` (repeatable)                     |
+| `--index`         | Index of the container if service has multiple replicas (default: 0)   |
+| `-T`, `--no-tty`  | Disable pseudo-TTY allocation                                          |
 | `--privileged`    | Give extended privileges to the process (accepted but not implemented) |
-| `-u`, `--user`    | Run the command as this user                                         |
-| `-g`, `--group`   | Run the command as this group                                        |
-| `-w`, `--workdir` | Path to workdir directory for this command                           |
+| `-u`, `--user`    | Run the command as this user                                           |
+| `-g`, `--group`   | Run the command as this group                                          |
+| `-w`, `--workdir` | Path to workdir directory for this command                             |
 
 `exec` shells out to your local `incus` client and targets the instance via
 `INCUS_PROJECT`. It uses your local Incus remote configuration (`incus remote` /
@@ -219,6 +219,23 @@ incus-compose ps [SERVICE...]
 | `--services`    | Display compose service names instead of instances               |
 | `--format`      | table (default) or json                                          |
 | `--with-deps`   | Also list linked services (depends_on) — incus-compose extension |
+
+## pull
+
+Pull service images.
+
+```
+incus-compose pull [SERVICE...]
+```
+
+| Option                          | Description                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------------ |
+| `--ignore-buildable`            | Ignore images that can be built                                                |
+| `--ignore-build-failures`       | Pull what it can and ignores images with pull failures                         |
+| `--policy`                      | Apply pull policy ("missing","always") - ignored just for compatibilty now     |
+| `--no-healthd`                  | Don't pull the healthd sidecar                                                 |
+| `--healthd-image`               | Healthd OCI image to use; {version} is replaced with the incus-compose version |
+| `--include-deps`, `--with-deps` | Also pull linked services                                                      |
 
 ## incus
 
@@ -312,7 +329,7 @@ command scoped to the current project.
 | `exec`                       | `exec`                                   |                                               |
 | `build`                      | `build`                                  |                                               |
 | `config`                     | `config`                                 |                                               |
-| `pull`                       | `up --pull always`                       | No standalone pull; refreshes from registry.  |
+| `pull`                       | `pull`                                   |                                               |
 | `images`                     | `config --images`                        | Or `incus-compose incus image list`.          |
 | `cp`                         | `incus-compose incus file push` / `pull` |                                               |
 | `top`                        | `incus-compose incus top`                |                                               |

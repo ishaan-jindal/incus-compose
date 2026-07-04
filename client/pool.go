@@ -37,7 +37,8 @@ func (p *WorkerPool) Submit(fn func() error) {
 }
 
 // Run executes all submitted tasks using the worker pool.
-// Returns aggregated errors from all failed tasks.
+// With FailFast it returns the first error without waiting for the remaining
+// tasks; otherwise it waits for all tasks and returns their aggregated errors.
 func (p *WorkerPool) Run(args PoolRunArgs) error {
 	p.mu.Lock()
 	tasks := make([]func() error, len(p.tasks))
@@ -88,11 +89,19 @@ func (p *WorkerPool) Run(args PoolRunArgs) error {
 		}()
 	}
 
-	// Wait for all workers to complete
-	wg.Wait()
-	close(errCh)
+	// Close the error channel once every worker has exited.
+	go func() {
+		wg.Wait()
+		close(errCh)
+	}()
 
-	// Collect errors
+	if args.FailFast {
+		// Fail on the first error without waiting for still-running tasks.
+		// A closed channel with no value yields a nil error (success).
+		return <-errCh
+	}
+
+	// Collect and aggregate errors from all tasks.
 	var errs error
 	for err := range errCh {
 		errs = errors.Join(errs, err)
