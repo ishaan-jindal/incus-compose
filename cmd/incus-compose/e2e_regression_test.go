@@ -82,3 +82,52 @@ func TestExecSelectsCorrectInstance(t *testing.T) {
 		})
 	}
 }
+
+// TestSlowStartStopIdempotent checks that running start/stop twice (idempotent) works without errors.
+func TestSlowStartStopIdempotent(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipSlow(t)
+
+	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+
+	ctx := context.Background()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "up",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name: "stop",
+			args: []string{"-f", compose, "stop"},
+		},
+		{
+			name: "stop idempotent",
+			args: []string{"-f", compose, "stop"},
+		},
+		{
+			name: "start",
+			args: []string{"-f", compose, "start"},
+		},
+		{
+			name: "start idempotent",
+			args: []string{"-f", compose, "start"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := runCommand(t, ctx, pn, tt.args...)
+			require.NoError(t, err)
+		})
+	}
+}
