@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"os"
 	"time"
 
@@ -86,8 +85,6 @@ func newPullCommand() *cli.Command {
 				globalClient.LogError("Opening the project client", "error", err)
 				return errLogged.Wrap(err)
 			}
-
-			c.IgnoreError(client.ActionEnsure, client.ErrNotFound)
 
 			stdout := cmd.Root().Writer
 			stderr := cmd.Root().ErrWriter
@@ -174,21 +171,17 @@ func newPullCommand() *cli.Command {
 				}
 			}
 
-			var errs error
-			if err := stack.ForAction(client.ActionEnsure).Run(
+			err = stack.ForAction(client.ActionEnsure).Run(
 				ctx,
 				client.ActionEnsure,
 				stdout,
 				stderr,
 				client.OptionPull(),
 				client.OptionCreate(),
-			); err != nil {
+			)
+			if err != nil {
 				c.LogError("Getting resources", "error", err)
-				errs = errors.Join(errs, err)
-			}
-
-			if errs != nil {
-				return errLogged.Wrap(errs)
+				return errLogged.Wrap(err)
 			}
 
 			return nil

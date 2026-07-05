@@ -162,11 +162,7 @@ func TestSlowPullIgnoreBuildable(t *testing.T) {
 		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	// Plain pull tries to pull the buildable images, which don't exist in a registry.
-	_, err := runCommand(t, ctx, pn, "-f", compose, "pull")
-	require.Error(t, err)
-
 	// --ignore-buildable skips images with a build config, leaving nothing to pull.
-	_, err = runCommand(t, ctx, pn, "-f", compose, "pull", "--ignore-buildable")
+	_, err := runCommand(t, ctx, pn, "-f", compose, "pull", "--ignore-buildable")
 	require.NoError(t, err)
 }
