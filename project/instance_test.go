@@ -386,6 +386,61 @@ func TestServiceToInstanceUser(t *testing.T) {
 	})
 }
 
+func TestServiceExtraDevices(t *testing.T) {
+	t.Parallel()
+
+	t.Run("raw devices", func(t *testing.T) {
+		t.Parallel()
+		service := types.ServiceConfig{Name: "web", Extensions: types.Extensions{
+			"x-incus-compose": map[string]any{
+				"devices": map[string]any{
+					"gpu0": map[string]any{"type": "gpu", "gputype": "physical"},
+				},
+			},
+		}}
+
+		devices, err := serviceExtraDevices(service)
+		require.NoError(t, err)
+		require.Len(t, devices, 1)
+		assert.Equal(t, "gpu0", devices[0].Name)
+		assert.Equal(t, "gpu", devices[0].Config.DeviceType)
+		assert.Equal(t, "physical", devices[0].Config.Extensions["gputype"])
+
+		// Round-trips to a raw Incus device passed through verbatim.
+		name, cfg, derr := devices[0].ToIncusDevice()
+		require.Nil(t, derr)
+		assert.Equal(t, "gpu0", name)
+		assert.Equal(t, map[string]string{"type": "gpu", "gputype": "physical"}, cfg)
+	})
+
+	t.Run("missing type errors", func(t *testing.T) {
+		t.Parallel()
+		service := types.ServiceConfig{Name: "web", Extensions: types.Extensions{
+			"x-incus-compose": map[string]any{
+				"devices": map[string]any{"bad": map[string]any{"foo": "bar"}},
+			},
+		}}
+		_, err := serviceExtraDevices(service)
+		require.Error(t, err)
+	})
+
+	t.Run("device not a map errors", func(t *testing.T) {
+		t.Parallel()
+		service := types.ServiceConfig{Name: "web", Extensions: types.Extensions{
+			"x-incus-compose": map[string]any{"devices": map[string]any{"bad": "nope"}},
+		}}
+		_, err := serviceExtraDevices(service)
+		require.Error(t, err)
+	})
+
+	t.Run("no extension", func(t *testing.T) {
+		t.Parallel()
+		devices, err := serviceExtraDevices(types.ServiceConfig{Name: "web"})
+		require.NoError(t, err)
+		assert.Nil(t, devices)
+	})
+}
+
 func TestInstanceImage(t *testing.T) {
 	t.Parallel()
 

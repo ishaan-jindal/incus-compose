@@ -328,3 +328,31 @@ func TestDeviceErrors(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+// TestCustomDevice covers the raw-device path: an unknown DeviceType with its
+// full config in Extensions is passed through verbatim, with type forced to
+// DeviceType.
+func TestCustomDevice(t *testing.T) {
+	t.Parallel()
+
+	device := InstanceDevice{
+		Name: "gpu0",
+		Config: InstanceDeviceConfig{
+			DeviceType: "gpu",
+			Extensions: map[string]string{
+				"type":    "gpu",
+				"gputype": "physical",
+				"pci":     "0000:01:00.0",
+			},
+		},
+	}
+
+	name, config, err := device.ToIncusDevice()
+	require.Nil(t, err)
+	require.Equal(t, "gpu0", name)
+	require.Equal(t, map[string]string{
+		"type":    "gpu",
+		"gputype": "physical",
+		"pci":     "0000:01:00.0",
+	}, config)
+}

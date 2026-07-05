@@ -97,6 +97,12 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	devices = append(devices, volumes...)
 	resources = append(resources, volumeResources...)
 
+	extraDevices, err := serviceExtraDevices(service)
+	if err != nil {
+		errs = errors.Join(errs, err)
+	}
+	devices = append(devices, extraDevices...)
+
 	secrets, err := instanceSecrets(p, service)
 	if err != nil {
 		errs = errors.Join(errs, err)
@@ -984,6 +990,49 @@ func serviceXIncusComposeExtensions(service types.ServiceConfig) map[string]any 
 	}
 
 	return raw
+}
+
+// serviceExtraDevices extracts raw Incus devices from the x-incus-compose.devices
+// block on a compose service. Each named entry becomes an instance device whose
+// keys are passed verbatim to Incus; the `type` key selects the device type.
+func serviceExtraDevices(service types.ServiceConfig) ([]client.InstanceDevice, error) {
+	var raw map[string]any
+	ok, err := service.Extensions.Get("x-incus-compose", &raw)
+	if !ok || err != nil {
+		return nil, nil
+	}
+
+	devicesRaw, ok := raw["devices"].(map[string]any)
+	if !ok || len(devicesRaw) == 0 {
+		return nil, nil
+	}
+
+	devices := make([]client.InstanceDevice, 0, len(devicesRaw))
+	for name, cfg := range devicesRaw {
+		cfgMap, ok := cfg.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("x-incus-compose.devices: device %q must be a map", name)
+		}
+
+		ext := make(map[string]string, len(cfgMap))
+		for k, v := range cfgMap {
+			ext[k] = fmt.Sprint(v)
+		}
+
+		if ext["type"] == "" {
+			return nil, fmt.Errorf("x-incus-compose.devices: device %q is missing 'type'", name)
+		}
+
+		devices = append(devices, client.InstanceDevice{
+			Name: name,
+			Config: client.InstanceDeviceConfig{
+				DeviceType: ext["type"],
+				Extensions: ext,
+			},
+		})
+	}
+
+	return devices, nil
 }
 
 // formatCommand formats a command slice for oci.entrypoint.
