@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/avast/retry-go/v5"
@@ -85,6 +86,11 @@ type InstanceConfig struct {
 
 	// Priority if set sets the instance priority to this instead PriorityInstance.
 	Priority int
+
+	// UID if not 0 use that value else use the user id from the image.
+	UID uint64
+	// GID if not 0 use that value else use the user id from the image.
+	GID uint64
 }
 
 // GetConfig returns the configuration.
@@ -117,7 +123,7 @@ type Instance struct {
 	IncusInstance *incusApi.Instance
 	ETag          string
 
-	// UID/GID extracted from container (for volume shifting).
+	// // UID/GID from the config or extracted from container (for volume shifting).
 	UID uint64
 	GID uint64
 
@@ -228,6 +234,17 @@ func (r *Instance) fetch() error {
 	r.IncusInstance = instance
 	r.ETag = eTag
 
+	r.UID = r.Config.UID
+	r.GID = r.Config.GID
+
+	if r.UID == 0 || r.GID == 0 {
+		var err error
+		r.UID, r.GID, err = extractUIDGID(r.IncusInstance)
+		if err != nil {
+			return ErrInvalidFormat.WithText("extracting uid/gid").Wrap(err)
+		}
+	}
+
 	if r.Config.Full {
 		full, _, err := r.conn.GetInstanceFull(r.IncusInstance.Name)
 		if err != nil {
@@ -293,12 +310,6 @@ func (r *Instance) Ensure(ctx context.Context, opts ...Option) error {
 }
 
 func (r *Instance) ensured() error {
-	var err error
-	r.UID, r.GID, err = extractUIDGID(r.IncusInstance)
-	if err != nil {
-		return ErrInvalidFormat.WithText("extracting uid/gid").Wrap(err)
-	}
-
 	if r.Config.Image == "" {
 		if alias, ok := r.IncusInstance.Config["user.image_alias"]; ok {
 			r.Config.Image = alias
@@ -345,14 +356,28 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 
 	r.image = image
 
-	// Use UID/GID from image properties when available so volumes are created
-	// with the correct shifted config before the instance is created.
-	if image.UID > 0 || image.GID > 0 {
-		r.UID = image.UID
-		r.GID = image.GID
+	config := map[string]string{}
+
+	r.UID = r.Config.UID
+	r.GID = r.Config.GID
+
+	if r.UID == 0 && r.GID == 0 {
+		// Use UID/GID from image properties when available so volumes are created
+		// with the correct shifted config before the instance is created.
+		if image.UID > 0 || image.GID > 0 {
+			r.UID = image.UID
+			r.GID = image.GID
+		}
 	}
 
-	// Build pre-devices map after volumes are resolved.
+	// Store UID/GID.
+	config["oci.uid"] = strconv.FormatUint(r.UID, 10)
+	config["oci.gid"] = strconv.FormatUint(r.GID, 10)
+
+	// Store the image name
+	config["user.image_alias"] = image.IncusName()
+
+	// Build devices map after volumes are resolved.
 	devices, err := r.buildDevices()
 	if err != nil {
 		return err
@@ -364,11 +389,9 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 		return ErrNotFound.WithText("getting image").Wrap(err)
 	}
 
-	config := make(map[string]string, len(r.Config.Extensions))
+	// Copy users project / x-incus config.
+	// This is after all our configs so we allow users to override it.
 	maps.Copy(config, r.Config.Extensions)
-
-	// Store the image name
-	config["user.image_alias"] = image.IncusName()
 
 	if options.Healthd {
 		// Healthd should wait until we allow it to work with it.
@@ -1260,6 +1283,32 @@ func (t *logTerminal) Read(_ []byte) (int, error) {
 // Close implements io.Closer.
 func (t *logTerminal) Close() error {
 	return nil
+}
+
+// extractUIDGID extracts UID and GID from a container instance.
+func extractUIDGID(instance *incusApi.Instance) (uint64, uint64, error) {
+	if incusApi.InstanceType(instance.Type) != incusApi.InstanceTypeContainer {
+		return 0, 0, nil
+	}
+
+	// oci.uid/gid only exist for OCI images, not native Incus images
+	uidStr, hasUID := instance.Config["oci.uid"]
+	gidStr, hasGID := instance.Config["oci.gid"]
+	if !hasUID || !hasGID {
+		return 0, 0, nil
+	}
+
+	uid, err := strconv.ParseUint(uidStr, 10, 32)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	gid, err := strconv.ParseUint(gidStr, 10, 32)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return uid, gid, nil
 }
 
 var (
