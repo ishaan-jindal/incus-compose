@@ -26,21 +26,21 @@ Status: **Beta** - testing the beta release of incus-compose.
 - Compose project parsing via compose-go, with automatic `compose.incus.yaml` overrides and `x-incus` / `x-incus-compose` extensions for raw Incus options
 - OCI image pulling from docker.io, ghcr.io, and other registries
 - Two-stage image cache in a dedicated Incus project (survives `down`/`up`, avoids registry rate limits)
-- Local image building via Podman/Docker [doc](docs/build.md)
+- Local image building via Podman/Docker [doc](https://docs.incus-compose.org/builds)
 - Bridge networks with automatic name sanitization
-- Static IPv4/IPv6 addresses with automatic DHCP ranges [doc](docs/compose-compatibility.md#automatic-dhcp-ranges)
-- Port forwarding via proxy devices or kernel NAT mode [doc](docs/compose-compatibility.md#port-publishing)
-- Storage volumes with UID/GID shifting; bind mounts (pass-through by default, optional seeding) [doc](docs/compose-compatibility.md#volume-permissions)
-- Health checks, restart policies, and `depends_on: service_healthy` ordering via the `ic-healthd` sidecar [doc](docs/healthd.md)
+- Static IPv4/IPv6 addresses with automatic DHCP ranges [doc](https://docs.incus-compose.org/compose-compatibility#automatic-dhcp-ranges)
+- Port forwarding via proxy devices or kernel NAT mode [doc](https://docs.incus-compose.org/compose-compatibility#port-publishing)
+- Storage volumes with UID/GID shifting; bind mounts (pass-through by default, optional seeding) [doc](https://docs.incus-compose.org/compose-compatibility#volume-permissions)
+- Health checks, restart policies, and `depends_on: service_healthy` ordering via the `ic-healthd` sidecar [doc](https://docs.incus-compose.org/healthd)
 - Service scaling with `up --scale` and orphan pruning
 - Incus project isolation
 - Resource limits and other advanced compose features (`shm_size`, `container_name`, etc.)
-- Configuration via `INCUS_COMPOSE_*` environment variables for every flag, with a configurable parallel worker count [doc](docs/environment-variables.md)
+- Configuration via `INCUS_COMPOSE_*` environment variables for every flag, with a configurable parallel worker count [doc](https://docs.incus-compose.org/environment-variables)
 
 ## Quick Start
 
 Requires `podman` or `docker` for image building and an Incus https remote (needed for healthchecking) with OCI registries added.
-See [Getting Started](docs/getting-started.md) for the full setup walkthrough.
+See [Getting Started](https://docs.incus-compose.org/getting-started) for the full setup walkthrough.
 
 Install the latest release (the script verifies the SHA-256 checksum):
 
@@ -68,19 +68,19 @@ incus-compose down
 
 ## Quick Links
 
-Full docs index: [docs/README.md](docs/README.md)
+All docs: [docs.incus-compose.org](https://docs.incus-compose.org)
 
-- **[Getting Started](docs/getting-started.md)** - Install and run your first compose project
-- **[CLI Reference](docs/cli.md)** - Commands and options
-- **[Compose Compatibility](docs/compose-compatibility.md)** - What works and what doesn't
-- **[Architecture](docs/architecture.md)** - How it works under the hood
-- **[Why Incus?](docs/why-incus.md)** - Benefits over Docker
+- **[Getting Started](https://docs.incus-compose.org/getting-started)** - Install and run your first compose project
+- **[CLI Reference](https://docs.incus-compose.org/cli-reference)** - Commands and options
+- **[Compose Compatibility](https://docs.incus-compose.org/compose-compatibility)** - What works and what doesn't
+- **[Architecture](https://docs.incus-compose.org/architecture)** - How it works under the hood
+- **[Why Incus?](https://docs.incus-compose.org/why-incus)** - Benefits over Docker
 - **[Contributing](CONTRIBUTING.md)** - Contributing to incus-compose
 - **[Changelog](CHANGELOG.md)** - Changelog since 0.0.1-beta1
 
-## Architecture
+### Examples
 
-incus-compose uses a **resource-first design**, see [Architecture Documentation](docs/architecture.md) for details.
+Descriptions are in our [docs](https://docs.incus-compose.org/examples) while the files are in [examples](examples/).
 
 ## Support and community
 
@@ -93,10 +93,6 @@ You can file bug reports and feature requests at: [`https://github.com/lxc/incus
 ### Community support
 
 Community support is handled at: [`https://discuss.linuxcontainers.org`](https://discuss.linuxcontainers.org)
-
-## Documentation
-
-The official documentation is available at: [`https://github.com/lxc/incus-compose/tree/main/docs`](https://github.com/lxc/incus-compose/tree/main/docs)
 
 ## Contributing
 
