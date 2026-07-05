@@ -1,0 +1,9 @@
+services:
+  web:
+    image: library/busybox:latest
+    user: 1000:1000
+    volumes:
+      - data:/data
+
+volumes:
+  data:

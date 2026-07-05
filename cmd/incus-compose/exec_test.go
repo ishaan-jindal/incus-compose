@@ -1,0 +1,86 @@
+package main
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// TestExecSelectsCorrectInstance is a regression test for the exec command
+// dispatching to the wrong instance when multiple services share a stack.
+// It runs `hostname` in each service of a multi-service project and asserts
+// the output matches the expected Incus instance name.
+func TestExecSelectsCorrectInstance(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipSlow(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	tests := []struct {
+		service  string
+		wantHost string
+	}{
+		{"nginx", "nginx-1"},
+		{"backend1", "backend1-1"},
+		{"backend2", "backend2-1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.service, func(t *testing.T) {
+			stdout, err := runCommand(t, ctx, pn, "-f", compose, "exec", "--no-tty", tt.service, "hostname")
+			require.NoError(t, err)
+			if strings.TrimSpace(stdout.String()) != tt.wantHost {
+				t.Errorf("got hostname %q, want %q", strings.TrimSpace(stdout.String()), tt.wantHost)
+			}
+		})
+	}
+}
+
+// TestExecRunsAsInstanceUser verifies exec defaults --user/--group to the
+// instance's UID/GID (1000:1000 from the service `user:` override), so writing
+// to the id-shifted named volume succeeds and the file lands owned by 1000:1000.
+func TestSlowExecRunsAsInstanceUser(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipSlow(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/with-user/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project", "--volumes")
+	})
+
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	// The write only succeeds if the process runs as 1000, since /data is owned
+	// by the shifted instance user.
+	_, err = runCommand(t, ctx, pn, "-f", compose, "exec", "--no-tty", "web",
+		"--", "sh", "-c", "echo hello > /data/test.txt")
+	require.NoError(t, err)
+
+	stdout, err := runCommand(t, ctx, pn, "-f", compose, "exec", "--no-tty", "web",
+		"--", "ls", "-ln", "/data/test.txt")
+	require.NoError(t, err)
+
+	// ls -ln columns: perms links owner group size date... name.
+	fields := strings.Fields(stdout.String())
+	require.GreaterOrEqual(t, len(fields), 4, "unexpected ls output: %q", stdout.String())
+	assert.Equal(t, "1000", fields[2], "file owner uid")
+	assert.Equal(t, "1000", fields[3], "file owner gid")
+}

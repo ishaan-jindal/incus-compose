@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -16,6 +17,7 @@ import (
 
 // execCommand implements `incus-compose exec` similar to `docker compose exec`.
 func newExecCommand() *cli.Command {
+	nthArg := 1
 	return &cli.Command{
 		Name:      "exec",
 		Usage:     "Execute a command in a running instance",
@@ -51,14 +53,16 @@ func newExecCommand() *cli.Command {
 				Usage: "Give extended privileges to the process (accepted but not implemented)",
 			},
 			&cli.StringFlag{
-				Name:    "user",
-				Aliases: []string{"u"},
-				Usage:   "Run the command as this user",
+				Name:        "user",
+				Aliases:     []string{"u"},
+				Usage:       "Run the command as this user",
+				DefaultText: `the instance's UID`,
 			},
 			&cli.StringFlag{
-				Name:    "group",
-				Aliases: []string{"g"},
-				Usage:   "Run the command as this group",
+				Name:        "group",
+				Aliases:     []string{"g"},
+				Usage:       "Run the command as this group",
+				DefaultText: `the instance's GID`,
 			},
 			&cli.StringFlag{
 				Name:    "workdir",
@@ -66,6 +70,7 @@ func newExecCommand() *cli.Command {
 				Usage:   "Path to workdir directory for this command",
 			},
 		},
+		StopOnNthArg: &nthArg,
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			// Validate args
 			args := cmd.Args().Slice()
@@ -139,6 +144,14 @@ func newExecCommand() *cli.Command {
 				return errLogged.Wrap(client.ErrNotFound.WithText("not enough instances"))
 			}
 
+			inst := instances[cmd.Int("index")]
+
+			err = client.RunAction(ctx, inst, client.ActionEnsure)
+			if err != nil {
+				globalClient.LogError("Failed to ensure the instance", "error", err)
+				return errLogged.Wrap(fmt.Errorf("failed to ensure the instance: %w", err))
+			}
+
 			execPath, err := exec.LookPath("incus")
 			if err != nil {
 				globalClient.LogError("`incus` not found in PATH")
@@ -160,13 +173,20 @@ func newExecCommand() *cli.Command {
 
 			if cmd.String("user") != "" {
 				iArgs = append(iArgs, "--user", cmd.String("user"))
+			} else {
+				iArgs = append(iArgs, "--user", strconv.FormatUint(inst.UID, 10))
 			}
 
 			if cmd.String("group") != "" {
 				iArgs = append(iArgs, "--group", cmd.String("group"))
+			} else {
+				iArgs = append(iArgs, "--group", strconv.FormatUint(inst.GID, 10))
 			}
 
 			iArgs = append(iArgs, instances[cmd.Int("index")].IncusName())
+			// Terminate incus's own flag parsing so a command with leading dashes
+			// (e.g. `ls -ln`, `sh -c`) is passed through verbatim.
+			iArgs = append(iArgs, "--")
 			iArgs = append(iArgs, args...)
 
 			if cmd.Bool("dry-run") {
