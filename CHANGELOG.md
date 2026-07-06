@@ -9,6 +9,34 @@ Version numbering moved from `0.0.1` to `1.0.0` at beta11 (1.0.0 is the intended
 final version), and the beta suffix gained a dot (`beta.16`) from beta.16 onward
 for correct semver ordering. Headings below preserve each release's announced form.
 
+## [1.0.0-beta.22] - 2026-07-06
+
+A real `pull` command, Docker-parity `user` handling and `exec`, plus per-service
+raw devices and gateway selection.
+
+E2E suite green still at ~60% coverage.
+
+### Added
+
+- `pull` command: pre-pull service images (and the healthd sidecar) without
+  creating anything, with `--policy`, `--ignore-buildable`,
+  `--ignore-build-failures`, `--no-healthd`, and `--with-deps`.
+- `services.{name}.user`: run the container process as a numeric `UID` or
+  `UID:GID` (mapped to `oci.uid` / `oci.gid`).
+- `services.{name}.x-incus-compose.devices`: attach raw Incus devices (gpu,
+  unix-char, ...) verbatim; the required `type` key selects the device type.
+- `services.{name}.networks.<net>.x-incus-compose.gateway: true`: places that NIC
+  last so Incus uses its gateway as the instance's default route.
+
+### Changed
+
+- `exec` runs as the instance's user/group by default (matching
+  `docker compose exec`); override with `--user` / `--group`. The command and its
+  arguments are passed to Incus verbatim, so leading-dash flags work unescaped.
+- Service network attachments are ordered deterministically (they previously
+  followed Go map iteration order).
+- Documentation moved to https://docs.incus-compose.org.
+
 ## [1.0.0-beta.21] - 2026-07-04
 
 Standalone and bugfixed healthd, more x-incus reach, a native exec, and an error-severity system so recoverable problems warn instead of aborting.
