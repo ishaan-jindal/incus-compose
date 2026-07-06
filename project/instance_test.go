@@ -505,6 +505,39 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		assert.Empty(t, devices)
 		assert.Empty(t, resources)
 	})
+
+	t.Run("gateway network placed last", func(t *testing.T) {
+		t.Parallel()
+		p := &types.Project{Networks: types.Networks{"aaa": {}, "bbb": {}}}
+		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
+			"aaa": {Extensions: types.Extensions{"x-incus-compose": map[string]any{"gateway": true}}},
+			"bbb": {},
+		}}
+
+		devices, _, err := instanceNetworkDevices(c, p, service)
+		require.NoError(t, err)
+		require.Len(t, devices, 2)
+		// aaa is the gateway, so despite sorting before bbb it takes the last eth.
+		assert.Equal(t, "eth0", devices[0].Name)
+		assert.Equal(t, "bbb", devices[0].Config.Network.Name())
+		assert.Equal(t, "eth1", devices[1].Name)
+		assert.Equal(t, "aaa", devices[1].Config.Network.Name())
+	})
+
+	t.Run("no gateway sorts by name", func(t *testing.T) {
+		t.Parallel()
+		p := &types.Project{Networks: types.Networks{"aaa": {}, "bbb": {}}}
+		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
+			"bbb": {},
+			"aaa": {},
+		}}
+
+		devices, _, err := instanceNetworkDevices(c, p, service)
+		require.NoError(t, err)
+		require.Len(t, devices, 2)
+		assert.Equal(t, "aaa", devices[0].Config.Network.Name())
+		assert.Equal(t, "bbb", devices[1].Config.Network.Name())
+	})
 }
 
 func TestInstanceProxyDevices(t *testing.T) {
