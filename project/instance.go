@@ -283,8 +283,30 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 	devices := []client.InstanceDevice{}
 	resources := []client.Resource{}
 
+	// service.Networks is a map, so order it deterministically and place any
+	// gateway-marked attachment (x-incus-compose.gateway: true) last, giving its
+	// NIC the highest eth index. Incus uses the last NIC's gateway as the
+	// instance's default route.
+	names := make([]string, 0, len(service.Networks))
+	for name := range service.Networks {
+		names = append(names, name)
+	}
+	slices.SortStableFunc(names, func(a, b string) int {
+		ga := serviceNetworkGateway(service.Networks[a])
+		gb := serviceNetworkGateway(service.Networks[b])
+		if ga != gb {
+			if ga {
+				return 1
+			}
+			return -1
+		}
+		return strings.Compare(a, b)
+	})
+
 	ethIdx := 0
-	for name, sNet := range service.Networks {
+	for _, name := range names {
+		sNet := service.Networks[name]
+
 		netConfig := &client.NetworkConfig{}
 		if networkDef, ok := p.Networks[name]; ok {
 			netConfig.External = bool(networkDef.External)
@@ -309,9 +331,9 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 			Extensions: extensions,
 		}
 
-		if svcNet := service.Networks[name]; svcNet != nil {
-			nicConfig.Ipv4Address = svcNet.Ipv4Address
-			nicConfig.Ipv6Address = svcNet.Ipv6Address
+		if sNet != nil {
+			nicConfig.Ipv4Address = sNet.Ipv4Address
+			nicConfig.Ipv6Address = sNet.Ipv6Address
 		}
 
 		devices = append(devices, client.InstanceDevice{
@@ -324,6 +346,23 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 	}
 
 	return devices, resources, errs
+}
+
+// serviceNetworkGateway reports whether a service network attachment is marked as
+// the default-gateway interface via x-incus-compose.gateway: true. Such a NIC is
+// placed last so Incus uses its gateway as the instance's default route.
+func serviceNetworkGateway(sNet *types.ServiceNetworkConfig) bool {
+	if sNet == nil {
+		return false
+	}
+	var ext struct {
+		Gateway bool `mapstructure:"gateway"`
+	}
+	ok, err := sNet.Extensions.Get("x-incus-compose", &ext)
+	if !ok || err != nil {
+		return false
+	}
+	return ext.Gateway
 }
 
 // instanceProxyDevices builds proxy devices for published ports and nat-proxy
