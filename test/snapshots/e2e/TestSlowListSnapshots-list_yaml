@@ -14,5 +14,5 @@
   status: Running
   health: Unknown
   addresses:
-    - 
+    - -stripped-
 

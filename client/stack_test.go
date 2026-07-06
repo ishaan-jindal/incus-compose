@@ -229,15 +229,14 @@ func TestStackInstanceWithSecrets(t *testing.T) {
 		},
 	}
 
-	secrets := []InstanceSecret{
+	files := []InstanceFile{
 		{
-			Source:  "db_password",
-			Content: []byte("super-secret-password"),
+			Target:  "/run/secrets/db_password",
+			Content: NewReaderFromBytes([]byte("super-secret-password")),
 		},
 		{
-			Source:  "api_key",
 			Target:  "/app/secrets/api.key",
-			Content: []byte("my-api-key-value"),
+			Content: NewReaderFromBytes([]byte("my-api-key-value")),
 			UID:     0,
 			GID:     0,
 			Mode:    0o440,
@@ -247,7 +246,7 @@ func TestStackInstanceWithSecrets(t *testing.T) {
 	instance, err := c.Resource(KindInstance, "app-with-secrets", &InstanceConfig{
 		Image:   image.Name(),
 		Devices: devices,
-		Secrets: secrets,
+		Files:   files,
 	})
 	require.NoError(t, err)
 

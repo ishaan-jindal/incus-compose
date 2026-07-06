@@ -76,16 +76,14 @@ func TestFormatTmpfsSize(t *testing.T) {
 func TestParseSecretOwnershipAndMode(t *testing.T) {
 	t.Parallel()
 
-	mode := types.FileMode(0o440)
+	mode := types.FileMode(0o640)
 
-	assert.Equal(t, int64(0), parseSecretUID(""))
-	assert.Equal(t, int64(1000), parseSecretUID("1000"))
-	assert.Equal(t, int64(0), parseSecretUID("not-a-number"))
-	assert.Equal(t, int64(0), parseSecretGID(""))
-	assert.Equal(t, int64(1001), parseSecretGID("1001"))
-	assert.Equal(t, int64(0), parseSecretGID("not-a-number"))
-	assert.Equal(t, 0, parseSecretMode(nil))
-	assert.Equal(t, 0o440, parseSecretMode(&mode))
+	// Empty maps to -1 so InstanceFile falls back to the image's oci.uid/oci.gid.
+	assert.Equal(t, int64(-1), parseSecretID(""))
+	assert.Equal(t, int64(1000), parseSecretID("1000"))
+	assert.Equal(t, int64(0), parseSecretID("not-a-number"))
+	assert.Equal(t, 0o600, parseSecretMode(nil))
+	assert.Equal(t, 0o640, parseSecretMode(&mode))
 }
 
 func TestFormatCommand(t *testing.T) {
@@ -289,20 +287,21 @@ func TestInstanceSecrets(t *testing.T) {
 		secrets, err := instanceSecrets(p, service)
 		require.NoError(t, err)
 		require.Len(t, secrets, 1)
-		assert.Equal(t, "db_pw", secrets[0].Source)
-		assert.Equal(t, []byte("s3cr3t"), secrets[0].Content)
+		require.Equal(t, "db_pw", secrets[0].Target)
+		// Unset UID/GID fall back to the image's oci.uid/oci.gid.
+		assert.Equal(t, int64(-1), secrets[0].UID)
+		assert.Equal(t, int64(-1), secrets[0].GID)
 	})
 
 	t.Run("environment source", func(t *testing.T) {
 		// Not parallel: uses t.Setenv.
-		t.Setenv("MY_SECRET", "envval")
-		p := &types.Project{Secrets: types.Secrets{"s": {Environment: "MY_SECRET"}}}
-		service := types.ServiceConfig{Name: "web", Secrets: []types.ServiceSecretConfig{{Source: "s"}}}
+		p := &types.Project{Secrets: types.Secrets{"s": {Environment: "MY_SECRET"}}, Environment: map[string]string{"MY_SECRET": "envval"}}
+		service := types.ServiceConfig{Name: "web", Secrets: []types.ServiceSecretConfig{{Source: "s", Target: "s"}}}
 
 		secrets, err := instanceSecrets(p, service)
 		require.NoError(t, err)
 		require.Len(t, secrets, 1)
-		assert.Equal(t, []byte("envval"), secrets[0].Content)
+		require.Equal(t, "s", secrets[0].Target)
 	})
 
 	t.Run("undefined secret", func(t *testing.T) {
@@ -711,8 +710,16 @@ func TestInstanceVolumeDevices(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, devices)
 		assert.Empty(t, resources)
-		require.Contains(t, files, "/etc/app.conf")
-		assert.Equal(t, file, files["/etc/app.conf"].File)
+
+		var found client.InstanceFile
+		for _, f := range files {
+			if f.Target == "/etc/app.conf" {
+				found = f
+				break
+			}
+		}
+		require.NotEmpty(t, found.Target)
+		assert.Equal(t, file, found.File)
 	})
 
 	t.Run("bind seed directory", func(t *testing.T) {

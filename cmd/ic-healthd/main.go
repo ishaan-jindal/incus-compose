@@ -20,7 +20,7 @@ import (
 
 const (
 	defaultDataDir    = "/var/lib/ic-healthd"
-	defaultSecretsDir = "/etc/ic-healthd"
+	defaultSecretsDir = "/run/secrets"
 )
 
 func main() {

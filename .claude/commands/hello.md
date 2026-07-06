@@ -13,10 +13,10 @@ Load these files in parallel as your working context.
 
 ## Canonical architecture and testing
 
-Preload these — CONTRIBUTING.md cites them as authoritative:
+Preload these:
 
-- `docs/architecture.md` and all the files it links.
-
-## Lazy-load on demand
-
-Do NOT preload. Read only when the current task touches them.
+- docs/root/architecture/**/*.md
+- docs/root/cli-reference.md
+- docs/root/compose-compatibility.md
+- docs/root/environment-variables.md
+- docs/root/healthd.md

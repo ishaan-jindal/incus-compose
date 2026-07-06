@@ -69,14 +69,13 @@ incus-compose/
 
 ## Build and Test Commands
 
-See [docs/architecture/testing.md](docs/architecture/testing.md) for the complete command reference and testing patterns.
+See [testing on docs.incus-compose.org](https://docs.incus-compose.org/architecture/testing) for the complete command reference and testing patterns.
 
 Quick start:
 
 ```bash
 just --list       # Show all available commands
 just pre-commit   # Run before committing
-just dev-install  # First-time setup for nested Incus
 ```
 
 ## Code Style
@@ -187,7 +186,7 @@ chore(client): rename Resource interface method
 
 ## Testing
 
-For comprehensive testing documentation including patterns, fixtures, and best practices, see [docs/architecture/testing.md](docs/architecture/testing.md).
+For comprehensive testing documentation including patterns, fixtures, and best practices, see [testing on docs.incus-compose.org](https://docs.incus-compose.org/architecture/testing).
 
 Tests are categorized as unit tests (using mocks) or integration tests (using real Incus instances).
 

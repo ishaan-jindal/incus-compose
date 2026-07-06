@@ -38,16 +38,6 @@ type healthdParams struct {
 	workers     int
 }
 
-// // closingBufferReader wraps bytes.Reader to add a no-op Close.
-// type closingBufferReader struct {
-// 	*bytes.Reader
-// }
-
-// // Close is a noop.
-// func (cb *closingBufferReader) Close() error {
-// 	return nil
-// }
-
 // healthdCreateToken creates a restricted token for the healthd to use.
 func healthdCreateToken(c *client.Client) (string, error) {
 	req := incusApi.CertificatesPost{
@@ -306,24 +296,21 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			token = ""
 		}
 
-		if inst.Config.Files == nil {
-			inst.Config.Files = make(map[string]client.InstanceFile)
-		}
-
 		inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_INCUS"] = incusURL.String()
-		inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_TOKEN"] = token
+		// inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_TOKEN"] = token
 		inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_PROJECTS"] = c.IncusProject()
 		if c.IsDebugging() {
 			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_DEBUG"] = "true"
 		}
 
-		// inst.Config.Files["/etc/ic-healthd/token"] = client.InstanceFile{
-		// 	Content: &closingBufferReader{bytes.NewReader([]byte(token))},
-		// 	UID:     -1,
-		// 	GID:     -1,
-		// 	Mode:    0o400,
-		// 	DirMode: 0o700,
-		// }
+		inst.Config.Files = append(inst.Config.Files, client.InstanceFile{
+			Target:  "/run/secrets/token",
+			Content: client.NewReaderFromBytes([]byte(token)),
+			UID:     -1,
+			GID:     -1,
+			Mode:    0o600,
+			DirMode: 0o700,
+		})
 
 		inst.Config.Devices = append(inst.Config.Devices, client.InstanceDevice{
 			Name: "eth0",
@@ -339,13 +326,14 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 				return err
 			}
 
-			inst.Config.Files["/usr/local/bin/ic-healthd"] = client.InstanceFile{
+			inst.Config.Files = append(inst.Config.Files, client.InstanceFile{
+				Target:  "/usr/local/bin/ic-healthd",
 				File:    f,
 				UID:     -1,
 				GID:     -1,
-				Mode:    0o700,
+				Mode:    0o600,
 				DirMode: 0o700,
-			}
+			})
 		} else {
 			// c.LogDebug("Setting entrypoint")
 			inst.Config.Extensions["oci.entrypoint"] = "/usr/local/bin/ic-healthd run"

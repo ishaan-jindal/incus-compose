@@ -151,10 +151,15 @@ func pollServiceExec(t *testing.T, ctx context.Context, pn, compose, service str
 	for {
 		stdout, err := runCommand(t, ctx, pn, args...)
 		out := stdout.String()
-		if err == nil && strings.Contains(out, want) {
+		if err == nil {
+			if !strings.Contains(out, want) {
+				return fmt.Errorf("%q not found in output %q", want, out)
+			}
+
 			return nil
 		}
-		lastOut, lastErr = out, err
+		lastOut = out
+		lastErr = err
 
 		if time.Now().After(deadline) {
 			break

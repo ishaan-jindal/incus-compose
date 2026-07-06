@@ -252,7 +252,7 @@ func TestSlowStartStopRestartWithDeps(t *testing.T) {
 				"-f", compose, "list", "--format", "json",
 			)
 			require.NoError(t, err)
-			snapshotter.SnapshotT(t, normalizeListOutput(t, stdout))
+			snapshotter.SnapshotT(t, stripListOutput(t, stdout))
 		})
 	}
 }
@@ -626,7 +626,7 @@ func TestSlowLifecycleSimpleNginx(t *testing.T) {
 			require.NoError(t, err)
 
 			if tt.snapshot {
-				snapshotter.SnapshotT(t, normalizeListOutput(t, stdout))
+				snapshotter.SnapshotT(t, stripListOutput(t, stdout))
 			}
 		})
 	}
@@ -792,7 +792,7 @@ func TestSlowListSnapshots(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			stdout, err := runCommand(t, ctx, pn, tt.args...)
 			require.NoError(t, err)
-			snapshotter.SnapshotT(t, normalizeListOutput(t, stdout))
+			snapshotter.SnapshotT(t, stripListOutput(t, stdout))
 		})
 	}
 }
