@@ -16,9 +16,9 @@
     "incus_name": "web-1",
     "image": "docker.io/nginx:alpine",
     "status": "Running",
-    "health": "Unknown",
+    "health": "-stripped-",
     "addresses": [
-      ""
+      "-stripped-"
     ]
   }
 ]

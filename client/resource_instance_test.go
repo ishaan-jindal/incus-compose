@@ -7,62 +7,6 @@ import (
 )
 
 // ----------------------------------------------------------------------------
-// InstanceSecret Tests
-// ----------------------------------------------------------------------------
-
-func TestInstanceSecret_Defaults(t *testing.T) {
-	t.Parallel()
-	secret := InstanceSecret{
-		Source:  "db_password",
-		Content: []byte("secret-value"),
-	}
-
-	require.Equal(t, "db_password", secret.Source)
-	require.Equal(t, []byte("secret-value"), secret.Content)
-	require.Empty(t, secret.Target, "Target should default to empty (handled in PushSecrets)")
-	require.Zero(t, secret.UID)
-	require.Zero(t, secret.GID)
-	require.Zero(t, secret.Mode, "Mode should default to zero (handled in PushSecrets)")
-}
-
-func TestInstanceSecret_CustomTarget(t *testing.T) {
-	t.Parallel()
-	secret := InstanceSecret{
-		Source:  "api_key",
-		Target:  "/app/secrets/api.key",
-		Content: []byte("my-api-key"),
-		UID:     1000,
-		GID:     1000,
-		Mode:    0o440,
-	}
-
-	require.Equal(t, "api_key", secret.Source)
-	require.Equal(t, "/app/secrets/api.key", secret.Target)
-	require.Equal(t, []byte("my-api-key"), secret.Content)
-	require.Equal(t, int64(1000), secret.UID)
-	require.Equal(t, int64(1000), secret.GID)
-	require.Equal(t, 0o440, secret.Mode)
-}
-
-func TestInstanceConfig_WithSecrets(t *testing.T) {
-	t.Parallel()
-	secrets := []InstanceSecret{
-		{Source: "db_password", Content: []byte("pass1")},
-		{Source: "api_key", Target: "/custom/path", Content: []byte("key1"), Mode: 0o440},
-	}
-
-	config := InstanceConfig{
-		Image:   "docker.io/alpine:latest",
-		Secrets: secrets,
-	}
-
-	require.Len(t, config.Secrets, 2)
-	require.Equal(t, "db_password", config.Secrets[0].Source)
-	require.Equal(t, "api_key", config.Secrets[1].Source)
-	require.Equal(t, "/custom/path", config.Secrets[1].Target)
-}
-
-// ----------------------------------------------------------------------------
 // SanitizeInstanceName Tests
 // ----------------------------------------------------------------------------
 

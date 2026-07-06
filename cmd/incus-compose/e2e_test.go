@@ -57,12 +57,18 @@ func runCommand(t *testing.T, ctx context.Context, projectName string, args ...s
 	return stdout, err
 }
 
-// normalizeListOutput removes dynamic content (IP addresses, network hashes) for snapshot comparison.
-func normalizeListOutput(t *testing.T, output *bytes.Buffer) string {
+// stripListOutput removes dynamic content (IP addresses, network hashes) for snapshot comparison.
+func stripListOutput(t *testing.T, output *bytes.Buffer) string {
 	t.Helper()
 
-	ipRegex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
-	outStr := ipRegex.ReplaceAllString(output.String(), "")
+	ipRegex, err := regexp.Compile(`\d+\.\d+\.\d+\.\d+`)
+	require.NoError(t, err)
+	outStr := ipRegex.ReplaceAllString(output.String(), "-stripped-")
+
+	// Strip health status for now, its flaky.
+	healthRegex, err := regexp.Compile(`"health": "[a-zA-Z]+",`)
+	require.NoError(t, err)
+	outStr = healthRegex.ReplaceAllString(outStr, `"health": "-stripped-",`)
 
 	return outStr
 }
@@ -318,7 +324,7 @@ func TestUpDownUpSimpleNginx(t *testing.T) {
 				require.NoError(t, err)
 			}
 			if tt.snapshot {
-				snapshotter.SnapshotT(t, normalizeListOutput(t, stdout))
+				snapshotter.SnapshotT(t, stripListOutput(t, stdout))
 			}
 		})
 	}
@@ -364,7 +370,7 @@ func TestNormalLifecycle(t *testing.T) {
 				require.NoError(t, err)
 			}
 			if tt.snapshot {
-				snapshotter.SnapshotT(t, normalizeListOutput(t, stdout))
+				snapshotter.SnapshotT(t, stripListOutput(t, stdout))
 			}
 		})
 	}

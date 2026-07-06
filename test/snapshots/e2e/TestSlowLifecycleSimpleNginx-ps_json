@@ -6,7 +6,7 @@
     "image": "docker.io/nginx:alpine",
     "status": "Running",
     "addresses": [
-      ""
+      "-stripped-"
     ]
   }
 ]

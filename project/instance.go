@@ -107,6 +107,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	if err != nil {
 		errs = errors.Join(errs, err)
 	}
+	files = append(files, secrets...)
 
 	if errs != nil {
 		return nil, nil, errs
@@ -120,7 +121,6 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		Extensions:       config,
 		Devices:          devices,
 		PostStartDevices: postStartDevices,
-		Secrets:          secrets,
 		Files:            files,
 		Dependencies:     instanceDependencyWaits(p, service, options),
 		UID:              uid,
@@ -535,11 +535,11 @@ func instanceProxyDevices(c *client.Client, service types.ServiceConfig, nicDevi
 // instanceVolumeDevices builds disk, bind, and tmpfs devices for a service's
 // volumes plus the shm_size tmpfs. It returns any storage volume resources
 // (when options.StorageVolumes is set) and the files map for single-file binds.
-func instanceVolumeDevices(c *client.Client, p *types.Project, service types.ServiceConfig, image client.Resource, uid, gid uint64, options *ResourcesOptions) ([]client.InstanceDevice, map[string]client.InstanceFile, []client.Resource, error) {
+func instanceVolumeDevices(c *client.Client, p *types.Project, service types.ServiceConfig, image client.Resource, uid, gid uint64, options *ResourcesOptions) ([]client.InstanceDevice, []client.InstanceFile, []client.Resource, error) {
 	var errs error
 	devices := []client.InstanceDevice{}
 	resources := []client.Resource{}
-	files := map[string]client.InstanceFile{}
+	files := []client.InstanceFile{}
 
 	for _, cVol := range service.Volumes {
 		seed := false
@@ -634,13 +634,15 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 				}
 
 				if !info.IsDir() {
-					files[cVol.Target] = client.InstanceFile{
-						File:    cVol.Source,
-						UID:     -1,
-						GID:     -1,
-						Mode:    0o644,
-						DirMode: 0o755,
-					}
+					files = append(files, client.InstanceFile{
+						Target:    cVol.Target,
+						File:      cVol.Source,
+						UID:       -1,
+						GID:       -1,
+						Mode:      0o644,
+						DirMode:   0o755,
+						Overwrite: true,
+					})
 				} else {
 					devName := "vol-seed-" + client.SanitizeIncusName(cVol.Source, client.MaxIncusNameLen-10)
 
@@ -758,9 +760,9 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 
 // instanceSecrets resolves a service's secrets from their compose definitions,
 // reading content from a file or an environment variable.
-func instanceSecrets(p *types.Project, service types.ServiceConfig) ([]client.InstanceSecret, error) {
+func instanceSecrets(p *types.Project, service types.ServiceConfig) ([]client.InstanceFile, error) {
 	var errs error
-	var instanceSecrets []client.InstanceSecret
+	result := []client.InstanceFile{}
 
 	for _, svcSecret := range service.Secrets {
 		secretDef, ok := p.Secrets[svcSecret.Source]
@@ -769,33 +771,41 @@ func instanceSecrets(p *types.Project, service types.ServiceConfig) ([]client.In
 			continue
 		}
 
-		var content []byte
-		var err error
 		switch {
 		case secretDef.File != "":
-			content, err = os.ReadFile(secretDef.File)
+			fp, err := os.Open(secretDef.File)
 			if err != nil {
-				errs = errors.Join(errs, fmt.Errorf("reading secret %q: %w", svcSecret.Source, err))
+				errs = errors.Join(errs, fmt.Errorf("secret '%v' source not found or not readable", secretDef.File))
 				continue
 			}
+			result = append(result, client.InstanceFile{
+				Target:  svcSecret.Target,
+				Content: fp,
+				UID:     parseSecretID(svcSecret.UID),
+				GID:     parseSecretID(svcSecret.GID),
+				Mode:    parseSecretMode(svcSecret.Mode),
+			})
 		case secretDef.Environment != "":
-			content = []byte(os.Getenv(secretDef.Environment))
+			value, ok := p.Environment[secretDef.Environment]
+			if !ok {
+				errs = errors.Join(errs, fmt.Errorf("secret '%v' not found in the environment", secretDef.Environment))
+				continue
+			}
+
+			result = append(result, client.InstanceFile{
+				Target:  svcSecret.Target,
+				Content: client.NewReaderFromBytes([]byte(value)),
+				UID:     parseSecretID(svcSecret.UID),
+				GID:     parseSecretID(svcSecret.GID),
+				Mode:    parseSecretMode(svcSecret.Mode),
+			})
 		default:
-			errs = errors.Join(errs, fmt.Errorf("secret %q has no source (file or environment)", svcSecret.Source))
+			errs = errors.Join(errs, fmt.Errorf("secret '%v' has no source (file or environment)", svcSecret.Source))
 			continue
 		}
-
-		instanceSecrets = append(instanceSecrets, client.InstanceSecret{
-			Source:  svcSecret.Source,
-			Target:  svcSecret.Target,
-			Content: content,
-			UID:     parseSecretUID(svcSecret.UID),
-			GID:     parseSecretGID(svcSecret.GID),
-			Mode:    parseSecretMode(svcSecret.Mode),
-		})
 	}
 
-	return instanceSecrets, errs
+	return result, errs
 }
 
 // instanceDependencyWaits builds the health-wait map for depends_on entries with
@@ -912,28 +922,19 @@ func formatTmpfsSize(opts *types.ServiceVolumeTmpfs) string {
 	return strconv.FormatInt(int64(opts.Size), 10)
 }
 
-// parseSecretUID parses a UID string to int64.
-func parseSecretUID(uid string) int64 {
-	if uid == "" {
-		return 0
+// parseSecretID parses a UID string to int64.
+func parseSecretID(id string) int64 {
+	if id == "" {
+		return -1
 	}
-	v, _ := strconv.ParseInt(uid, 10, 64)
-	return v
-}
-
-// parseSecretGID parses a GID string to int64.
-func parseSecretGID(gid string) int64 {
-	if gid == "" {
-		return 0
-	}
-	v, _ := strconv.ParseInt(gid, 10, 64)
+	v, _ := strconv.ParseInt(id, 10, 64)
 	return v
 }
 
 // parseSecretMode parses a file mode to int.
 func parseSecretMode(mode *types.FileMode) int {
 	if mode == nil {
-		return 0
+		return 0o600
 	}
 	return int(*mode)
 }

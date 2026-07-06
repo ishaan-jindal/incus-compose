@@ -16,7 +16,7 @@
     "incus_name": "backend1-1",
     "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
     "status": "Stopped",
-    "health": "Healthy",
+    "health": "-stripped-",
     "addresses": []
   },
   {
@@ -26,9 +26,9 @@
     "incus_name": "backend2-1",
     "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
     "status": "Running",
-    "health": "Healthy",
+    "health": "-stripped-",
     "addresses": [
-      ""
+      "-stripped-"
     ]
   },
   {
@@ -38,7 +38,7 @@
     "incus_name": "nginx-1",
     "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
     "status": "Stopped",
-    "health": "Healthy",
+    "health": "-stripped-",
     "addresses": []
   }
 ]

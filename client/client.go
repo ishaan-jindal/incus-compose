@@ -194,6 +194,17 @@ func (c *Client) LogError(msg string, args ...any) {
 	c.logger.ErrorContext(c.ctx, msg, args...)
 }
 
+// WarnError logs a warning if the given error is not nil, use in deferred for example.
+func (c *Client) WarnError(f func() error, message string) {
+	err := f()
+	if err != nil {
+		if message == "" {
+			message = "Error happened"
+		}
+		c.LogWarn(message, "error", err)
+	}
+}
+
 // Connection returns a fresh, event-isolated project-scoped client.
 //
 // Each call returns its own *ProtocolIncus (with its own event-listener state)

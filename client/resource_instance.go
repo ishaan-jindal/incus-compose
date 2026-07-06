@@ -5,41 +5,52 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"net"
 	"os"
-	"path"
-	"slices"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/avast/retry-go/v5"
 	"github.com/gorilla/websocket"
+	incus "github.com/lxc/incus/v7/client"
 	incusClient "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
+	"github.com/pkg/sftp"
 )
 
-// InstanceSecret represents a secret to be pushed into the instance.
-type InstanceSecret struct {
-	Source  string // secret name
-	Target  string // path in container (default: /run/secrets/{source})
-	Content []byte // file content
-	UID     int64
-	GID     int64
-	Mode    int // default: 0400
+// Reader wraps bytes.Reader to add a no-op Close.
+type Reader struct {
+	*bytes.Reader
+}
+
+// NewReaderFromBytes returns the given ClosingBufferReader from the given bytes.
+func NewReaderFromBytes(b []byte) *Reader {
+	return &Reader{bytes.NewReader(b)}
+}
+
+// Close is a noop.
+func (cb *Reader) Close() error {
+	return nil
 }
 
 // InstanceFile represents a file to push to an instance after creation.
 type InstanceFile struct {
-	// Give either "File" or "Content"
+	Target string
+
+	// Give either "File", "Content" or "Reader"
 	File    string
 	Content io.ReadSeekCloser
 
-	UID     int64 // Uses oci.uid if -1 has been given.
-	GID     int64 // Uses oci.gid if -1 has been given.
-	Mode    int
-	NoMKDir bool
-	DirMode int
+	UID       int64 // Uses oci.uid if -1 has been given.
+	GID       int64 // Uses oci.gid if -1 has been given.
+	Mode      int
+	NoMKDir   bool
+	DirMode   int
+	Overwrite bool
 }
 
 // InstanceConfig configures instance creation.
@@ -66,12 +77,9 @@ type InstanceConfig struct {
 	// Use for devices that require a running instance, e.g. NAT proxy (needs container IP).
 	PostStartDevices []InstanceDevice
 
-	// Secrets are files pushed into the instance after start.
-	Secrets []InstanceSecret
-
 	// Files are files pushed into the instance after creation.
 	// Map key is the target path in the instance.
-	Files map[string]InstanceFile
+	Files []InstanceFile
 
 	// Extensions contains Incus instance configuration options.
 	Extensions map[string]string
@@ -429,6 +437,7 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 	}
 
 	r.created = true
+
 	return nil
 }
 
@@ -795,6 +804,12 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 		return err
 	}
 
+	// Push files while the instance is stopped: SFTP mounts the stopped rootfs,
+	// most apps need theier secrets before the actual start happened.
+	if err := r.PushFiles(); err != nil {
+		return err
+	}
+
 	if r.Running() {
 		return ErrRunning
 	}
@@ -822,190 +837,279 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 		return ErrNotRunning.WithText("after a start")
 	}
 
-	if r.created {
-		if err := r.PushFiles(ctx); err != nil {
-			return ErrCreate.WithText("push files").Wrap(err)
-		}
-
-		// Push secrets after instance is running
-		if len(r.Config.Secrets) > 0 {
-			err := r.PushSecrets(ctx)
-			if err != nil {
-				return ErrCreate.WithText("push secrets").Wrap(err)
-			}
-		}
-
-		if len(r.Config.PostStartDevices) > 0 {
-			err := r.attachPostStartDevices(ctx)
-			if err != nil {
-				return ErrCreate.WithText("post start").Wrap(err)
-			}
+	if r.created && len(r.Config.PostStartDevices) > 0 {
+		err := r.attachPostStartDevices(ctx)
+		if err != nil {
+			return ErrCreate.WithText("post start").Wrap(err)
 		}
 	}
 
 	return nil
 }
 
-// PushSecrets pushes secrets into the running instance.
-// Secrets are only pushed if they don't already exist with the same content.
-func (r *Instance) PushSecrets(ctx context.Context) error {
+// PushFiles pushes files into the instance over the instance's SFTP endpoint.
+func (r *Instance) PushFiles() error {
 	if !r.IsEnsured() {
 		return ErrNotEnsured
 	}
 
-	for _, secret := range r.Config.Secrets {
-		target := secret.Target
-		if target == "" {
-			target = "/run/secrets/" + secret.Source
-		}
+	if len(r.Config.Files) == 0 {
+		return nil
+	}
 
-		mode := secret.Mode
-		if mode == 0 {
-			mode = 0o400
-		}
+	sftpConn, err := r.conn.GetInstanceFileSFTP(r.incusName)
+	if err != nil {
+		return ErrCreate.WithText("connecting to instance SFTP").Wrap(err)
+	}
 
-		// Check if secret already exists with same content
-		if r.secretExists(target, secret.Content) {
-			continue
-		}
+	defer r.client.WarnError(sftpConn.Close, "Failed to close a sFTP connection")
 
-		// Create parent directories recursively
-		if err := r.mkdirP(ctx, path.Dir(target), 0o700); err != nil {
-			return ErrCreate.WithText("creating secret directory").Wrap(err)
-		}
-
-		err := r.conn.CreateInstanceFile(r.incusName, target, incusClient.InstanceFileArgs{
-			Content: bytes.NewReader(secret.Content),
-			UID:     secret.UID,
-			GID:     secret.GID,
-			Mode:    mode,
-			Type:    "file",
-		})
+	for _, file := range r.Config.Files {
+		err := r.pushFile(sftpConn, file)
 		if err != nil {
-			return ErrCreate.WithText("pushing secret " + secret.Source).Wrap(err)
+			return ErrCreate.WithText("pushing file " + file.Target).Wrap(err)
 		}
 	}
 
 	return nil
 }
 
-// PushFiles pushes files into the instance.
-func (r *Instance) PushFiles(ctx context.Context) error {
-	if !r.IsEnsured() {
-		return ErrNotEnsured
+// pushFile writes a single InstanceFile over an established SFTP connection,
+// creating parent directories and honoring the Overwrite flag.
+func (r *Instance) pushFile(sftpConn *sftp.Client, file InstanceFile) error {
+	if file.File != "" && file.Content != nil {
+		return ErrCreate.WithText(fmt.Sprintf("cannot have both 'File' and 'Content' for instance file %q", file.Target))
 	}
 
-	for target, file := range r.Config.Files {
-		// Create parent directories recursively
-		if !file.NoMKDir {
-			if err := r.mkdirP(ctx, path.Dir(target), file.DirMode); err != nil {
-				return ErrCreate.WithText("creating directory for " + target).Wrap(err)
-			}
-		}
-
-		uid, gid := file.UID, file.GID
-
-		// Use the instances oci.UID/oci.GID (which comes the from image)
-		if uid == -1 {
-			uid = int64(r.UID)
-		}
-		if gid == -1 {
-			gid = int64(r.GID)
-		}
-
-		if file.File != "" && file.Content != nil {
-			return ErrCreate.WithText(fmt.Sprintf("cannot have both 'File' and 'Content' for a instance file %q", target))
-		}
-
-		if file.File != "" {
-			f, err := os.Open(file.File)
-			if err != nil {
-				return ErrCreate.WithText(fmt.Sprintf("opening instance file %q", file.File)).Wrap(err)
-			}
-
-			file.Content = f
-		}
-
-		err := r.conn.CreateInstanceFile(r.incusName, target, incusClient.InstanceFileArgs{
-			Content: file.Content,
-			UID:     uid,
-			GID:     gid,
-			Mode:    file.Mode,
-			Type:    "file",
-		})
+	if file.File != "" && file.Content == nil {
+		fp, err := os.Open(file.File)
 		if err != nil {
-			return ErrCreate.WithText("pushing file " + target).Wrap(err)
+			return ErrCreate.Wrap(err)
+		}
+		file.Content = fp
+	}
+
+	// Resolve ownership: -1 falls back to the instance's oci.uid/oci.gid.
+	uid, gid := file.UID, file.GID
+	if uid == -1 {
+		uid = int64(r.UID)
+	}
+	if gid == -1 {
+		gid = int64(r.GID)
+	}
+
+	// Create parent directories, owned by the instance user.
+	if !file.NoMKDir {
+		dirMode := os.FileMode(file.DirMode)
+		if dirMode == 0 {
+			dirMode = 0o755
+		}
+
+		err := sftpRecursiveMkdir(r.client, sftpConn, filepath.Dir(file.Target), &dirMode, uid, gid)
+		if err != nil {
+			return ErrCreate.Wrap(err)
+		}
+	}
+
+	// Leave an existing file untouched unless the caller opted into overwriting.
+	if !file.Overwrite {
+		_, err := sftpConn.Lstat(file.Target)
+		if err == nil {
+			// PushFiles owns the reader, so close it even when skipping.
+			if file.Content != nil {
+				r.client.WarnError(file.Content.Close, "Closing a push file")
+			}
+
+			r.client.LogDebug("Skipping existing instance file", "resource", r, "target", file.Target)
+			return nil
+		}
+	}
+
+	args := incus.InstanceFileArgs{
+		Content:   file.Content,
+		UID:       uid,
+		GID:       gid,
+		Mode:      file.Mode,
+		Type:      "file",
+		WriteMode: "overwrite",
+	}
+
+	err := sftpCreateFile(r.client, sftpConn, file.Target, args, true)
+	if err != nil {
+		return ErrCreate.Wrap(err)
+	}
+
+	r.client.WarnError(file.Content.Close, "Failed to close a file")
+
+	return nil
+}
+
+// sftpSetOwnerMode
+// From: https://github.com/lxc/incus/blob/975d9869315b6db088c7c40ca5b37ee45e5ff8cf/cmd/incus/utils_sftp.go#L24
+func sftpSetOwnerMode(sftpConn *sftp.Client, targetPath string, args incus.InstanceFileArgs) error {
+	// Skip if not on UNIX.
+	_, err := sftpConn.StatVFS("/")
+	if err != nil {
+		return nil
+	}
+
+	// Get the current stat information.
+	st, err := sftpConn.Stat(targetPath)
+	if err != nil {
+		return err
+	}
+
+	fileStat, ok := st.Sys().(*sftp.FileStat)
+	if !ok {
+		return fmt.Errorf("Invalid filestat data for %q", targetPath)
+	}
+
+	// Set owner.
+	if args.UID >= 0 || args.GID >= 0 {
+		if args.UID == -1 {
+			args.UID = int64(fileStat.UID)
+		}
+
+		if args.GID == -1 {
+			args.GID = int64(fileStat.GID)
+		}
+
+		err = sftpConn.Chown(targetPath, int(args.UID), int(args.GID))
+		if err != nil {
+			return err
+		}
+	}
+
+	// Set mode.
+	if args.Mode >= 0 {
+		err = sftpConn.Chmod(targetPath, fs.FileMode(args.Mode))
+		if err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
-// mkdirP creates a directory and all parent directories inside the container.
-// Directories are owned by oci.UID/oci.GID to match the container user.
-// Uses slash-separated paths so it works regardless of host OS.
-func (r *Instance) mkdirP(ctx context.Context, dirPath string, mode int) error {
-	r.client.LogDebug("Creating directories", "resource", r, "dir", dirPath)
-
-	dirs := []string{}
-	p := path.Clean(dirPath)
-	for {
-		parent := path.Dir(p)
-		if parent == p {
-			break // reached root (e.g., "/" or ".")
+// sftpCreateFile
+// From: https://github.com/lxc/incus/blob/975d9869315b6db088c7c40ca5b37ee45e5ff8cf/cmd/incus/utils_sftp.go#L69
+func sftpCreateFile(c *Client, sftpConn *sftp.Client, targetPath string, args incus.InstanceFileArgs, push bool) error {
+	switch args.Type {
+	case "file":
+		file, err := sftpConn.OpenFile(targetPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+		if err != nil {
+			return fmt.Errorf("failed to open target file %q: %w", targetPath, err)
 		}
 
-		dirs = append(dirs, p)
-		p = parent
-	}
+		defer c.WarnError(file.Close, "")
 
-	slices.Reverse(dirs)
-
-	for _, dir := range dirs {
-		// Retry 3 times.
-		err := retry.New(
-			retry.Context(ctx),
-			retry.Attempts(3),
-			retry.Delay(1*time.Second),
-		).Do(func() error {
-			err := r.conn.CreateInstanceFile(r.incusName, dir, incusClient.InstanceFileArgs{
-				Type: "directory",
-				Mode: mode,
-				UID:  int64(r.UID),
-				GID:  int64(r.GID),
-			})
+		if push {
+			_, err = io.Copy(file, args.Content)
 			if err != nil {
 				return err
 			}
+		}
 
-			return nil
-		})
+		err = sftpSetOwnerMode(sftpConn, targetPath, args)
 		if err != nil {
-			if os.IsExist(err) {
-				continue
-			}
+			return err
+		}
 
-			return fmt.Errorf("mkdirP failed on %q for %q: %w", dir, dirPath, err)
+	case "directory":
+		err := sftpConn.MkdirAll(targetPath)
+		if err != nil {
+			return err
+		}
+
+		err = sftpSetOwnerMode(sftpConn, targetPath, args)
+		if err != nil {
+			return err
+		}
+
+	case "symlink":
+		// If already a symlink, re-create it.
+		fInfo, err := sftpConn.Lstat(targetPath)
+		if err == nil && fInfo.Mode()&os.ModeSymlink == os.ModeSymlink {
+			err = sftpConn.Remove(targetPath)
+			if err != nil {
+				return err
+			}
+		}
+
+		dest, err := io.ReadAll(args.Content)
+		if err != nil {
+			return err
+		}
+
+		err = sftpConn.Symlink(string(dest), targetPath)
+		if err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
-// secretExists checks if a file exists in the instance with the same content.
-func (r *Instance) secretExists(sPath string, content []byte) bool {
-	reader, _, err := r.conn.GetInstanceFile(r.incusName, sPath)
-	if err != nil {
-		return false // doesn't exist
-	}
-	defer reader.Close()
-
-	existing, err := io.ReadAll(reader)
-	if err != nil {
-		return false
+// sftpMkdirAll creates dir and any missing parents over SFTP, applying mode and
+// ownership only to the directories it creates. Existing directories are left
+// untouched, so it never re-owns pre-existing paths like /run.
+// From: https://github.com/lxc/incus/blob/975d9869315b6db088c7c40ca5b37ee45e5ff8cf/cmd/incus/utils_sftp.go#L389
+func sftpRecursiveMkdir(c *Client, sftpConn *sftp.Client, p string, mode *os.FileMode, uid int64, gid int64) error {
+	/* special case, every instance has a /, we don't need to do anything */
+	if p == "/" {
+		return nil
 	}
 
-	return bytes.Equal(existing, content)
+	// Remove trailing "/" e.g. /A/B/C/. Otherwise we will end up with an
+	// empty array entry "" which will confuse the Mkdir() loop below.
+	pclean := filepath.Clean(p)
+	parts := strings.Split(pclean, "/")
+	i := len(parts)
+
+	for ; i >= 1; i-- {
+		cur := filepath.Join(parts[:i]...)
+		fInfo, err := sftpConn.Lstat(cur)
+		if err != nil {
+			continue
+		}
+
+		if !fInfo.IsDir() {
+			return fmt.Errorf("%s is not a directory", cur)
+		}
+
+		i++
+		break
+	}
+
+	for ; i <= len(parts); i++ {
+		cur := filepath.Join(parts[:i]...)
+		if cur == "" {
+			continue
+		}
+
+		cur = "/" + cur
+		cur = strings.TrimLeft(cur, "/")
+
+		modeArg := -1
+		if mode != nil {
+			modeArg = int(mode.Perm())
+		}
+
+		args := incus.InstanceFileArgs{
+			UID:  max(uid, 0),
+			GID:  max(gid, 0),
+			Mode: modeArg,
+			Type: "directory",
+		}
+
+		c.LogDebug("Creating", "directory", cur)
+		err := sftpCreateFile(c, sftpConn, cur, args, false)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Stop stops the instance.

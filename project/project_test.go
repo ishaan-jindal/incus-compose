@@ -492,7 +492,7 @@ func TestLoadWithSecrets(t *testing.T) {
 	assert.Equal(t, "with-secrets", proj.Name)
 
 	// Check secrets are defined.
-	assert.Len(t, proj.Secrets, 2)
+	assert.Len(t, proj.Secrets, 3)
 	assert.Contains(t, proj.Secrets, "db_password")
 	assert.Contains(t, proj.Secrets, "api_key")
 
@@ -507,17 +507,17 @@ func TestLoadWithSecrets(t *testing.T) {
 	// Check service has secrets configured.
 	app, exists := proj.Services["app"]
 	assert.True(t, exists, "app service should exist")
-	assert.Len(t, app.Secrets, 2)
+	assert.Len(t, app.Secrets, 3)
 
 	// Check first secret (simple reference).
-	assert.Equal(t, "db_password", app.Secrets[0].Source)
+	assert.Equal(t, "demo_secret", app.Secrets[0].Source)
 
 	// Check second secret (with custom target).
-	assert.Equal(t, "api_key", app.Secrets[1].Source)
-	assert.Equal(t, "/app/secrets/api.key", app.Secrets[1].Target)
-	assert.Equal(t, "1000", app.Secrets[1].UID)
-	assert.Equal(t, "1000", app.Secrets[1].GID)
-	assert.NotNil(t, app.Secrets[1].Mode)
+	assert.Equal(t, "api_key", app.Secrets[2].Source)
+	assert.Equal(t, "/app/secrets/api.key", app.Secrets[2].Target)
+	assert.Equal(t, "1000", app.Secrets[2].UID)
+	assert.Equal(t, "1000", app.Secrets[2].GID)
+	assert.NotNil(t, app.Secrets[2].Mode)
 }
 
 // TestLoadWithRestartPolicies tests loading a compose file with restart policies.
