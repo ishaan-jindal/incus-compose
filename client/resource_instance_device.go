@@ -93,9 +93,9 @@ type InstanceDeviceConfig struct {
 	// Tmpfs contains tmpfs device configuration.
 	Tmpfs InstanceDeviceTmpfsConfig
 
-	ExtraConfig map[string]string
-
-	// Extensions contains direct device configuration options.
+	// Extensions contains direct device configuration options. For a raw device
+	// (unknown DeviceType) it holds the entire device config; for a typed device
+	// it holds extra keys merged over the generated config.
 	Extensions map[string]string
 }
 
@@ -126,10 +126,10 @@ func (d *InstanceDevice) ToIncusDevice() (string, map[string]string, *Error) {
 	case InstanceDeviceTypeTmpfs:
 		devConfig, err = d.toTmpfsDevice()
 	default:
-		if d.Config.ExtraConfig == nil {
-			err = errors.New("ExtraConfig not given")
+		if d.Config.Extensions == nil {
+			err = errors.New("device config not given")
 		} else {
-			devConfig = maps.Clone(d.Config.ExtraConfig)
+			devConfig = maps.Clone(d.Config.Extensions)
 			devConfig["type"] = d.Config.DeviceType
 		}
 	}

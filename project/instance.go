@@ -69,12 +69,39 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	}
 	devices = append(devices, proxies...)
 
-	volumes, files, volumeResources, err := instanceVolumeDevices(c, p, service, image, options)
+	var (
+		uid uint64
+		gid uint64
+	)
+	// User override - https://github.com/compose-spec/compose-spec/blob/main/05-services.md#user
+	if service.User != "" {
+		split := strings.Split(service.User, ":")
+
+		uid, err = strconv.ParseUint(split[0], 10, 64)
+		if err != nil {
+			return nil, nil, fmt.Errorf("cannot convert service '%v' user '%v' to int: %w", service.Name, split[0], err)
+		}
+		config["oci.uid"] = split[0]
+		if len(split) > 1 {
+			gid, err = strconv.ParseUint(split[1], 10, 64)
+			if err != nil {
+				return nil, nil, fmt.Errorf("cannot convert service '%v' user '%v' to int: %w", service.Name, split[1], err)
+			}
+		}
+	}
+
+	volumes, files, volumeResources, err := instanceVolumeDevices(c, p, service, image, uid, gid, options)
 	if err != nil {
 		errs = errors.Join(errs, err)
 	}
 	devices = append(devices, volumes...)
 	resources = append(resources, volumeResources...)
+
+	extraDevices, err := serviceExtraDevices(service)
+	if err != nil {
+		errs = errors.Join(errs, err)
+	}
+	devices = append(devices, extraDevices...)
 
 	secrets, err := instanceSecrets(p, service)
 	if err != nil {
@@ -96,6 +123,8 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		Secrets:          secrets,
 		Files:            files,
 		Dependencies:     instanceDependencyWaits(p, service, options),
+		UID:              uid,
+		GID:              gid,
 	}
 
 	ir, err := c.Resource(client.KindInstance, instanceName(service, index, scale), instCfg)
@@ -462,7 +491,7 @@ func instanceProxyDevices(c *client.Client, service types.ServiceConfig, nicDevi
 // instanceVolumeDevices builds disk, bind, and tmpfs devices for a service's
 // volumes plus the shm_size tmpfs. It returns any storage volume resources
 // (when options.StorageVolumes is set) and the files map for single-file binds.
-func instanceVolumeDevices(c *client.Client, p *types.Project, service types.ServiceConfig, image client.Resource, options *ResourcesOptions) ([]client.InstanceDevice, map[string]client.InstanceFile, []client.Resource, error) {
+func instanceVolumeDevices(c *client.Client, p *types.Project, service types.ServiceConfig, image client.Resource, uid, gid uint64, options *ResourcesOptions) ([]client.InstanceDevice, map[string]client.InstanceFile, []client.Resource, error) {
 	var errs error
 	devices := []client.InstanceDevice{}
 	resources := []client.Resource{}
@@ -521,6 +550,8 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 			volConfig := &client.StorageVolumeConfig{
 				Shifted:       shifted,
 				ImageResource: image,
+				UID:           uid,
+				GID:           gid,
 				Pool:          pool,
 				Extensions:    extensions,
 			}
@@ -572,6 +603,8 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 					volConfig := &client.StorageVolumeConfig{
 						Shifted:       shifted,
 						ImageResource: image,
+						UID:           uid,
+						GID:           gid,
 						HostPath:      cVol.Source,
 						Pool:          c.Config().DefaultStoragePool,
 					}
@@ -957,6 +990,49 @@ func serviceXIncusComposeExtensions(service types.ServiceConfig) map[string]any 
 	}
 
 	return raw
+}
+
+// serviceExtraDevices extracts raw Incus devices from the x-incus-compose.devices
+// block on a compose service. Each named entry becomes an instance device whose
+// keys are passed verbatim to Incus; the `type` key selects the device type.
+func serviceExtraDevices(service types.ServiceConfig) ([]client.InstanceDevice, error) {
+	var raw map[string]any
+	ok, err := service.Extensions.Get("x-incus-compose", &raw)
+	if !ok || err != nil {
+		return nil, nil
+	}
+
+	devicesRaw, ok := raw["devices"].(map[string]any)
+	if !ok || len(devicesRaw) == 0 {
+		return nil, nil
+	}
+
+	devices := make([]client.InstanceDevice, 0, len(devicesRaw))
+	for name, cfg := range devicesRaw {
+		cfgMap, ok := cfg.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("x-incus-compose.devices: device %q must be a map", name)
+		}
+
+		ext := make(map[string]string, len(cfgMap))
+		for k, v := range cfgMap {
+			ext[k] = fmt.Sprint(v)
+		}
+
+		if ext["type"] == "" {
+			return nil, fmt.Errorf("x-incus-compose.devices: device %q is missing 'type'", name)
+		}
+
+		devices = append(devices, client.InstanceDevice{
+			Name: name,
+			Config: client.InstanceDeviceConfig{
+				DeviceType: ext["type"],
+				Extensions: ext,
+			},
+		})
+	}
+
+	return devices, nil
 }
 
 // formatCommand formats a command slice for oci.entrypoint.

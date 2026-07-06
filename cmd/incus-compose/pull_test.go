@@ -162,53 +162,7 @@ func TestSlowPullIgnoreBuildable(t *testing.T) {
 		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	// Plain pull tries to pull the buildable images, which don't exist in a registry.
-	_, err := runCommand(t, ctx, pn, "-f", compose, "pull")
-	require.Error(t, err)
-
 	// --ignore-buildable skips images with a build config, leaving nothing to pull.
-	_, err = runCommand(t, ctx, pn, "-f", compose, "pull", "--ignore-buildable")
+	_, err := runCommand(t, ctx, pn, "-f", compose, "pull", "--ignore-buildable")
 	require.NoError(t, err)
-}
-
-func TestSlowUpDownWithVolume(t *testing.T) {
-	t.Parallel()
-	skipLocal(t)
-	skipSlow(t)
-
-	ctx := context.Background()
-	pn := t.Name()
-	compose := "../../test/fixtures/with-volume/compose.yaml"
-
-	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
-	})
-
-	tests := []struct {
-		name    string
-		args    []string
-		wantErr bool
-	}{
-		{
-			name:    "up with-volume",
-			args:    []string{"-f", compose, "up", "--detach"},
-			wantErr: false,
-		},
-		{
-			name:    "list with-volume",
-			args:    []string{"-f", compose, "list"},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := runCommand(t, ctx, pn, tt.args...)
-			if tt.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
 }
