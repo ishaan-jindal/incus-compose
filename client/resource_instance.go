@@ -16,7 +16,6 @@ import (
 
 	"github.com/avast/retry-go/v5"
 	"github.com/gorilla/websocket"
-	incus "github.com/lxc/incus/v7/client"
 	incusClient "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/pkg/sftp"
@@ -925,7 +924,7 @@ func (r *Instance) pushFile(sftpConn *sftp.Client, file InstanceFile) error {
 		}
 	}
 
-	args := incus.InstanceFileArgs{
+	args := incusClient.InstanceFileArgs{
 		Content:   file.Content,
 		UID:       uid,
 		GID:       gid,
@@ -946,7 +945,7 @@ func (r *Instance) pushFile(sftpConn *sftp.Client, file InstanceFile) error {
 
 // sftpSetOwnerMode
 // From: https://github.com/lxc/incus/blob/975d9869315b6db088c7c40ca5b37ee45e5ff8cf/cmd/incus/utils_sftp.go#L24
-func sftpSetOwnerMode(sftpConn *sftp.Client, targetPath string, args incus.InstanceFileArgs) error {
+func sftpSetOwnerMode(sftpConn *sftp.Client, targetPath string, args incusClient.InstanceFileArgs) error {
 	// Skip if not on UNIX.
 	_, err := sftpConn.StatVFS("/")
 	if err != nil {
@@ -993,7 +992,7 @@ func sftpSetOwnerMode(sftpConn *sftp.Client, targetPath string, args incus.Insta
 
 // sftpCreateFile
 // From: https://github.com/lxc/incus/blob/975d9869315b6db088c7c40ca5b37ee45e5ff8cf/cmd/incus/utils_sftp.go#L69
-func sftpCreateFile(c *Client, sftpConn *sftp.Client, targetPath string, args incus.InstanceFileArgs, push bool) error {
+func sftpCreateFile(c *Client, sftpConn *sftp.Client, targetPath string, args incusClient.InstanceFileArgs, push bool) error {
 	switch args.Type {
 	case "file":
 		file, err := sftpConn.OpenFile(targetPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
@@ -1095,7 +1094,7 @@ func sftpRecursiveMkdir(c *Client, sftpConn *sftp.Client, p string, mode *os.Fil
 			modeArg = int(mode.Perm())
 		}
 
-		args := incus.InstanceFileArgs{
+		args := incusClient.InstanceFileArgs{
 			UID:  max(uid, 0),
 			GID:  max(gid, 0),
 			Mode: modeArg,
