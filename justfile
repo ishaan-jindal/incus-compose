@@ -11,6 +11,9 @@
 
 set dotenv-load
 set shell := ["bash", "-euo", "pipefail", "-c"]
+# Pass args as real positional parameters so "$@" preserves shell metacharacters
+# (e.g. a -run 'TestA|TestB' pattern is not split on the pipe).
+set positional-arguments
 
 v_test_procs := env("TEST_PROCS", "2")
 
@@ -22,49 +25,49 @@ default:
 [env("INCUS_COMPOSE_IMAGE_CACHE", "incus-compose-tests-cache")]
 test folder="./..." *args:
     export DATE=`date +%Y%m%d-%H%M%S`; \
-      gotestsum --hide-summary=skipped --format dots-v2 --jsonfile=test/logs/${DATE}.json --packages={{ folder }} -- -parallel {{ v_test_procs }} -timeout 20m -covermode atomic -coverprofile test/logs/${DATE}-cover.out -v {{ args }}; \
+      gotestsum --hide-summary=skipped --format dots-v2 --jsonfile=test/logs/${DATE}.json --packages={{ folder }} -- -parallel {{ v_test_procs }} -timeout 20m -covermode atomic -coverprofile test/logs/${DATE}-cover.out -v "${@:2}"; \
 
 # Run local unit-tests, incus-facing tests are skipped.
 [env("INCUS_COMPOSE_TEST_LOCAL", "1")]
 test-local folder="./..." *args:
-    @just test {{ folder }} {{ args }}
+    @just test "$@"
 
 # Run slow tests.
 [env("INCUS_COMPOSE_TEST_SLOW", "1")]
 test-slow folder="./..." *args:
-    @just test {{ folder }} {{ args }}
+    @just test "$@"
 
 # Run example tests.
 [env("INCUS_COMPOSE_TEST_EXAMPLES", "1")]
 test-examples *args:
-    @just test ./examples/... {{ args }}
+    @just test ./examples/... "$@"
 
 # Run all tests, includes direct incus, slow and examples tests.
 [env("INCUS_COMPOSE_TEST_EXAMPLES", "1")]
 [env("INCUS_COMPOSE_TEST_SLOW", "1")]
 test-all folder="./..." *args:
-    @just test {{ folder }} {{ args }}
+    @just test "$@"
 
 # Run the tests with a race detector.
 test-race folder="./..." *args:
-    gotestsum --hide-summary=skipped --jsonfile=test/logs/`date +%Y%m%d-%H%M%S`.json --packages={{ folder }} -- -parallel {{ v_test_procs }} -timeout 20m -race -v {{ args }}
+    gotestsum --hide-summary=skipped --jsonfile=test/logs/`date +%Y%m%d-%H%M%S`.json --packages={{ folder }} -- -parallel {{ v_test_procs }} -timeout 20m -race -v "${@:2}"
 
 # Update snapshots for long running tests.
 [env("INCUS_COMPOSE_TEST_SLOW", "1")]
 [env("UPDATE_SNAPSHOTS", "1")]
 update-slow-snapshots folder="./..." *args:
-    @just test {{ folder }} {{ args }}
+    @just test "$@"
 
 # Update snapshots for examples.
 [env("INCUS_COMPOSE_TEST_EXAMPLES", "1")]
 [env("UPDATE_SNAPSHOTS", "1")]
 update-examples-snapshots folder="./..." *args:
-    @just test {{ folder }} {{ args }}
+    @just test "$@"
 
 # Update snapshot test files that require a remote
 [env("UPDATE_SNAPSHOTS", "1")]
 update-snapshots folder="./..." *args:
-    @just test {{ folder }} {{ args }}
+    @just test "$@"
 
 [private]
 log-run logfile="" cmd="":
