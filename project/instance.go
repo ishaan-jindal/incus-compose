@@ -163,6 +163,11 @@ func instanceConfig(service types.ServiceConfig) (map[string]string, error) {
 		config["oci.entrypoint"] = formatCommand(service.Command)
 	}
 
+	// Privileged.
+	if service.Privileged {
+		config["security.privileged"] = "true"
+	}
+
 	// Restart policy
 	applyRestartPolicy(config, service.Restart)
 	if service.Restart != "" {
