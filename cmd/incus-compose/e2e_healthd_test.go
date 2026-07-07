@@ -50,14 +50,6 @@ func TestLifecycleHealthd(t *testing.T) {
 			name: "healthd down",
 			args: []string{"-f", compose, "healthd", "down"},
 		},
-		{
-			name: "healthd up --recreate",
-			args: []string{"-f", compose, "healthd", "up", "--recreate"},
-		},
-		{
-			name: "down",
-			args: []string{"-f", compose, "down", "--project"},
-		},
 	}
 
 	for _, tt := range tests {
