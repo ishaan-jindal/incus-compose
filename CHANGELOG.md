@@ -9,6 +9,44 @@ Version numbering moved from `0.0.1` to `1.0.0` at beta11 (1.0.0 is the intended
 final version), and the beta suffix gained a dot (`beta.16`) from beta.16 onward
 for correct semver ordering. Headings below preserve each release's announced form.
 
+## [1.0.0-rc.1] - 2026-07-07
+
+First release candidate. File pushes move to the Incus SFTP API, `command` now
+layers on top of the image entrypoint instead of replacing it, and `privileged`
+services are supported.
+
+This is the first release that should actually work on Windows and MacOS.
+
+E2E suite green.
+
+### Added
+
+- `services.{name}.privileged: true`: run the container privileged
+  (`security.privileged`).
+
+### Changed
+
+- File pushes (secrets and single-file bind seeds) use the Incus SFTP API instead
+  of the old REST file endpoint.
+- `command:` is appended to the image's `oci.entrypoint` as arguments instead of
+  overwriting it, matching Docker's ENTRYPOINT/CMD semantics.
+- `ic-healthd` logs more detail during operations.
+
+### Fixed
+
+- `healthd up` / `healthd down` work with custom networks.
+- Windows and macOS builds error cleanly instead of crashing on the umoci import.
+
+### Removed
+
+- `healthd up --recreate`; recreate the sidecar with `healthd down` followed by
+  `healthd up`.
+
+### Internal
+
+- CI runs slow tests with a 20m timeout and without parallelism to avoid overload;
+  tooling paths and changelog links updated; lint fixes.
+
 ## [1.0.0-beta.22] - 2026-07-06
 
 A real `pull` command, Docker-parity `user` handling and `exec`, plus per-service
