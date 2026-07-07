@@ -51,7 +51,6 @@ func newHealthdDownCommand() *cli.Command {
 				projectName: p.Name,
 				binary:      "",
 				image:       resolveHealthdImage(cmd.String("image")),
-				reCreate:    false,
 				timeout:     cmd.Duration("timeout"),
 			}
 

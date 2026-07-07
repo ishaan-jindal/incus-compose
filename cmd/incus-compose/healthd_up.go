@@ -40,10 +40,6 @@ func newHealthdUpCommand() *cli.Command {
 				Usage:   "Incus bridge for healthd to use (default: auto-detect)",
 				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_NETWORK"),
 			},
-			&cli.BoolFlag{
-				Name:  "recreate",
-				Usage: "Recreate the sidecar even if it already exists",
-			},
 			&cli.StringFlag{
 				Name:  "pull",
 				Usage: `Pull image before running ("always"|"missing"|"never"|"policy")`,
@@ -99,7 +95,6 @@ func newHealthdUpCommand() *cli.Command {
 				binary:      cmd.String("binary"),
 				image:       resolveHealthdImage(cmd.String("image")),
 				pull:        cmd.String("pull"),
-				reCreate:    cmd.Bool("recreate"),
 				incus:       incus,
 				network:     healthdNetwork,
 				timeout:     cmd.Duration("timeout"),
@@ -130,59 +125,27 @@ func newHealthdUpCommand() *cli.Command {
 				stdout = progress.bypass()
 			}
 
-			if params.reCreate {
-				existing, resources, err := healthdGetResources(c, params)
-				if err == nil {
-					rc := c.Clone()
-
-					stack := client.NewStack(rc, client.StackSortDescending())
-
-					for _, r := range resources {
-						if r.Kind() != client.KindImage {
-							stack.Add(r)
-						}
-					}
-					stack.Add(existing)
-
-					rc.LogDebug("Ensure", "resources", stack.All())
-
-					// Do not recreate networks.
-					recreateFilter := func(r client.Resource) bool {
-						return r.Kind() != client.KindNetwork
-					}
-
-					if err := stack.ForActionF(client.ActionEnsure, recreateFilter).Run(ctx, client.ActionEnsure, stdout, cmd.Root().ErrWriter); err != nil {
-						rc.LogWarn("Ensuring healthd", "error", err)
-					}
-
-					if err := stack.ForActionF(client.ActionStop, recreateFilter).Run(ctx, client.ActionStop, stdout, cmd.Root().ErrWriter, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout"))); err != nil {
-						rc.LogWarn("Stopping healthd resources", "error", err)
-					}
-
-					if err := stack.ForActionF(client.ActionDelete, recreateFilter).Run(ctx, client.ActionDelete, stdout, cmd.Root().ErrWriter, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout"))); err != nil {
-						rc.LogWarn("Deleting healthd resources", "error", err)
-					}
-
-					if err := healthdRevokeCert(c); err != nil {
-						rc.LogWarn("Cannot revoke the healthd cert", "error", err)
-					}
-				}
-			}
-
 			stack := client.NewStack(c, client.StackWorkers(params.workers))
 
-			resources, err := p.Resources(c)
-			if err != nil {
-				c.LogError("Getting project resources in reCreate", "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			for _, res := range resources {
-				for _, r := range res {
-					if r.Kind() == client.KindNetwork {
-						stack.Add(r)
-					}
+			// healthdGetResources needs it network configured.
+			{
+				pResources, err := p.Resources(c)
+				if err != nil {
+					c.LogError("Getting the service resources", "error", err)
+					return errLogged.Wrap(err)
 				}
+
+				args := filterResourcesArgs{
+					IncludeKinds: []client.Kind{client.KindNetwork},
+				}
+				myPResources := filterResources(p, pResources, args)
+
+				order, err := p.ServiceOrder(true)
+				if err != nil {
+					c.LogError("Getting the service dependency order", "error", err)
+					return errLogged.Wrap(err)
+				}
+				stack.AddOrdered(order, myPResources)
 			}
 
 			hInst, hResources, err := healthdGetResources(c, params)

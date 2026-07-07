@@ -327,7 +327,6 @@ func newUpCommand() *cli.Command {
 					binary:      cmd.String("healthd-binary"),
 					image:       resolveHealthdImage(cmd.String("healthd-image")),
 					pull:        cmd.String("pull"),
-					reCreate:    cmd.Bool("recreate"),
 					incus:       incus,
 					network:     healthdNetwork,
 					timeout:     cmd.Duration("timeout"),

@@ -12,12 +12,19 @@ type filterResourcesArgs struct {
 	WithDependencies bool
 	// Reverse includes services that depend on OnlyServices (reverse deps).
 	// Use for stop/down; leave false for start/up which only need forward deps.
-	Reverse      bool
+	Reverse bool
+
+	// IncludeKinds and ExcludeKinds are mutualy exclusive, use one of both.
+	IncludeKinds []client.Kind
 	ExcludeKinds []client.Kind
 }
 
 func filterResources(p *project.Project, in map[string][]client.Resource, args filterResourcesArgs) map[string][]client.Resource {
 	result := map[string][]client.Resource{}
+
+	if len(args.IncludeKinds) > 0 && len(args.ExcludeKinds) > 0 {
+		return nil
+	}
 
 	if len(args.OnlyServices) > 0 {
 		for _, s := range args.OnlyServices {
@@ -79,6 +86,17 @@ func filterResources(p *project.Project, in map[string][]client.Resource, args f
 				}
 			}
 
+			result[n] = newRes
+		}
+	} else if args.IncludeKinds != nil {
+		for n, res := range result {
+			newRes := []client.Resource{}
+
+			for _, r := range res {
+				if slices.Contains(args.IncludeKinds, r.Kind()) {
+					newRes = append(newRes, r)
+				}
+			}
 			result[n] = newRes
 		}
 	}

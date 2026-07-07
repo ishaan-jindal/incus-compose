@@ -151,7 +151,6 @@ func newPullCommand() *cli.Command {
 					binary:      "",
 					image:       resolveHealthdImage(cmd.String("healthd-image")),
 					pull:        cmd.String("policy"),
-					reCreate:    false,
 					incus:       nil,
 					network:     "",
 					timeout:     time.Second,
