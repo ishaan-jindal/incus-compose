@@ -110,7 +110,7 @@ type InstanceDevice struct {
 
 // ToIncusDevice converts the device to Incus API format.
 // Returns the device name and configuration map.
-func (d *InstanceDevice) ToIncusDevice() (string, map[string]string, *Error) {
+func (d *InstanceDevice) ToIncusDevice() (string, map[string]string, error) {
 	var (
 		devConfig map[string]string
 		err       error

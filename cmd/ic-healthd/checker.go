@@ -52,7 +52,7 @@ func (c *Checker) Run(ctx context.Context, inStart bool, startInstance bool) {
 	ticker := time.NewTicker(checkInstanceRunningDelay)
 
 	for {
-		slog.Debug("Loop starting checker",
+		slog.Info("Loop starting checker",
 			"instance", c.name,
 			"status", c.status,
 			"inStart", inStart,

@@ -182,9 +182,13 @@ func (p *progressRenderer) line(action client.Action, r client.Resource) *progre
 	key := string(action) + "/" + r.IncusName()
 	line, ok := p.lines[key]
 	if !ok {
-		kind, name := string(r.Kind()), r.Name()
-		if sz, ok := r.(interface{ Size() int64 }); ok && sz.Size() > 0 {
-			kind, name = string(r.Kind()), fmt.Sprintf("%s (%s)", r.Name(), units.GetByteSizeString(sz.Size(), 1))
+		kind := string(r.Kind())
+		name := r.Name()
+
+		sz, ok := r.(interface{ Size() int64 })
+		if ok && sz.Size() > 0 {
+			kind = string(r.Kind())
+			name = fmt.Sprintf("%s (%s)", r.Name(), units.GetByteSizeString(sz.Size(), 1))
 		}
 
 		line = &progressLine{action: string(action), kind: kind, name: name, percent: -1}

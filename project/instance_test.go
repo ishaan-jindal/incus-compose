@@ -91,7 +91,7 @@ func TestFormatCommand(t *testing.T) {
 
 	assert.Equal(t, "", formatCommand(nil))
 	assert.Equal(t, "/bin/sh", formatCommand([]string{"/bin/sh"}))
-	assert.Equal(t, "/bin/sh \"-c\" \"echo hello\"", formatCommand([]string{"/bin/sh", "-c", "echo hello"}))
+	assert.Equal(t, `"/bin/sh" "-c" "echo hello"`, formatCommand([]string{"/bin/sh", "-c", "echo hello"}))
 }
 
 func TestNetworkExtensionsExtractsXIncus(t *testing.T) {
@@ -185,7 +185,9 @@ func TestInstanceConfig(t *testing.T) {
 	assert.Equal(t, "bar", config["environment.FOO"])
 	assert.NotContains(t, config, "environment.SKIP")
 	assert.Equal(t, "x", config["user.com.example"])
-	assert.Equal(t, `/bin/sh "-c" "echo hi"`, config["oci.entrypoint"])
+	// The entrypoint is assembled in the client layer (image entrypoint +
+	// AppendEntrypoint), so instanceConfig no longer emits oci.entrypoint.
+	assert.NotContains(t, config, "oci.entrypoint")
 	assert.Equal(t, "true", config["boot.autostart"])
 	assert.Equal(t, "always", config["user.restart"])
 	assert.Equal(t, "2", config["limits.cpu"])

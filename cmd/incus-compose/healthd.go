@@ -31,7 +31,6 @@ type healthdParams struct {
 	binary      string
 	image       string // already resolved via resolveHealthdImage
 	pull        string
-	reCreate    bool
 	incus       *url.URL
 	network     string // Incus bridge name; empty = auto-detect
 	timeout     time.Duration
