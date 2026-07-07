@@ -1,6 +1,6 @@
 module github.com/lxc/incus-compose
 
-go 1.26.4
+go 1.26.5
 
 require (
 	github.com/avast/retry-go/v5 v5.0.0
