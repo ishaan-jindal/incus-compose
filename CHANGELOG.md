@@ -31,6 +31,11 @@ E2E suite green.
 - `command:` is appended to the image's `oci.entrypoint` as arguments instead of
   overwriting it, matching Docker's ENTRYPOINT/CMD semantics.
 - `ic-healthd` logs more detail during operations.
+- `down --volumes` now deletes volumes while keeping the project; it is no longer
+  an alias for `--project`. Use `--project` to remove the whole project (and its
+  volumes).
+- `list` includes the ic-healthd sidecar by default; the `--healthd` flag is
+  replaced by `--no-healthd` to omit it.
 
 ### Fixed
 
