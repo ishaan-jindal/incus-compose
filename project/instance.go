@@ -123,6 +123,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		PostStartDevices: postStartDevices,
 		Files:            files,
 		Dependencies:     instanceDependencyWaits(p, service, options),
+		AppendEntrypoint: formatCommand(service.Command),
 		UID:              uid,
 		GID:              gid,
 	}
@@ -156,11 +157,6 @@ func instanceConfig(service types.ServiceConfig) (map[string]string, error) {
 	// Labels as user config
 	for key, val := range service.Labels {
 		config["user."+key] = val
-	}
-
-	// Command override
-	if len(service.Command) > 0 {
-		config["oci.entrypoint"] = formatCommand(service.Command)
 	}
 
 	// Privileged.
@@ -1080,7 +1076,9 @@ func serviceExtraDevices(service types.ServiceConfig) ([]client.InstanceDevice, 
 	return devices, nil
 }
 
-// formatCommand formats a command slice for oci.entrypoint.
+// formatCommand shell-quotes a command slice for appending to oci.entrypoint.
+// Every element is an argument (the binary comes from the image entrypoint), so
+// all are quoted; Incus splits the result back with shellquote.Split.
 func formatCommand(cmd []string) string {
 	if len(cmd) == 0 {
 		return ""
@@ -1088,10 +1086,9 @@ func formatCommand(cmd []string) string {
 	if len(cmd) == 1 {
 		return cmd[0]
 	}
-	// Quote arguments after the first
+
 	quoted := make([]string, len(cmd))
-	quoted[0] = cmd[0]
-	for i := 1; i < len(cmd); i++ {
+	for i := range cmd {
 		quoted[i] = `"` + cmd[i] + `"`
 	}
 	return strings.Join(quoted, " ")

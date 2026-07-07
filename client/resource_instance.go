@@ -94,6 +94,10 @@ type InstanceConfig struct {
 	// Priority if set sets the instance priority to this instead PriorityInstance.
 	Priority int
 
+	// AppendEntrypoint will be with a space appended to "oci.entrypoint".
+	// This is here cause at configuration time we don't know what `oci.entrypoint` is.
+	AppendEntrypoint string
+
 	// UID if not 0 use that value else use the user id from the image.
 	UID uint64
 	// GID if not 0 use that value else use the user id from the image.
@@ -377,6 +381,10 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 		}
 	}
 
+	if r.Config.AppendEntrypoint != "" {
+		config["oci.entrypoint"] = r.image.Entrypoint + " " + r.Config.AppendEntrypoint
+	}
+
 	// Store UID/GID.
 	config["oci.uid"] = strconv.FormatUint(r.UID, 10)
 	config["oci.gid"] = strconv.FormatUint(r.GID, 10)
@@ -461,17 +469,19 @@ func (r *Instance) buildDevices() (map[string]map[string]string, error) {
 			return nil, err
 		}
 
-		foundInProfile := false
-		for _, profile := range profiles {
-			foundInProfile = profile.HasDevice(name)
-			if foundInProfile {
-				break
-			}
-		}
+		// The code below would have allowed us to overwrite `eth0`,
+		// but it breaks normal incus behaviour (instances overwrite profile).
+		// foundInProfile := false
+		// for _, profile := range profiles {
+		// 	foundInProfile = profile.HasDevice(name)
+		// 	if foundInProfile {
+		// 		break
+		// 	}
+		// }
 
-		if foundInProfile {
-			return nil, ErrDeviceConflict.WithText("device exists in profile " + name)
-		}
+		// if foundInProfile {
+		// 	return nil, ErrDeviceConflict.WithText("device exists in profile " + name)
+		// }
 
 		devices[name] = config
 	}
@@ -803,11 +813,19 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 		return err
 	}
 
+	sftpConn, err := r.conn.GetInstanceFileSFTP(r.incusName)
+	if err != nil {
+		return ErrCreate.WithText("connecting to instance SFTP").Wrap(err)
+	}
+
 	// Push files while the instance is stopped: SFTP mounts the stopped rootfs,
 	// most apps need theier secrets before the actual start happened.
-	if err := r.PushFiles(); err != nil {
+	if err := r.PushFiles(sftpConn); err != nil {
+		r.client.WarnError(sftpConn.Close, "Failed to close a sFTP connection")
 		return err
 	}
+
+	r.client.WarnError(sftpConn.Close, "Failed to close a sFTP connection")
 
 	if r.Running() {
 		return ErrRunning
@@ -847,7 +865,7 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 }
 
 // PushFiles pushes files into the instance over the instance's SFTP endpoint.
-func (r *Instance) PushFiles() error {
+func (r *Instance) PushFiles(sftpConn *sftp.Client) error {
 	if !r.IsEnsured() {
 		return ErrNotEnsured
 	}
@@ -856,12 +874,15 @@ func (r *Instance) PushFiles() error {
 		return nil
 	}
 
-	sftpConn, err := r.conn.GetInstanceFileSFTP(r.incusName)
-	if err != nil {
-		return ErrCreate.WithText("connecting to instance SFTP").Wrap(err)
-	}
+	if sftpConn == nil {
+		var err error
+		sftpConn, err = r.conn.GetInstanceFileSFTP(r.incusName)
+		if err != nil {
+			return ErrCreate.WithText("connecting to instance SFTP").Wrap(err)
+		}
 
-	defer r.client.WarnError(sftpConn.Close, "Failed to close a sFTP connection")
+		defer r.client.WarnError(sftpConn.Close, "Failed to close a sFTP connection")
+	}
 
 	for _, file := range r.Config.Files {
 		err := r.pushFile(sftpConn, file)
