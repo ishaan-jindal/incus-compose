@@ -41,7 +41,7 @@ func writeTempFiles(t *testing.T, files map[string]string) string {
 }
 
 func TestBuildCommandWithBuildFixture(t *testing.T) {
-	skipSlow(t)
+	skipE2E(t)
 	skipLocal(t)
 	skipIfNoBuilder(t)
 	t.Parallel()
@@ -69,7 +69,7 @@ func TestBuildCommandWithBuildFixture(t *testing.T) {
 }
 
 func TestBuildCommandWithServiceFilter(t *testing.T) {
-	skipSlow(t)
+	skipE2E(t)
 	skipLocal(t)
 	skipIfNoBuilder(t)
 	t.Parallel()

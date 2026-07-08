@@ -42,11 +42,11 @@ func TestNoDanglingNetworksAfterDown(t *testing.T) {
 	require.NotContains(t, networkNames, networkName, "network %q was not removed by down --project", networkName)
 }
 
-// TestSlowStartStopIdempotent checks that running start/stop twice (idempotent) works without errors.
-func TestSlowStartStopIdempotent(t *testing.T) {
+// TestE2EStartStopIdempotent checks that running start/stop twice (idempotent) works without errors.
+func TestE2EStartStopIdempotent(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	skipSlow(t)
+	skipE2E(t)
 
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
@@ -57,10 +57,7 @@ func TestSlowStartStopIdempotent(t *testing.T) {
 		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	tests := []struct {
-		name string
-		args []string
-	}{
+	tests := []e2eTest{
 		{
 			name: "up",
 			args: []string{"-f", compose, "up", "--detach"},
@@ -84,9 +81,7 @@ func TestSlowStartStopIdempotent(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := runCommand(t, ctx, pn, tt.args...)
-			require.NoError(t, err)
-		})
+		_, err := runCommand(t, ctx, pn, tt.args...)
+		require.NoError(t, err)
 	}
 }

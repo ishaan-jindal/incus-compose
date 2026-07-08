@@ -46,9 +46,9 @@
     "incus_name": "machine-learning",
     "image": "ghcr.io/immich-app/immich-machine-learning:v3.0.1",
     "status": "Running",
-    "health": "Healthy",
+    "health": "Unhealthy",
     "addresses": [
-      ""
+      "-stripped-"
     ]
   },
   {
@@ -60,7 +60,7 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      ""
+      "-stripped-"
     ]
   },
   {
@@ -72,7 +72,7 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      ""
+      "-stripped-"
     ]
   },
   {
@@ -84,7 +84,7 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      ""
+      "-stripped-"
     ]
   },
   {
@@ -96,8 +96,19 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      ""
+      "-stripped-"
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "",
+    "description": "incus-compose: testexample-immich:testexample-immich-ic-healthd",
+    "incus_name": "testexample-immich-ic-healthd",
+    "image": "ghcr.io/lxc/incus-compose/ic-healthd:latest",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      "-stripped-"
     ]
   }
 ]
-

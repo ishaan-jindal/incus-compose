@@ -30,10 +30,10 @@ func skipLocal(t *testing.T) {
 	}
 }
 
-func skipSlow(t *testing.T) {
-	_, ok := os.LookupEnv("INCUS_COMPOSE_TEST_SLOW")
+func skipE2E(t *testing.T) {
+	_, ok := os.LookupEnv("INCUS_COMPOSE_TEST_E2E")
 	if !ok {
-		t.Skip("Skipping: env INCUS_COMPOSE_TEST_SLOW is not set, run `just test-slow` for this test")
+		t.Skip("Skipping: env INCUS_COMPOSE_TEST_E2E is not set, run `just test-e2e` for this test")
 	}
 }
 
@@ -65,12 +65,13 @@ func stripListOutput(t *testing.T, output *bytes.Buffer) string {
 	require.NoError(t, err)
 	outStr := ipRegex.ReplaceAllString(output.String(), "-stripped-")
 
-	// Strip health status for now, its flaky.
-	healthRegex, err := regexp.Compile(`"health": "[a-zA-Z]+",`)
-	require.NoError(t, err)
-	outStr = healthRegex.ReplaceAllString(outStr, `"health": "-stripped-",`)
+	// // Strip health status for now, its flaky.
+	// healthRegex, err := regexp.Compile(`"health": "[a-zA-Z]+",`)
+	// require.NoError(t, err)
+	// outStr = healthRegex.ReplaceAllString(outStr, `"health": "-stripped-",`)
 
-	return outStr
+	// Cupaloy adds a newline, 2 lines are bad for my editors format on save.
+	return strings.Trim(outStr, "\n")
 }
 
 func projectClient(t *testing.T, ctx context.Context, projectName string, opts ...client.EnsureProjectOption) *client.Client {
@@ -237,10 +238,10 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func TestSlowHDNginx(t *testing.T) {
+func TestE2EHDNginx(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	skipSlow(t)
+	skipE2E(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	projectName := strings.ToLower(t.Name())

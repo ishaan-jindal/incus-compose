@@ -16,7 +16,7 @@ import (
 func TestExecSelectsCorrectInstance(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	skipSlow(t)
+	skipE2E(t)
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -52,10 +52,10 @@ func TestExecSelectsCorrectInstance(t *testing.T) {
 // TestExecRunsAsInstanceUser verifies exec defaults --user/--group to the
 // instance's UID/GID (1000:1000 from the service `user:` override), so writing
 // to the id-shifted named volume succeeds and the file lands owned by 1000:1000.
-func TestSlowExecRunsAsInstanceUser(t *testing.T) {
+func TestE2EExecRunsAsInstanceUser(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	skipSlow(t)
+	skipE2E(t)
 
 	ctx := context.Background()
 	pn := t.Name()

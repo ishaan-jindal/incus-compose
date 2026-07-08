@@ -13,7 +13,7 @@ env:
   REPORTS_DIR: reports
 
 jobs:
-  test-slow:
+  test-e2e:
     strategy:
       fail-fast: false
       matrix:
@@ -33,7 +33,7 @@ jobs:
       INCUS_REMOTE: local-https
       INCUS_COMPOSE_IMAGE_CACHE: incus-compose-tests-cache
       NO_COLOR: 1
-      INCUS_COMPOSE_TEST_SLOW: 1
+      INCUS_COMPOSE_TEST_E2E: 1
       TEST_PROCS: 1
     steps:
       - uses: actions/checkout@v6
@@ -71,7 +71,7 @@ jobs:
           go tool cover -func="$REPORTS_DIR/cover.out" >> $GITHUB_STEP_SUMMARY
 
   test-example:
-    needs: test-slow
+    needs: test-e2e
     strategy:
       fail-fast: false
       matrix:
@@ -93,7 +93,6 @@ jobs:
       INCUS_REMOTE: local-https
       INCUS_COMPOSE_IMAGE_CACHE: incus-compose-tests-cache
       NO_COLOR: 1
-      INCUS_COMPOSE_TEST_SLOW: 1
       INCUS_COMPOSE_TEST_EXAMPLES: 1
       TEST_PROCS: 2
       EXAMPLE: TestExampleHugo

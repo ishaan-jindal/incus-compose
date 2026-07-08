@@ -42,13 +42,13 @@ func hasImage(aliases []string, sub string) bool {
 	})
 }
 
-// TestSlowPull verifies `pull` copies the service image into the project and that
+// TestE2EPull verifies `pull` copies the service image into the project and that
 // the compatibility flags (--policy, --no-healthd) are accepted. The image is
 // verified through the wrapped `incus image list --format=json`.
-func TestSlowPull(t *testing.T) {
+func TestE2EPull(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	skipSlow(t)
+	skipE2E(t)
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -88,12 +88,12 @@ func TestSlowPull(t *testing.T) {
 	}
 }
 
-// TestSlowPullWithDeps verifies that `pull <service>` copies only the named
+// TestE2EPullWithDeps verifies that `pull <service>` copies only the named
 // service's image while `pull --with-deps <service>` also follows depends_on.
-func TestSlowPullWithDeps(t *testing.T) {
+func TestE2EPullWithDeps(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	skipSlow(t)
+	skipE2E(t)
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -122,12 +122,12 @@ func TestSlowPullWithDeps(t *testing.T) {
 	require.True(t, hasImage(aliases, "redis"), "expected the redis dep image, got %v", aliases)
 }
 
-// TestSlowPullInvalidImage verifies `pull` fails when a service references an
+// TestE2EPullInvalidImage verifies `pull` fails when a service references an
 // image that cannot be resolved from any registry.
-func TestSlowPullInvalidImage(t *testing.T) {
+func TestE2EPullInvalidImage(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	skipSlow(t)
+	skipE2E(t)
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -147,12 +147,12 @@ func TestSlowPullInvalidImage(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestSlowPullIgnoreBuildable verifies --ignore-buildable skips images with a
+// TestE2EPullIgnoreBuildable verifies --ignore-buildable skips images with a
 // build config; plain pull tries (and fails) to pull them from a registry.
-func TestSlowPullIgnoreBuildable(t *testing.T) {
+func TestE2EPullIgnoreBuildable(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	skipSlow(t)
+	skipE2E(t)
 
 	ctx := context.Background()
 	pn := t.Name()
