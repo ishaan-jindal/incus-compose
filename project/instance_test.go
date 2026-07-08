@@ -189,7 +189,7 @@ func TestInstanceConfig(t *testing.T) {
 	// AppendEntrypoint), so instanceConfig no longer emits oci.entrypoint.
 	assert.NotContains(t, config, "oci.entrypoint")
 	assert.Equal(t, "true", config["boot.autostart"])
-	assert.Equal(t, "always", config["user.restart"])
+	assert.Equal(t, "always", config[client.HealthKeyPrefix+"restart"])
 	assert.Equal(t, "2", config["limits.cpu"])
 	assert.Equal(t, "512MiB", config["limits.memory"])
 	assert.Equal(t, client.HealthStatusUnknown, config[client.HealthStatusKey])

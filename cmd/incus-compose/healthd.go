@@ -142,6 +142,10 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting the healthd image '%v': %w", imageName, err)
 	}
+	img, ok := imgRes.(*client.Image)
+	if !ok {
+		return nil, nil, client.ErrUnknown.WithResource(imgRes)
+	}
 
 	volRes, err := c.Resource(
 		client.KindStorageVolume,
@@ -151,19 +155,13 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 	if err != nil {
 		return nil, nil, client.ErrUnknown.WithKindName(client.KindStorageVolume, "ic-healthd").Wrap(err)
 	}
-
 	volume, ok := volRes.(*client.StorageVolume)
 	if !ok {
 		return nil, nil, client.ErrUnknown.WithResource(volRes)
 	}
 
-	img, ok := imgRes.(*client.Image)
-	if !ok {
-		return nil, nil, client.ErrUnknown.WithResource(imgRes)
-	}
-
 	instanceConfig := &client.InstanceConfig{
-		Image: imgRes.IncusName(),
+		Image: imgRes.Name(),
 		Type:  incusApi.InstanceTypeContainer,
 		Extensions: map[string]string{
 			"limits.cpu":                      defaultHealthdCPULimit,

@@ -281,7 +281,7 @@ func (r *Runner) discover(conn incus.InstanceServer) (map[string]InstanceConfig,
 			}
 
 			restart := false
-			if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, inst.Config["user.restart"]) {
+			if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, inst.Config[client.HealthKeyPrefix+"restart"]) {
 				restart = true
 				if inst.Config[client.HealthKeyPrefix+"test"] == "" {
 					inst.Config[client.HealthKeyPrefix+"test"] = "[\"NONE\"]"
@@ -372,11 +372,11 @@ func parseInstance(project string, cfg map[string]string) (InstanceConfig, error
 		svc.Retries = int(n)
 	}
 
-	if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, cfg["user.restart"]) {
+	if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, cfg[client.HealthStatusKey+"restart"]) {
 		svc.Restart = true
 	}
 
-	if cfg["user.restart"] == "unless-stopped" {
+	if cfg[client.HealthKeyPrefix+"restart"] == "unless-stopped" {
 		svc.UnlessStopped = true
 	}
 

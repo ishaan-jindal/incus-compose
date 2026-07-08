@@ -354,7 +354,7 @@ func TestNormalLifecycle(t *testing.T) {
 		},
 		{
 			name:     "list",
-			args:     []string{"-f", compose, "list"},
+			args:     []string{"-f", compose, "list", "--format=json"},
 			snapshot: true,
 		},
 		{
