@@ -20,10 +20,12 @@ func newDownCommand() *cli.Command {
 		ArgsUsage: "[SERVICE...]",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
-				Name: "project",
-				// The alias volumes is for docker-compose compatibility
-				Aliases: []string{"volumes"},
-				Usage:   "Remove the project",
+				Name:  "project",
+				Usage: "Remove the project",
+			},
+			&cli.BoolFlag{
+				Name:  "volumes",
+				Usage: `Also delete volumes`,
 			},
 			&cli.StringFlag{
 				Name:  "rmi",
@@ -118,7 +120,7 @@ func newDownCommand() *cli.Command {
 				Reverse:          true,
 			}
 
-			if !cmd.Bool("project") {
+			if !cmd.Bool("volumes") && !cmd.Bool("project") {
 				args.ExcludeKinds = append(args.ExcludeKinds, client.KindStorageVolume)
 			}
 

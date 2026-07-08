@@ -72,7 +72,7 @@ func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
 
 		err = r.writeStatus(client.HealthStatusHealthy)
 		if err != nil {
-			slog.Warn("Failed to update the status", "error", err)
+			slog.Warn("Failed to update my own status", "error", err)
 
 			select {
 			case <-ctx.Done():
@@ -94,46 +94,30 @@ func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
 	}
 }
 
-func (r *Runner) findHealthd() (string, error) {
-	if r.conn == nil {
-		return "", client.ErrNotFound
-	}
-
-	instances, err := r.conn.GetInstances("")
-	if err != nil {
-		return "", client.ErrUnknown.Wrap(fmt.Errorf("listing instances: %w", err))
-	}
-
-	for _, inst := range instances {
-		if inst.Config[client.HealthKeyPrefix+"daemon"] == "true" {
-			return inst.Name, nil
-		}
-	}
-
-	return "", client.ErrNotFound
-}
-
 func (r *Runner) writeStatus(status string) error {
-	name, err := r.findHealthd()
-	if err != nil {
-		// Maybe running as binary, ignore writestatus.
+	if r.config.OwnName == "" || r.config.OwnProject == "" {
 		return nil
 	}
 
-	slog.Debug("Writing status", "healthd", name, "status", status)
+	myConn := r.conn.UseProject(r.config.OwnProject)
 
-	inst, etag, err := r.conn.GetInstance(name)
+	slog.Debug("Writing status", "own-project", r.config.OwnProject, "own-name", r.config.OwnName, "status", status)
+
+	inst, etag, err := myConn.GetInstance(r.config.OwnName)
 	if err != nil {
 		return err
 	}
 
-	inst.Config[client.HealthStatusKey] = status
-	op, err := r.conn.UpdateInstance(name, inst.Writable(), etag)
+	wInst := inst.Writable()
+	wInst.Config[client.HealthStatusKey] = status
+
+	op, err := myConn.UpdateInstance(r.config.OwnName, wInst, etag)
 	if err != nil {
 		return err
 	}
 
-	if err := op.Wait(); err != nil {
+	err = op.Wait()
+	if err != nil {
 		return err
 	}
 
@@ -297,7 +281,7 @@ func (r *Runner) discover(conn incus.InstanceServer) (map[string]InstanceConfig,
 			}
 
 			restart := false
-			if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, inst.Config["user.restart"]) {
+			if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, inst.Config[client.HealthKeyPrefix+"restart"]) {
 				restart = true
 				if inst.Config[client.HealthKeyPrefix+"test"] == "" {
 					inst.Config[client.HealthKeyPrefix+"test"] = "[\"NONE\"]"
@@ -388,11 +372,11 @@ func parseInstance(project string, cfg map[string]string) (InstanceConfig, error
 		svc.Retries = int(n)
 	}
 
-	if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, cfg["user.restart"]) {
+	if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, cfg[client.HealthStatusKey+"restart"]) {
 		svc.Restart = true
 	}
 
-	if cfg["user.restart"] == "unless-stopped" {
+	if cfg[client.HealthKeyPrefix+"restart"] == "unless-stopped" {
 		svc.UnlessStopped = true
 	}
 

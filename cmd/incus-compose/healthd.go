@@ -142,6 +142,10 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting the healthd image '%v': %w", imageName, err)
 	}
+	img, ok := imgRes.(*client.Image)
+	if !ok {
+		return nil, nil, client.ErrUnknown.WithResource(imgRes)
+	}
 
 	volRes, err := c.Resource(
 		client.KindStorageVolume,
@@ -151,25 +155,20 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 	if err != nil {
 		return nil, nil, client.ErrUnknown.WithKindName(client.KindStorageVolume, "ic-healthd").Wrap(err)
 	}
-
 	volume, ok := volRes.(*client.StorageVolume)
 	if !ok {
 		return nil, nil, client.ErrUnknown.WithResource(volRes)
 	}
 
-	img, ok := imgRes.(*client.Image)
-	if !ok {
-		return nil, nil, client.ErrUnknown.WithResource(imgRes)
-	}
-
 	instanceConfig := &client.InstanceConfig{
-		Image: imgRes.IncusName(),
+		Image: imgRes.Name(),
 		Type:  incusApi.InstanceTypeContainer,
 		Extensions: map[string]string{
 			"limits.cpu":                      defaultHealthdCPULimit,
 			"limits.memory":                   defaultHealthdMemoryLimit,
 			client.HealthKeyPrefix + "test":   "[\"NONE\"]",
 			client.HealthKeyPrefix + "daemon": "true",
+			client.HealthStatusKey:            client.HealthStatusUnknown,
 		},
 		Resources: []client.Resource{img},
 		Priority:  client.PriorityInstance - 1,
@@ -325,15 +324,21 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 				return err
 			}
 
+			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_TOKEN"] = token
+
 			inst.Config.Files = append(inst.Config.Files, client.InstanceFile{
 				Target:  "/usr/local/bin/ic-healthd",
 				File:    f,
 				UID:     -1,
 				GID:     -1,
-				Mode:    0o600,
+				Mode:    0o700,
 				DirMode: 0o700,
 			})
 		} else {
+			// So ic-healthd can update its own status.
+			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_OWN_PROJECT"] = c.IncusProject()
+			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_OWN_NAME"] = inst.IncusName()
+
 			// c.LogDebug("Setting entrypoint")
 			inst.Config.Extensions["oci.entrypoint"] = "/usr/local/bin/ic-healthd run"
 		}

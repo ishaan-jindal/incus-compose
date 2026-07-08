@@ -14,7 +14,7 @@ project:
       image: docker.io/library/alpine:latest
       networks:
         default: null
-      restart: "no"
+      restart: 'no'
     on-failure-restart:
       image: docker.io/library/alpine:latest
       networks:

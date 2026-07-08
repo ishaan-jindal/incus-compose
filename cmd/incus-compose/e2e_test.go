@@ -1,270 +1,306 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"log/slog"
-	"os"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
-	"github.com/bradleyjkemp/cupaloy/v2"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/lxc/incus-compose/client"
-	"github.com/lxc/incus-compose/project"
 )
 
-var snapshotter = cupaloy.New(cupaloy.SnapshotSubdirectory(filepath.Join("..", "..", "test", "snapshots", "e2e")))
-
-func skipLocal(t *testing.T) {
-	_, ok := os.LookupEnv("INCUS_COMPOSE_TEST_LOCAL")
-	if ok {
-		t.Skip("Skipping: env INCUS_COMPOSE_TEST_LOCAL is set, run `just test` for this test")
-	}
-}
-
-func skipSlow(t *testing.T) {
-	_, ok := os.LookupEnv("INCUS_COMPOSE_TEST_SLOW")
-	if !ok {
-		t.Skip("Skipping: env INCUS_COMPOSE_TEST_SLOW is not set, run `just test-slow` for this test")
-	}
-}
-
-func skipNotSameHost(t *testing.T, gc *client.GlobalClient) {
-	if gc.SameHost() != nil {
-		t.Skip("not on the same host")
-	}
-}
-
-func runCommand(t *testing.T, ctx context.Context, projectName string, args ...string) (*bytes.Buffer, error) {
-	t.Helper()
-
-	projectName = strings.ToLower(strings.ReplaceAll(projectName, "/", "-"))
-
-	mArgs := []string{"incus-compose", "--debug", "--project-name", projectName}
-	mArgs = append(mArgs, args...)
-	slog.DebugContext(ctx, "Running", "args", mArgs)
-
-	stdout := &bytes.Buffer{}
-	cmd := newRootCommand()
-	cmd.Writer = stdout
-	cmd.ErrWriter = os.Stderr
-	err := cmd.Run(ctx, mArgs)
-
-	return stdout, err
-}
-
-// stripListOutput removes dynamic content (IP addresses, network hashes) for snapshot comparison.
-func stripListOutput(t *testing.T, output *bytes.Buffer) string {
-	t.Helper()
-
-	ipRegex, err := regexp.Compile(`\d+\.\d+\.\d+\.\d+`)
-	require.NoError(t, err)
-	outStr := ipRegex.ReplaceAllString(output.String(), "-stripped-")
-
-	// Strip health status for now, its flaky.
-	healthRegex, err := regexp.Compile(`"health": "[a-zA-Z]+",`)
-	require.NoError(t, err)
-	outStr = healthRegex.ReplaceAllString(outStr, `"health": "-stripped-",`)
-
-	return outStr
-}
-
-func plannedNetworkNames(t *testing.T, ctx context.Context, projectName, compose string) []string {
-	t.Helper()
-
-	projectName = strings.ToLower(strings.ReplaceAll(projectName, "/", "-"))
-
-	p, err := project.New().Load(ctx, project.LoadFiles([]string{compose}))
-	require.NoError(t, err)
-
-	c := client.NewOfflineClient(ctx, projectName)
-	allResources, err := p.Resources(c)
-	require.NoError(t, err)
-
-	names := []string{}
-	for _, res := range allResources {
-		for _, r := range res {
-			if r.Kind() == client.KindNetwork {
-				names = append(names, r.IncusName())
-			}
+func cleanLines(t *testing.T, in string) []string {
+	var out []string
+	for _, line := range strings.Split(strings.TrimSpace(in), "\n") {
+		if s := strings.TrimSpace(line); s != "" {
+			out = append(out, s)
 		}
 	}
-	return names
+	return out
 }
 
-func projectClient(t *testing.T, ctx context.Context, projectName string, opts ...client.EnsureProjectOption) *client.Client {
-	t.Helper()
-
-	gc, err := client.NewTestClient(ctx)
-	require.NoError(t, err)
-
-	err = gc.Connect()
-	require.NoError(t, err)
-
-	c, err := gc.EnsureProject(projectName, opts...)
-	require.NoError(t, err)
-
-	return c
-}
-
-func TestConfigCommand(t *testing.T) {
+// TestE2EUpNoDeps verifies `up <service> --no-deps` starts only the named service
+// and does not wait on its (unstarted) service_healthy dependencies.
+func TestE2EUpNoDeps(t *testing.T) {
 	t.Parallel()
-
-	tests := []struct {
-		name    string
-		args    []string
-		fixture string
-		wantErr bool
-	}{
-		{
-			name:    "simple-nginx yaml",
-			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "config"},
-			fixture: "../../test/fixtures/simple-nginx",
-		},
-		{
-			name:    "simple-nginx json",
-			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "config", "--format", "json"},
-			fixture: "../../test/fixtures/simple-nginx",
-		},
-		{
-			name:    "two-services yaml",
-			args:    []string{"-f", "../../test/fixtures/two-services/compose.yaml", "config"},
-			fixture: "../../test/fixtures/two-services",
-		},
-		{
-			name:    "wordpress",
-			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config"},
-			fixture: "../../test/fixtures/wordpress",
-		},
-		{
-			name:    "with-secrets",
-			args:    []string{"-f", "../../test/fixtures/with-secrets/compose.yaml", "config"},
-			fixture: "../../test/fixtures/with-secrets",
-		},
-		{
-			name:    "with-restart",
-			args:    []string{"-f", "../../test/fixtures/with-restart/compose.yaml", "config"},
-			fixture: "../../test/fixtures/with-restart",
-		},
-		{
-			name:    "with-incus-options",
-			args:    []string{"-f", "../../test/fixtures/with-incus-options/compose.yaml", "config"},
-			fixture: "../../test/fixtures/with-incus-options",
-		},
-		{
-			name:    "with-project-options",
-			args:    []string{"-f", "../../test/fixtures/with-project-options/compose.yaml", "config"},
-			fixture: "../../test/fixtures/with-project-options",
-		},
-		{
-			name:    "with-build",
-			args:    []string{"-f", "../../test/fixtures/with-build/compose.yaml", "config"},
-			fixture: "../../test/fixtures/with-build",
-		},
-		{
-			name:    "project-directory simple-nginx",
-			args:    []string{"--project-directory", "../../test/fixtures/simple-nginx", "config"},
-			fixture: "../../test/fixtures/simple-nginx",
-		},
-		{
-			name:    "project-directory docker-compose with incus overlay",
-			args:    []string{"--project-directory", "../../test/fixtures/with-docker-compose", "config"},
-			fixture: "../../test/fixtures/with-docker-compose",
-		},
-		{
-			name:    "file docker-compose with incus overlay",
-			args:    []string{"-f", "../../test/fixtures/with-docker-compose/docker-compose.yaml", "config"},
-			fixture: "../../test/fixtures/with-docker-compose",
-		},
-		{
-			name:    "nonexistent file",
-			args:    []string{"-f", "nonexistent.yaml", "config"},
-			wantErr: true,
-		},
-		{
-			name:    "invalid yaml",
-			args:    []string{"-f", "../../test/fixtures/invalid/compose.yaml", "config"},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			stdout, err := runCommand(t, context.Background(), "test-local-config", tt.args...)
-
-			if tt.wantErr {
-				require.Error(t, err, "Stdout: %s", stdout.String())
-			} else {
-				require.NoError(t, err)
-			}
-
-			if tt.fixture != "" {
-				absFixturePath, _ := filepath.Abs(tt.fixture)
-				output := strings.ReplaceAll(stdout.String(), absFixturePath, "$FIXTURE_PATH")
-				snapshotter.SnapshotT(t, output)
-			}
-		})
-	}
-}
-
-func TestConfigFilterByService(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		args    []string
-		fixture string
-	}{
-		{
-			name:    "wordpress filter db service",
-			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config", "db"},
-			fixture: "../../test/fixtures/wordpress",
-		},
-		{
-			name:    "wordpress filter wordpress service includes db dependency",
-			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config", "wordpress"},
-			fixture: "../../test/fixtures/wordpress",
-		},
-		{
-			name:    "config --services list",
-			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config", "--services"},
-			fixture: "../../test/fixtures/wordpress",
-		},
-		{
-			name:    "config --volumes list",
-			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config", "--volumes"},
-			fixture: "../../test/fixtures/wordpress",
-		},
-		{
-			name:    "config --quiet validation",
-			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config", "--quiet"},
-			fixture: "../../test/fixtures/wordpress",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			stdout, err := runCommand(t, context.Background(), "test-local-config-filter", tt.args...)
-			require.NoError(t, err)
-
-			if tt.fixture != "" {
-				absFixturePath, _ := filepath.Abs(tt.fixture)
-				output := strings.ReplaceAll(stdout.String(), absFixturePath, "$FIXTURE_PATH")
-				snapshotter.SnapshotT(t, output)
-			}
-		})
-	}
-}
-
-func TestUpDownUpSimpleNginx(t *testing.T) {
 	skipLocal(t)
+	skipE2E(t)
+
+	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+
+	ctx := context.Background()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--no-deps", "nginx")
+	require.NoError(t, err)
+
+	_, err = runCommand(t, ctx, pn, "-f", compose, "ps", "--quiet")
+	require.NoError(t, err)
+
+	c := projectClient(t, ctx, pn)
+	exists, err := c.InstanceExists("nginx-1")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	exists, err = c.InstanceExists("backend1-1")
+	require.NoError(t, err)
+	assert.False(t, exists)
+
+	exists, err = c.InstanceExists("backend2-1")
+	require.NoError(t, err)
+	assert.False(t, exists)
+}
+
+// TestE2EUpDeps verifies `up <service>` (default) follows depends_on and starts the
+// linked services too.
+func TestE2EUpDeps(t *testing.T) {
 	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+
+	ctx := context.Background()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "nginx")
+	require.NoError(t, err)
+
+	c := projectClient(t, ctx, pn)
+	exists, err := c.InstanceExists("nginx-1")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	exists, err = c.InstanceExists("backend1-1")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	exists, err = c.InstanceExists("backend2-1")
+	require.NoError(t, err)
+	assert.True(t, exists)
+}
+
+// TestE2EDownNoDeps verifies `down <service> --no-deps` removes only the named
+// service and leaves its dependants running.
+func TestE2EDownNoDeps(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+
+	ctx := context.Background()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	_, err = runCommand(t, ctx, pn, "-f", compose, "down", "--no-deps", "backend1")
+	require.NoError(t, err)
+
+	c := projectClient(t, ctx, pn)
+	exists, err := c.InstanceExists("nginx-1")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	exists, err = c.InstanceExists("backend2-1")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	exists, err = c.InstanceExists("backend1-1")
+	require.NoError(t, err)
+	assert.False(t, exists)
+}
+
+// TestE2EDownDeps verifies `down <service>` (default) follows depends_on in reverse
+// and also removes the services that depend on the named one.
+func TestE2EDownDeps(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+
+	ctx := context.Background()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	c := projectClient(t, ctx, pn)
+	exists, err := c.InstanceExists("nginx-1")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	_, err = runCommand(t, ctx, pn, "-f", compose, "down", "backend1")
+	require.NoError(t, err)
+
+	exists, err = c.InstanceExists("backend2-1")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	exists, err = c.InstanceExists("backend1-1")
+	require.NoError(t, err)
+	assert.False(t, exists)
+}
+
+// TestE2EPsDeps verifies that `ps <service> --with-deps` includes the linked
+// services as real services, whereas the default scopes to the named service
+// (other running instances show up only as <orphan>).
+func TestE2EPsDeps(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+
+	ctx := context.Background()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	stdoutNoDeps, err := runCommand(t, ctx, pn, "-f", compose, "ps", "--services", "nginx")
+	require.NoError(t, err)
+
+	noDeps := cleanLines(t, stdoutNoDeps.String())
+	require.Contains(t, noDeps, "nginx")
+	require.NotContains(t, noDeps, "backend1")
+	require.NotContains(t, noDeps, "backend2")
+
+	stdoutDeps, err := runCommand(t, ctx, pn, "-f", compose, "ps", "--services", "--with-deps", "nginx")
+	require.NoError(t, err)
+
+	withDeps := cleanLines(t, stdoutDeps.String())
+	require.Contains(t, withDeps, "nginx")
+	require.Contains(t, withDeps, "backend1")
+	require.Contains(t, withDeps, "backend2")
+}
+
+// TestE2EStartStopRestartWithDeps exercises start/stop/restart/logs with and
+// without --with-deps. The default keeps each command scoped to the named
+// service (and, crucially, start does not block on out-of-scope healthd
+// dependency conditions); --with-deps follows depends_on like up/down.
+func TestE2EStartStopRestartWithDeps(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+
+	ctx := context.Background()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []e2eTest{
+		{
+			name: "up",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name:     "list up",
+			args:     []string{"-f", compose, "list", "--format=json"},
+			snapshot: true,
+		},
+		{
+			name: "restart",
+			args: []string{"-f", compose, "restart", "--with-deps", "nginx"},
+		},
+		{
+			name:     "list restart",
+			args:     []string{"-f", compose, "list", "--format=json"},
+			snapshot: true,
+		},
+		{
+			name: "stop manually",
+			args: []string{"-f", compose, "stop", "nginx", "backend1", "backend2"},
+		},
+		{
+			name:            "list manual stop",
+			args:            []string{"-f", compose, "list", "--format=json"},
+			snapshot:        true,
+			snapStripHealth: true,
+		},
+		{
+			name: "start deps",
+			args: []string{"-f", compose, "start", "--with-deps", "nginx"},
+		},
+		{
+			name:     "list start deps",
+			args:     []string{"-f", compose, "list", "--format=json"},
+			snapshot: true,
+		},
+		{
+			name: "stop deps",
+			args: []string{"-f", compose, "stop", "--with-deps", "backend1"},
+		},
+		{
+			name:            "list stop deps",
+			args:            []string{"-f", compose, "list", "--format=json"},
+			snapshot:        true,
+			snapStripHealth: true,
+		},
+	}
+
+	runE2ETests(t, ctx, pn, tests)
+}
+
+func TestE2EUpDownGrafana(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/grafana/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []e2eTest{
+		{
+			name: "up grafana",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name: "list grafana",
+			args: []string{"-f", compose, "list"},
+		},
+	}
+
+	runE2ETests(t, ctx, pn, tests)
+}
+
+func TestE2EUpUp(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -274,222 +310,543 @@ func TestUpDownUpSimpleNginx(t *testing.T) {
 		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	tests := []struct {
-		name     string
-		args     []string
-		wantErr  bool
-		snapshot bool
-	}{
+	tests := []e2eTest{
 		{
-			name:    "up simple-nginx",
-			args:    []string{"-f", compose, "up", "--detach"},
-			wantErr: false,
+			name: "up",
+			args: []string{"-f", compose, "up", "--detach"},
 		},
 		{
-			name:     "list up simple-nginx",
-			args:     []string{"-f", compose, "list", "--format", "json"},
-			wantErr:  false,
-			snapshot: true,
-		},
-		{
-			name:    "down simple-nginx",
-			args:    []string{"-f", compose, "down"},
-			wantErr: false,
-		},
-		{
-			name:     "list down simple-nginx",
-			args:     []string{"-f", compose, "list", "--format", "json"},
-			wantErr:  false,
-			snapshot: true,
-		},
-		{
-			name:    "up simple-nginx",
-			args:    []string{"-f", compose, "up", "--detach"},
-			wantErr: false,
-		},
-		{
-			name:     "list down-up simple-nginx",
-			args:     []string{"-f", compose, "list", "--format", "json"},
-			wantErr:  false,
-			snapshot: true,
+			name: "up2",
+			args: []string{"-f", compose, "up", "--detach"},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			stdout, err := runCommand(t, ctx, pn, tt.args...)
-			if tt.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
-			if tt.snapshot {
-				snapshotter.SnapshotT(t, stripListOutput(t, stdout))
-			}
-		})
-	}
+	runE2ETests(t, ctx, pn, tests)
 }
 
-func TestNormalLifecycle(t *testing.T) {
-	skipLocal(t)
+func TestE2EDownDown(t *testing.T) {
 	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
 
 	ctx := context.Background()
 	pn := t.Name()
-	compose := "../../test/fixtures/two-services/compose.yaml"
+	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
 		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	tests := []struct {
-		name     string
-		args     []string
-		wantErr  bool
-		snapshot bool
-	}{
+	tests := []e2eTest{
 		{
-			name:    "up",
-			args:    []string{"-f", compose, "up", "--detach"},
-			wantErr: false,
+			name: "up",
+			args: []string{"-f", compose, "up", "--detach"},
 		},
 		{
-			name:     "list",
-			args:     []string{"-f", compose, "list"},
-			wantErr:  false,
-			snapshot: true,
+			name: "down1",
+			args: []string{"-f", compose, "down"},
+		},
+		{
+			name: "down2",
+			args: []string{"-f", compose, "down"},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			stdout, err := runCommand(t, ctx, pn, tt.args...)
-			if tt.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
-			if tt.snapshot {
-				snapshotter.SnapshotT(t, stripListOutput(t, stdout))
-			}
-		})
-	}
+	runE2ETests(t, ctx, pn, tests)
 }
 
-// dnsServiceIPs aggregates the dnsmasq address records for a service across the
-// project's managed networks.
-func dnsServiceIPs(t *testing.T, c *client.Client, networks []string, service string) []string {
-	t.Helper()
-
-	conn, err := c.Connection()
-	require.NoError(t, err)
-
-	var ips []string
-	for _, name := range networks {
-		net, _, err := conn.GetNetwork(name)
-		require.NoError(t, err, "for network %q", name)
-		ips = append(ips, client.DNSmasqParse(net.Config["raw.dnsmasq"])[service]...)
-	}
-	return ips
-}
-
-// TestUpDownscaleRemovesInstancesAndDNS deploys the replicas=3 baseline, then
-// downscales to a single instance with --scale and verifies both the surplus
-// instances and their DNS records are removed while the survivor keeps resolving.
-func TestUpDownscaleRemovesInstancesAndDNS(t *testing.T) {
-	skipLocal(t)
+func TestE2EDownProjectDeletesNetworks(t *testing.T) {
 	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
 
 	ctx := context.Background()
 	pn := t.Name()
-	compose := "../../test/fixtures/nginx-downscale/compose.yaml"
+	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	networks := plannedNetworkNames(t, ctx, pn, compose)
 	require.NotEmpty(t, networks)
 
+	cleaned := false
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		if !cleaned {
+			_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		}
 	})
 
 	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	c := projectClient(t, ctx, pn)
-	for _, name := range []string{"web-1", "web-2", "web-3"} {
-		ok, err := c.InstanceExists(name)
+
+	for _, name := range networks {
+		conn, err := c.Connection()
 		require.NoError(t, err)
-		require.True(t, ok, "instance %q should exist after up", name)
+		_, _, err = conn.GetNetwork(name)
+		require.NoError(t, err, "for network %q", name)
 	}
 
-	before := dnsServiceIPs(t, c, networks, "web")
-	require.NotEmpty(t, before, "web should have DNS records for 3 replicas")
-
-	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--scale=web=1")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	require.NoError(t, err)
+	cleaned = true
 
-	survivor, err := c.InstanceExists("web-1")
-	require.NoError(t, err)
-	require.True(t, survivor, "web-1 should remain after downscale")
-
-	for _, name := range []string{"web-2", "web-3"} {
-		ok, err := c.InstanceExists(name)
+	for _, name := range networks {
+		conn, err := c.Connection()
 		require.NoError(t, err)
-		require.False(t, ok, "instance %q should be removed after downscale", name)
+		_, _, err = conn.GetNetwork(name)
+		require.Error(t, err, "for network %q", name)
 	}
-
-	after := dnsServiceIPs(t, c, networks, "web")
-	require.NotEmpty(t, after, "web-1 should still resolve after downscale")
-	require.Less(t, len(after), len(before), "DNS must shed records for removed instances")
 }
 
-// TestUpReconcilesToReplicas verifies docker-parity scaling: a plain `up`
-// reconciles a service to deploy.replicas in both directions. A manual --scale
-// applies only to that invocation; the next plain `up` restores replicas.
-func TestUpReconcilesToReplicas(t *testing.T) {
-	skipLocal(t)
+func TestE2EUpRecreate(t *testing.T) {
 	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
 
 	ctx := context.Background()
 	pn := t.Name()
-	compose := "../../test/fixtures/nginx-downscale/compose.yaml"
+	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
 		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
 	})
 
-	// Baseline: deploy.replicas=3.
+	tests := []e2eTest{
+		{
+			name: "up simple-nginx",
+			args: []string{"-f", compose, "up", "--detach", "--recreate"},
+		},
+		{
+			name: "list simple-nginx",
+			args: []string{"-f", compose, "list"},
+		},
+	}
+
+	runE2ETests(t, ctx, pn, tests)
+}
+
+func TestE2EUpUpRecreate(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []e2eTest{
+		{
+			name: "up simple-nginx",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name: "list1 simple-nginx",
+			args: []string{"-f", compose, "list"},
+		},
+		{
+			name: "up simple-nginx",
+			args: []string{"-f", compose, "up", "--detach", "--recreate"},
+		},
+		{
+			name: "list2 simple-nginx",
+			args: []string{"-f", compose, "list"},
+		},
+	}
+
+	runE2ETests(t, ctx, pn, tests)
+}
+
+func TestE2EUpRecreateDown(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []e2eTest{
+		{
+			name: "up simple-nginx",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name: "list simple-nginx",
+			args: []string{"-f", compose, "list"},
+		},
+		{
+			name: "recreate simple-nginx",
+			args: []string{"-f", compose, "up", "--detach", "--recreate"},
+		},
+		{
+			name: "list recreated simple-nginx",
+			args: []string{"-f", compose, "list"},
+		},
+	}
+
+	runE2ETests(t, ctx, pn, tests)
+}
+
+func TestE2ELifecycleSimpleNginx(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []e2eTest{
+		{
+			name: "up",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name:     "ps json",
+			args:     []string{"-f", compose, "ps", "--format", "json", "--all"},
+			snapshot: true,
+		},
+		{
+			name:     "ps quiet",
+			args:     []string{"-f", compose, "ps", "--format", "json", "--all", "--quiet"},
+			snapshot: true,
+		},
+		{
+			name:     "ps services",
+			args:     []string{"-f", compose, "ps", "--format", "json", "--all", "--services"},
+			snapshot: true,
+		},
+		{
+			name: "stop service",
+			args: []string{"-f", compose, "stop", "web"},
+		},
+		{
+			name:     "ps stopped",
+			args:     []string{"-f", compose, "ps", "--format", "json", "--all"},
+			snapshot: true,
+		},
+		{
+			name: "start service",
+			args: []string{"-f", compose, "start", "web"},
+		},
+		{
+			name:     "exec dry run",
+			args:     []string{"-f", compose, "exec", "--dry-run", "web", "echo", "hello"},
+			snapshot: true,
+		},
+		{
+			name: "restart service",
+			args: []string{"-f", compose, "restart", "web"},
+		},
+		{
+			name: "down resources",
+			args: []string{"-f", compose, "down"},
+		},
+	}
+
+	runE2ETests(t, ctx, pn, tests)
+}
+
+func TestE2EUpDownScale(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/nginx-scale/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []e2eTest{
+		{
+			name: "up nginx-scale",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name: "scale nginx-scale",
+			args: []string{"-f", compose, "up", "--detach", "--scale=web=3"},
+		},
+	}
+
+	runE2ETests(t, ctx, pn, tests)
+}
+
+func TestE2EUpDownDownscale(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/nginx-scale/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []e2eTest{
+		{
+			name: "up nginx-scale",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name: "downscale nginx-scale",
+			args: []string{"-f", compose, "up", "--detach", "--scale=web=6"},
+		},
+	}
+
+	runE2ETests(t, ctx, pn, tests)
+}
+
+func TestE2EUpDownWithScale(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/nginx-scale/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []e2eTest{
+		{
+			name: "up nginx-scale",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name: "list nginx-scale",
+			args: []string{"-f", compose, "list"},
+		},
+	}
+
+	runE2ETests(t, ctx, pn, tests)
+}
+
+func TestE2EListSnapshots(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+
 	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
-	c := projectClient(t, ctx, pn)
-	allNames := []string{"web-1", "web-2", "web-3", "web-4", "web-5"}
-	assertCount := func(want int) {
-		t.Helper()
-		for i, name := range allNames {
-			ok, err := c.InstanceExists(name)
-			require.NoError(t, err)
-			require.Equal(t, i < want, ok, "instance %q existence (want %d running)", name, want)
-		}
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []e2eTest{
+		{
+			name: "list_yaml",
+			args: []string{"-f", compose, "list", "--format", "yaml"},
+		},
+		{
+			name: "list_json",
+			args: []string{"-f", compose, "list", "--format", "json"},
+		},
 	}
-	assertCount(3)
 
-	// Manual downscale to 1.
-	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--scale=web=1")
+	runE2ETests(t, ctx, pn, tests)
+}
+
+func TestE2EExternalNetwork(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/test-external-network/compose.yaml"
+
+	gc, err := client.NewTestClient(ctx)
 	require.NoError(t, err)
-	assertCount(1)
 
-	// Plain up restores replicas=3 (scales back up).
+	conn, err := gc.Connection()
+	require.NoError(t, err)
+
+	_, _, err = conn.GetNetwork("incusbr0")
+	if err != nil {
+		t.Skipf("No incusbr0: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []e2eTest{
+		{
+			name: "up test-external-network",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name: "list test-external-network",
+			args: []string{"-f", compose, "list"},
+		},
+	}
+
+	runE2ETests(t, ctx, pn, tests)
+}
+
+func TestE2EUpDownWithIncusOptions(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/with-incus-options/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []e2eTest{
+		{
+			name: "up with-incus-options",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name: "list with-incus-options",
+			args: []string{"-f", compose, "list"},
+		},
+	}
+
+	runE2ETests(t, ctx, pn, tests)
+}
+
+func TestE2EUpDownWithProjectOptions(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/with-project-options/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []e2eTest{
+		{
+			name: "up with-project-options",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name: "list with-project-options",
+			args: []string{"-f", compose, "list"},
+		},
+	}
+
+	runE2ETests(t, ctx, pn, tests)
+}
+
+func TestE2EUpDownWithSecrets(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/with-secrets/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []e2eTest{
+		{
+			name: "up with-secrets",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name: "list with-secrets",
+			args: []string{"-f", compose, "list"},
+		},
+	}
+
+	runE2ETests(t, ctx, pn, tests)
+}
+
+func TestE2EDownImages(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	_, err = runCommand(t, ctx, pn, "-f", compose, "down")
+	require.NoError(t, err)
+
+	c := projectClient(t, ctx, pn)
+	r, err := c.Resource(client.KindImage, "docker.io/nginx:alpine", &client.ImageConfig{})
+	require.NoError(t, err)
+	require.NoError(t, client.RunAction(ctx, r, client.ActionEnsure), "image should survive plain down")
+
 	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
-	assertCount(3)
 
-	// Manual upscale to 5.
-	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--scale=web=5")
+	_, err = runCommand(t, ctx, pn, "-f", compose, "down", "--images")
 	require.NoError(t, err)
-	assertCount(5)
 
-	// Plain up reconciles back down to replicas=3.
-	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	r, err = c.Resource(client.KindImage, "docker.io/nginx:alpine", &client.ImageConfig{})
 	require.NoError(t, err)
-	assertCount(3)
+	require.Error(t, client.RunAction(ctx, r, client.ActionEnsure), "image should be removed by down --images")
+}
+
+func TestE2EUpDownWithVolume(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/with-volume/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []e2eTest{
+		{
+			name: "up with-volume",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name: "list with-volume",
+			args: []string{"-f", compose, "list"},
+		},
+	}
+
+	runE2ETests(t, ctx, pn, tests)
 }

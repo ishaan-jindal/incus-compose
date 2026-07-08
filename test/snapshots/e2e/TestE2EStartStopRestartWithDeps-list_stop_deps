@@ -3,7 +3,7 @@
     "kind": "network",
     "name": "default",
     "description": "",
-    "incus_name": "ic-4qh4gwjq2d",
+    "incus_name": "ic-fsxvy6qbt3",
     "image": "",
     "status": "Exists",
     "health": "",
@@ -12,19 +12,17 @@
   {
     "kind": "instance",
     "name": "backend1",
-    "description": "incus-compose: testslowhdnginx:backend1-1",
+    "description": "incus-compose: teste2estartstoprestartwithdeps:backend1-1",
     "incus_name": "backend1-1",
     "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
-    "status": "Running",
+    "status": "Stopped",
     "health": "-stripped-",
-    "addresses": [
-      "-stripped-"
-    ]
+    "addresses": []
   },
   {
     "kind": "instance",
     "name": "backend2",
-    "description": "incus-compose: testslowhdnginx:backend2-1",
+    "description": "incus-compose: teste2estartstoprestartwithdeps:backend2-1",
     "incus_name": "backend2-1",
     "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
     "status": "Running",
@@ -36,9 +34,19 @@
   {
     "kind": "instance",
     "name": "nginx",
-    "description": "incus-compose: testslowhdnginx:nginx-1",
+    "description": "incus-compose: teste2estartstoprestartwithdeps:nginx-1",
     "incus_name": "nginx-1",
     "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Stopped",
+    "health": "-stripped-",
+    "addresses": []
+  },
+  {
+    "kind": "instance",
+    "name": "",
+    "description": "incus-compose: teste2estartstoprestartwithdeps:teste2estartstoprestartwithdeps-ic-healthd",
+    "incus_name": "teste2estartstoprestartwithdeps-ic-healthd",
+    "image": "ghcr.io/lxc/incus-compose/ic-healthd:latest",
     "status": "Running",
     "health": "-stripped-",
     "addresses": [
@@ -46,4 +54,3 @@
     ]
   }
 ]
-

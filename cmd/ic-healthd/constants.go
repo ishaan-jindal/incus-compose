@@ -29,6 +29,8 @@ type Config struct {
 	SecretsDir string
 	IncusURL   string
 	Token      string
+	OwnProject string
+	OwnName    string
 	Projects   []string
 }
 

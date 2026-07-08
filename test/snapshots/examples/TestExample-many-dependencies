@@ -148,8 +148,8 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      "",
-      ""
+      "-stripped-",
+      "-stripped-"
     ]
   },
   {
@@ -161,8 +161,8 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      "",
-      ""
+      "-stripped-",
+      "-stripped-"
     ]
   },
   {
@@ -174,7 +174,7 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      ""
+      "-stripped-"
     ]
   },
   {
@@ -186,7 +186,7 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      ""
+      "-stripped-"
     ]
   },
   {
@@ -198,8 +198,8 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      "",
-      ""
+      "-stripped-",
+      "-stripped-"
     ]
   },
   {
@@ -211,7 +211,7 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      ""
+      "-stripped-"
     ]
   },
   {
@@ -223,7 +223,7 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      ""
+      "-stripped-"
     ]
   },
   {
@@ -235,7 +235,7 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      ""
+      "-stripped-"
     ]
   },
   {
@@ -247,8 +247,8 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      "",
-      ""
+      "-stripped-",
+      "-stripped-"
     ]
   },
   {
@@ -260,7 +260,7 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      ""
+      "-stripped-"
     ]
   },
   {
@@ -272,8 +272,8 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      "",
-      ""
+      "-stripped-",
+      "-stripped-"
     ]
   },
   {
@@ -285,7 +285,7 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      ""
+      "-stripped-"
     ]
   },
   {
@@ -297,7 +297,7 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      ""
+      "-stripped-"
     ]
   },
   {
@@ -309,8 +309,8 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      "",
-      ""
+      "-stripped-",
+      "-stripped-"
     ]
   },
   {
@@ -322,7 +322,19 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      ""
+      "-stripped-"
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "",
+    "description": "incus-compose: testexample-many-dependencies:testexample-many-dependencies-ic-healthd",
+    "incus_name": "testexample-many-dependencies-ic-healthd",
+    "image": "ghcr.io/lxc/incus-compose/ic-healthd:latest",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      "-stripped-"
     ]
   },
   {
@@ -334,8 +346,8 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      "",
-      ""
+      "-stripped-",
+      "-stripped-"
     ]
   },
   {
@@ -347,7 +359,7 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      ""
+      "-stripped-"
     ]
   },
   {
@@ -359,8 +371,8 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      "",
-      ""
+      "-stripped-",
+      "-stripped-"
     ]
   },
   {
@@ -372,8 +384,8 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      "",
-      ""
+      "-stripped-",
+      "-stripped-"
     ]
   },
   {
@@ -385,9 +397,8 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      "",
-      ""
+      "-stripped-",
+      "-stripped-"
     ]
   }
 ]
-

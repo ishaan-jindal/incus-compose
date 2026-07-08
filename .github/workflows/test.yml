@@ -6,10 +6,6 @@ on:
       - main
   pull_request:
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 env:
   # https://stackoverflow.com/a/79780883/3368468
   GOTOOLCHAIN: "go1.26.0+auto"
@@ -52,6 +48,7 @@ jobs:
     needs: lint
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - name: default
@@ -69,7 +66,7 @@ jobs:
       INCUS_REMOTE: local-https
       INCUS_COMPOSE_IMAGE_CACHE: incus-compose-tests-cache
       NO_COLOR: 1
-      TEST_PROCS: 1
+      TEST_PROCS: 4
     steps:
       - uses: actions/checkout@v6
         with:

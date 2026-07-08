@@ -334,8 +334,9 @@ func (c *Checker) writeStatus(status string) error {
 
 	slog.Info("Status update", "instance", c.name, "current", status, "old", inst.Config[client.HealthStatusKey])
 
-	inst.Config[client.HealthStatusKey] = status
-	op, err := c.conn.UpdateInstance(c.name, inst.Writable(), etag)
+	wInst := inst.Writable()
+	wInst.Config[client.HealthStatusKey] = status
+	op, err := c.conn.UpdateInstance(c.name, wInst, etag)
 	if err != nil {
 		return err
 	}

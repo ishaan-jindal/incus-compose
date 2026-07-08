@@ -127,7 +127,7 @@ func newListCommand() *cli.Command {
 				},
 			},
 			&cli.BoolFlag{
-				Name:  "healthd",
+				Name:  "no-healthd",
 				Usage: "List the healthd sidecar",
 			},
 		},
@@ -179,7 +179,7 @@ func newListCommand() *cli.Command {
 			}
 			stack.AddOrdered(order, myResources)
 
-			if cmd.Bool("healthd") {
+			if !cmd.Bool("no-healthd") {
 				if name, err := c.FindHealthd(); err == nil {
 					c.LogDebug("Found healthd name", "name", name)
 

@@ -59,9 +59,20 @@ func newRunCommand() *cli.Command {
 			},
 			&cli.StringSliceFlag{
 				Name:    "project",
-				Usage:   "projects to manage",
+				Usage:   "Projects to manage",
 				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_PROJECTS"),
-			}, &cli.StringFlag{
+			},
+			&cli.StringFlag{
+				Name:    "own-project",
+				Usage:   "Project the daemon's own container runs in",
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_OWN_PROJECT"),
+			},
+			&cli.StringFlag{
+				Name:    "own-name",
+				Usage:   "The daemon's own instance name; empty means it skips itself",
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_OWN_NAME"),
+			},
+			&cli.StringFlag{
 				Name:    "data-dir",
 				Usage:   "Persistent volume directory containing the generated cert/key",
 				Value:   defaultDataDir,
@@ -133,6 +144,8 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 	cfg.SecretsDir = cmd.String("secrets-dir")
 	cfg.IncusURL = cmd.String("incus")
 	cfg.Projects = cmd.StringSlice("project")
+	cfg.OwnProject = cmd.String("own-project")
+	cfg.OwnName = cmd.String("own-name")
 	cfg.Token = "<redacted>"
 
 	slog.Info("Version", "version", version.Current(), "pid", os.Getpid())

@@ -167,7 +167,7 @@ func instanceConfig(service types.ServiceConfig) (map[string]string, error) {
 	// Restart policy
 	applyRestartPolicy(config, service.Restart)
 	if service.Restart != "" {
-		config["user.restart"] = service.Restart
+		config[client.HealthKeyPrefix+"restart"] = service.Restart
 	}
 
 	// Resource limits

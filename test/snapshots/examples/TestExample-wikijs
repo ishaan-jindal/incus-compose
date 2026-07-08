@@ -28,7 +28,19 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      ""
+      "-stripped-"
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "",
+    "description": "incus-compose: testexample-wikijs:testexample-wikijs-ic-healthd",
+    "incus_name": "testexample-wikijs-ic-healthd",
+    "image": "ghcr.io/lxc/incus-compose/ic-healthd:latest",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      "-stripped-"
     ]
   },
   {
@@ -40,8 +52,7 @@
     "status": "Running",
     "health": "Healthy",
     "addresses": [
-      ""
+      "-stripped-"
     ]
   }
 ]
-

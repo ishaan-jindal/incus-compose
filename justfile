@@ -21,6 +21,10 @@ v_test_procs := env("TEST_PROCS", "2")
 default:
     @just --list
 
+cleanup:
+    just purge-projects
+    just purge-networks || true
+
 # Run tests against nested Incus, includes direct incus tests.
 [env("INCUS_COMPOSE_IMAGE_CACHE", "incus-compose-tests-cache")]
 test folder="./..." *args:
@@ -32,9 +36,9 @@ test folder="./..." *args:
 test-local folder="./..." *args:
     @just test "$@"
 
-# Run slow tests.
-[env("INCUS_COMPOSE_TEST_SLOW", "1")]
-test-slow folder="./..." *args:
+# Run e2e tests.
+[env("INCUS_COMPOSE_TEST_E2E", "1")]
+test-e2e folder="./..." *args:
     @just test "$@"
 
 # Run example tests.
@@ -42,9 +46,9 @@ test-slow folder="./..." *args:
 test-examples *args:
     @just test ./examples/... "$@"
 
-# Run all tests, includes direct incus, slow and examples tests.
+# Run all tests, includes direct incus, e2 and examples tests.
+[env("INCUS_COMPOSE_TEST_E2E", "1")]
 [env("INCUS_COMPOSE_TEST_EXAMPLES", "1")]
-[env("INCUS_COMPOSE_TEST_SLOW", "1")]
 test-all folder="./..." *args:
     @just test "$@"
 
@@ -53,9 +57,9 @@ test-race folder="./..." *args:
     gotestsum --hide-summary=skipped --jsonfile=test/logs/`date +%Y%m%d-%H%M%S`.json --packages={{ folder }} -- -parallel {{ v_test_procs }} -timeout 20m -race -v "${@:2}"
 
 # Update snapshots for long running tests.
-[env("INCUS_COMPOSE_TEST_SLOW", "1")]
+[env("INCUS_COMPOSE_TEST_E2E", "1")]
 [env("UPDATE_SNAPSHOTS", "1")]
-update-slow-snapshots folder="./..." *args:
+update-e2e-snapshots folder="./..." *args:
     @just test "$@"
 
 # Update snapshots for examples.
@@ -103,7 +107,7 @@ build: lint
     go build -o bin/incus-compose ./cmd/incus-compose
 
 # Build ic-healthd binary
-build-healthd:
+build-healthd: lint
     CGO_ENABLED=0 go build -tags=netgo -ldflags="-w -s -X github.com/lxc/incus-compose/cmd/ic-healthd/version.Version=`git describe --tags --always --long --dirty="-dirty"`" -trimpath -o bin/ic-healthd ./cmd/ic-healthd
 
 # Build ic-healthd container image

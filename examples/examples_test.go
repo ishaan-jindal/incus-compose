@@ -20,7 +20,7 @@ var snapshotter = cupaloy.New(cupaloy.SnapshotSubdirectory(filepath.Join("..", "
 func skipExamples(t *testing.T) {
 	_, ok := os.LookupEnv("INCUS_COMPOSE_TEST_EXAMPLES")
 	if !ok {
-		t.Skip("Skipping: env INCUS_COMPOSE_TEST_EXAMPLES is not set, run `just test-slow` for this test")
+		t.Skip("Skipping: env INCUS_COMPOSE_TEST_EXAMPLES is not set, run `just test-examples` for this test")
 	}
 }
 
@@ -42,14 +42,21 @@ func runCommand(t *testing.T, ctx context.Context, projectName string, args ...s
 	return stdout, err
 }
 
-// normalizeListOutput removes dynamic content (IP addresses, network hashes) for snapshot comparison.
-func normalizeListOutput(t *testing.T, output *bytes.Buffer) string {
+// stripListOutput removes dynamic content (IP addresses, network hashes) for snapshot comparison.
+func stripListOutput(t *testing.T, output *bytes.Buffer) string {
 	t.Helper()
 
-	ipRegex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
-	outStr := ipRegex.ReplaceAllString(output.String(), "")
+	ipRegex, err := regexp.Compile(`\d+\.\d+\.\d+\.\d+`)
+	require.NoError(t, err)
+	outStr := ipRegex.ReplaceAllString(output.String(), "-stripped-")
 
-	return outStr
+	// // Strip health status for now, its flaky.
+	// healthRegex, err := regexp.Compile(`"health": "[a-zA-Z]+",`)
+	// require.NoError(t, err)
+	// outStr = healthRegex.ReplaceAllString(outStr, `"health": "-stripped-",`)
+
+	// Cupaloy adds a newline, 2 lines are bad for my editors format on save.
+	return strings.Trim(outStr, "\n")
 }
 
 // func TestMain(m *testing.M) {
@@ -107,7 +114,7 @@ func TestExample(t *testing.T) {
 			stdout, err := runCommand(t, ctx, t.Name(), args...)
 			require.NoError(t, err)
 
-			snapshotter.SnapshotT(t, normalizeListOutput(t, stdout))
+			snapshotter.SnapshotT(t, stripListOutput(t, stdout))
 		})
 	}
 }

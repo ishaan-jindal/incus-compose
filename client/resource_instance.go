@@ -322,7 +322,7 @@ func (r *Instance) Ensure(ctx context.Context, opts ...Option) error {
 
 func (r *Instance) ensured() error {
 	if r.Config.Image == "" {
-		if alias, ok := r.IncusInstance.Config["user.image_alias"]; ok {
+		if alias, ok := r.IncusInstance.Config[IncusComposePrefix+"image_alias"]; ok {
 			r.Config.Image = alias
 		} else {
 			r.Config.Image = r.client.ResolveImageFingerprint(r.IncusInstance.Config["volatile.base_image"])
@@ -386,11 +386,20 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 	}
 
 	// Store UID/GID.
-	config["oci.uid"] = strconv.FormatUint(r.UID, 10)
-	config["oci.gid"] = strconv.FormatUint(r.GID, 10)
+	if !image.NativeIncus() {
+		if r.UID != image.UID {
+			config["oci.uid"] = strconv.FormatUint(r.UID, 10)
+		}
+		if r.GID != image.GID {
+			config["oci.gid"] = strconv.FormatUint(r.GID, 10)
+		}
+	}
 
 	// Store the image name
-	config["user.image_alias"] = image.IncusName()
+	config[IncusComposePrefix+"image_alias"] = image.IncusName()
+
+	// Store the service name
+	config[IncusComposePrefix+"service_name"] = r.ServiceName()
 
 	// Build devices map after volumes are resolved.
 	devices, err := r.buildDevices()
@@ -834,7 +843,7 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 	op, err := r.conn.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
 		Action:  "start",
 		Timeout: options.incusTimeout(),
-	}, r.ETag)
+	}, "")
 	if err != nil {
 		return ErrOperation.WithText("creating an instance start operation").Wrap(err)
 	}
