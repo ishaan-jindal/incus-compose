@@ -170,6 +170,7 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			"limits.memory":                   defaultHealthdMemoryLimit,
 			client.HealthKeyPrefix + "test":   "[\"NONE\"]",
 			client.HealthKeyPrefix + "daemon": "true",
+			client.HealthStatusKey:            client.HealthStatusUnknown,
 		},
 		Resources: []client.Resource{img},
 		Priority:  client.PriorityInstance - 1,
@@ -325,15 +326,21 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 				return err
 			}
 
+			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_TOKEN"] = token
+
 			inst.Config.Files = append(inst.Config.Files, client.InstanceFile{
 				Target:  "/usr/local/bin/ic-healthd",
 				File:    f,
 				UID:     -1,
 				GID:     -1,
-				Mode:    0o600,
+				Mode:    0o700,
 				DirMode: 0o700,
 			})
 		} else {
+			// So ic-healthd can update its own status.
+			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_OWN_PROJECT"] = c.IncusProject()
+			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_OWN_NAME"] = inst.IncusName()
+
 			// c.LogDebug("Setting entrypoint")
 			inst.Config.Extensions["oci.entrypoint"] = "/usr/local/bin/ic-healthd run"
 		}
