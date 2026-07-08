@@ -14,6 +14,9 @@ import (
 	"github.com/lxc/incus-compose/client"
 )
 
+// labelIncusComposePrefix is the instance config prefix for incus-compose labels.
+const labelIncusComposePrefix = "user.label.incus-compose."
+
 type xICInstanceVolume struct {
 	Seed bool `mapstructure:"seed"`
 }
@@ -43,7 +46,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	var errs error
 	resources := []client.Resource{}
 
-	config, err := instanceConfig(service)
+	config, err := instanceConfig(service, p.Name)
 	if err != nil {
 		errs = errors.Join(errs, err)
 	}
@@ -144,7 +147,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 // instanceConfig builds the Incus instance config map from a compose service.
 // Environment vars become environment.* keys, labels become user.* keys, and
 // restart/resource/healthcheck settings and raw x-incus options are merged in.
-func instanceConfig(service types.ServiceConfig) (map[string]string, error) {
+func instanceConfig(service types.ServiceConfig, projectName string) (map[string]string, error) {
 	config := make(map[string]string, len(service.Environment)+len(service.Labels))
 
 	// Environment variables
@@ -156,8 +159,11 @@ func instanceConfig(service types.ServiceConfig) (map[string]string, error) {
 
 	// Labels as user config
 	for key, val := range service.Labels {
-		config["user."+key] = val
+		config["user.label."+key] = val
 	}
+
+	config[labelIncusComposePrefix+"service"] = service.Name
+	config[labelIncusComposePrefix+"project"] = projectName
 
 	// Privileged.
 	if service.Privileged {

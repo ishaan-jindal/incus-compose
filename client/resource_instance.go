@@ -322,7 +322,7 @@ func (r *Instance) Ensure(ctx context.Context, opts ...Option) error {
 
 func (r *Instance) ensured() error {
 	if r.Config.Image == "" {
-		if alias, ok := r.IncusInstance.Config[IncusComposePrefix+"image_alias"]; ok {
+		if alias, ok := r.IncusInstance.Config["user.image_alias"]; ok {
 			r.Config.Image = alias
 		} else {
 			r.Config.Image = r.client.ResolveImageFingerprint(r.IncusInstance.Config["volatile.base_image"])
@@ -396,10 +396,7 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 	}
 
 	// Store the image name
-	config[IncusComposePrefix+"image_alias"] = image.IncusName()
-
-	// Store the service name
-	config[IncusComposePrefix+"service_name"] = r.ServiceName()
+	config["user.image_alias"] = image.IncusName()
 
 	// Build devices map after volumes are resolved.
 	devices, err := r.buildDevices()

@@ -9,6 +9,15 @@ Version numbering moved from `0.0.1` to `1.0.0` at beta11 (1.0.0 is the intended
 final version), and the beta suffix gained a dot (`beta.16`) from beta.16 onward
 for correct semver ordering. Headings below preserve each release's announced form.
 
+## [1.0.0-rc.2] - 2026-07-08
+
+Second release candidate cause of the breaking `user.` -> `user.label.` change below.
+
+### Changed
+
+- Labels now have a `user.label.` prefix instead `user.` only, to not conflict with
+  other user settings.
+
 ## [1.0.0-rc.1] - 2026-07-07
 
 First release candidate. File pushes move to the Incus SFTP API, `command` now

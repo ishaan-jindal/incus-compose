@@ -22,9 +22,6 @@ const (
 	HealthStoppedKey = HealthKeyPrefix + "stopped"
 )
 
-// IncusComposePrefix is the instance config prefix for incus-compose variables.
-const IncusComposePrefix = "user.incus-compose."
-
 // Kind identifies a resource type.
 type Kind string
 

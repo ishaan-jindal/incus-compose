@@ -179,12 +179,12 @@ func TestInstanceConfig(t *testing.T) {
 		},
 	}
 
-	config, err := instanceConfig(service)
+	config, err := instanceConfig(service, "")
 	require.NoError(t, err)
 
 	assert.Equal(t, "bar", config["environment.FOO"])
 	assert.NotContains(t, config, "environment.SKIP")
-	assert.Equal(t, "x", config["user.com.example"])
+	assert.Equal(t, "x", config["user.label.com.example"])
 	// The entrypoint is assembled in the client layer (image entrypoint +
 	// AppendEntrypoint), so instanceConfig no longer emits oci.entrypoint.
 	assert.NotContains(t, config, "oci.entrypoint")
@@ -200,10 +200,16 @@ func TestInstanceConfig(t *testing.T) {
 func TestInstanceConfigMinimal(t *testing.T) {
 	t.Parallel()
 
-	config, err := instanceConfig(types.ServiceConfig{Name: "web"})
+	config, err := instanceConfig(types.ServiceConfig{Name: "web"}, "project1")
 	require.NoError(t, err)
 	// Only the default restart policy is applied.
-	assert.Equal(t, map[string]string{"boot.autostart": "false", client.HealthStatusKey: client.HealthStatusUnknown, "raw.lxc": "lxc.start.delay = 1\n"}, config)
+	assert.Equal(t, map[string]string{
+		"boot.autostart":                   "false",
+		client.HealthStatusKey:             client.HealthStatusUnknown,
+		"raw.lxc":                          "lxc.start.delay = 1\n",
+		"user.label.incus-compose.project": "project1",
+		"user.label.incus-compose.service": "web",
+	}, config)
 }
 
 func TestInstanceConfigXIncusOverrides(t *testing.T) {
@@ -212,7 +218,7 @@ func TestInstanceConfigXIncusOverrides(t *testing.T) {
 	proj, err := New().Load(context.Background(), LoadWorkingDir(fixturePath("with-incus-options")))
 	require.NoError(t, err)
 
-	config, err := instanceConfig(proj.Services["web"])
+	config, err := instanceConfig(proj.Services["web"], "")
 	require.NoError(t, err)
 	assert.Equal(t, "1024MB", config["limits.memory"])
 	assert.Equal(t, "2", config["limits.cpu"])
