@@ -1,0 +1,7 @@
+services:
+  web:
+    image: docker.io/nginxinc/nginx-unprivileged:alpine
+    labels:
+      caddy: whoami.example.com
+      caddy.reverse_proxy: "{{upstreams 80}}}"
+      traefik.http.routers.web.rule: "Host(`whoami.example.com`)"

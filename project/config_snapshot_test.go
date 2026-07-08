@@ -173,6 +173,10 @@ func TestConfigSnapshots(t *testing.T) {
 			Fixture: "with-env/compose.yaml",
 		},
 		{
+			Name:    "with-labels_yaml",
+			Fixture: "with-labels/compose.yaml",
+		},
+		{
 			Name:    "with-tmpfs_yaml",
 			Fixture: "with-tmpfs/compose.yaml",
 		},
