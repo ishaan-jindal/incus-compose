@@ -20,7 +20,7 @@ Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` 
 
 ## Features
 
-Status: **Beta** - testing the beta release of incus-compose.
+Status: **Stable**.
 
 - Familiar commands: `up`, `down`, `start`, `stop`, `restart`, `list` (and `ps`), `logs`, `exec`, `config`, plus `build`, `healthd`, `incus` (pass-through), and `self-update`
 - Compose project parsing via compose-go, with automatic `compose.incus.yaml` overrides and `x-incus` / `x-incus-compose` extensions for raw Incus options
@@ -42,7 +42,9 @@ Status: **Beta** - testing the beta release of incus-compose.
 Requires `podman` or `docker` for image building and an Incus https remote (needed for healthchecking) with OCI registries added.
 See [Getting Started](https://docs.incus-compose.org/getting-started) for the full setup walkthrough.
 
-Install the latest release (the script verifies the SHA-256 checksum):
+Install the latest release:
+
+Arch users: an `incus-compose` AUR package follows; `incus-compose-git` (maintained by @neitsab) already tracks main.
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/lxc/incus-compose/main/install.sh | sh -s -- -b ~/.local/bin
@@ -102,7 +104,7 @@ Fixes and new features are greatly appreciated. Make sure to read our [contribut
 
 This project is inspired by [@bketelsen](https://github.com/bketelsen/incus-compose).
 Some components are adapted from [docker compose](https://github.com/docker/compose).
-The `install.sh` script is adapted from [golangci-lint](https://github.com/golangci/golangci-lint), based on the [GoReleaser](https://goreleaser.com) install-script template.
+The `install.sh` script is adapted from [golangci-lint](https://github.com/golangci/golangci-lint).
 
 This project uses AI tools as development aids (drafting, iteration, reviews, tests, and documentation).
 Architecture, constraints, and final code decisions are owned by the human committers.
