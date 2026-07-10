@@ -44,7 +44,7 @@ func newPullCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:    "healthd-image",
 				Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
-				Value:   defaultHealthdImage,
+				Value:   DefaultHealthdImage,
 				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
 			},
 		},

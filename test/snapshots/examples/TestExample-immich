@@ -46,7 +46,7 @@
     "incus_name": "machine-learning",
     "image": "ghcr.io/immich-app/immich-machine-learning:v3.0.1",
     "status": "Running",
-    "health": "Unhealthy",
+    "health": "Healthy",
     "addresses": [
       "-stripped-"
     ]

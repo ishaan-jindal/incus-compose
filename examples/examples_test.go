@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/stretchr/testify/require"
@@ -106,9 +107,12 @@ func TestExample(t *testing.T) {
 				_, _ = runCommand(t, ctx, t.Name(), "--project-directory", example.dir, "down", "--project")
 			})
 
-			args := []string{"--project-directory", example.dir, "up", "--detach", "--timeout", "15m", "--dependency-timeout", "15m"}
+			args := []string{"--project-directory", example.dir, "up", "--detach"}
 			_, err := runCommand(t, ctx, t.Name(), args...)
 			require.NoError(t, err)
+
+			// Sometimes this is needed to get the real health status.
+			time.Sleep(1 * time.Second)
 
 			args = []string{"--project-directory", example.dir, "list", "--format", "json"}
 			stdout, err := runCommand(t, ctx, t.Name(), args...)
