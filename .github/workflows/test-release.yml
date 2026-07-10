@@ -150,6 +150,9 @@ jobs:
 
       - name: Set up Go
         uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
 
       - name: ghcr-login
         if: startsWith(github.ref, 'refs/tags/v')
