@@ -37,10 +37,6 @@ archives:
   - id: "incus-compose"
     ids:
       - "incus-compose"
-  - id: "ic-healthd"
-    ids:
-      - "ic-healthd"
-    name_template: "ic-healthd_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
   name_template: "checksums.txt"

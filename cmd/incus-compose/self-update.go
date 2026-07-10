@@ -18,8 +18,12 @@ func newSelfUpdateCommand() *cli.Command {
 		Category: "extensions",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
-				Name:  "drafts",
+				Name:  "draft",
 				Usage: `Also consider draft releases when checking for updates`,
+			},
+			&cli.BoolFlag{
+				Name:  "pre-release",
+				Usage: `Also consider pre-releases when checking for updates`,
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -29,7 +33,9 @@ func newSelfUpdateCommand() *cli.Command {
 			}
 
 			updater, err := selfupdate.NewUpdater(selfupdate.Config{
-				Draft: cmd.Bool("drafts"),
+				Draft:      cmd.Bool("draft"),
+				Prerelease: cmd.Bool("pre-release"),
+				Filters:    []string{"^incus-compose_"},
 			})
 			if err != nil {
 				gc.LogError("Creating updater", "error", err)
