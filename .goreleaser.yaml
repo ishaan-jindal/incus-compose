@@ -42,6 +42,9 @@ archives:
       - "ic-healthd"
     name_template: "ic-healthd_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
+checksum:
+  name_template: "checksums.txt"
+
 changelog:
   sort: asc
   filters:
