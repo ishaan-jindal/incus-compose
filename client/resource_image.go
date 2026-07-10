@@ -386,6 +386,10 @@ func (r *Image) create(ctx context.Context, args Options) error {
 				// Wait for copy to complete
 				err = r.client.hookRemoteOperation(ctx, ActionEnsure, r, args, op, err)
 				if err != nil {
+					if strings.Contains(err.Error(), "Failed getting remote image info") {
+						return ErrNotFound.Wrap(err)
+					}
+
 					r.client.LogWarn("Copy to cache failed", "resource", r, "error", err)
 				}
 			}
