@@ -13,7 +13,7 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X github.com/lxc/incus-compose/cmd/incus-compose/version.Version={{ if .IsSnapshot }}latest{{ else }}{{ .Version }}{{ end }}
+      - -s -w -X github.com/lxc/incus-compose/cmd/incus-compose/version.Version={{ .Version }}
 
 changelog:
   sort: asc
@@ -24,11 +24,13 @@ changelog:
 
 dockers_v2:
   - id: ic-healthd
-    dockerfile: cmd/ic-healthd/Dockerfile
+    dockerfile: cmd/ic-healthd/Dockerfile.goreleaser
+    build_args:
+      VERSION: "{{ .Version }}"
     images:
       - "ghcr.io/lxc/incus-compose/ic-healthd"
     tags:
-      - "{{ if .IsSnapshot }}latest{{ else }}{{ .Version }}{{ end }}"
+      - "{{ .Version }}"
     annotations:
       "org.opencontainers.image.description": "incus-compose - ic-healthd"
       "org.opencontainers.image.created": "{{.Date}}"
