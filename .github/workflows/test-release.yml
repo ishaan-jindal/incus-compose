@@ -1,7 +1,13 @@
-name: Test Release
+name: Release
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -15,7 +21,7 @@ env:
 jobs:
   test-e2e:
     strategy:
-      fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - name: default
@@ -34,9 +40,9 @@ jobs:
       INCUS_COMPOSE_IMAGE_CACHE: incus-compose-tests-cache
       NO_COLOR: 1
       INCUS_COMPOSE_TEST_E2E: 1
-      TEST_PROCS: 1
+      TEST_PROCS: 4
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -97,7 +103,7 @@ jobs:
       TEST_PROCS: 2
       EXAMPLE: TestExampleHugo
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -124,3 +130,55 @@ jobs:
           path: ${{ env.REPORTS_DIR }}/junit.xml
           reporter: java-junit
           fail-on-error: false
+
+  goreleaser:
+    needs: test-example
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      packages: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: docker/setup-buildx-action@v4.2.0
+      - uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+
+      - name: ghcr-login
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@v4.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          # either 'goreleaser' (default) or 'goreleaser-pro'
+          distribution: goreleaser
+          # 'latest', 'nightly', or a semver
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # After GoReleaser runs, attest all the files in ./dist/checksums.txt:
+      - uses: actions/attest@v4
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          subject-checksums: ./dist/checksums.txt
+
+      # After GoReleaser runs, attest all the images in ./dist/digests.txt:
+      - uses: actions/attest@v4
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          subject-checksums: ./dist/digests.txt

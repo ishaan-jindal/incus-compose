@@ -8,11 +8,12 @@ builds:
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X github.com/lxc/incus-compose/cmd/incus-compose/version.Version={{ .Version }}
+      - -s -w -X github.com/lxc/incus-compose/cmd/incus-compose/version.Version={{ if .IsSnapshot }}latest{{ else }}{{ .Version }}{{ end }}
 
 changelog:
   sort: asc
@@ -21,16 +22,23 @@ changelog:
       - "^docs:"
       - "^test:"
 
-# nfpms:
-#   - maintainer: "Rene Jochum <rene@jochum.dev>"
-#     description: Bring the familiar Docker Compose workflow to Incus containers.
-#     homepage: https://github.com/lxc/incus-compose
-#     license: APACHE-2.0
-#     # file_name_template: "{{ .ConventionalFileName }}" # optional, better file names
-#     formats:
-#       - deb
-#       - apk
-#       - rpm
+dockers_v2:
+  - id: ic-healthd
+    dockerfile: cmd/ic-healthd/Dockerfile
+    images:
+      - "ghcr.io/lxc/incus-compose/ic-healthd"
+    tags:
+      - "{{ if .IsSnapshot }}latest{{ else }}{{ .Version }}{{ end }}"
+    annotations:
+      "org.opencontainers.image.description": "incus-compose - ic-healthd"
+      "org.opencontainers.image.created": "{{.Date}}"
+      "org.opencontainers.image.name": "{{.ProjectName}}"
+      "org.opencontainers.image.revision": "{{.FullCommit}}"
+      "org.opencontainers.image.version": "{{.Version}}"
+      "org.opencontainers.image.source": "{{.GitURL}}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
 
 release:
   footer: >-
