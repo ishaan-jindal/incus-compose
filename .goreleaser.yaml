@@ -5,6 +5,7 @@ version: 2
 builds:
   - id: "incus-compose"
     main: ./cmd/incus-compose
+    binary: incus-compose
     goos:
       - linux
       - darwin
@@ -13,7 +14,33 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X github.com/lxc/incus-compose/cmd/incus-compose/version.Version={{ .Version }}
+      - -s -w
+      - -X github.com/lxc/incus-compose/cmd/incus-compose/version.Version={{ .Version }}
+      - -X github.com/lxc/incus-compose/cmd/incus-compose/DefaultHealthdImage=ghcr.io/lxc/incus-compose/ic-healthd:{{ .Version }}
+    env:
+      - CGO_ENABLED=0
+
+  - id: "ic-healthd"
+    main: ./cmd/ic-healthd
+    binary: ic-healthd
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+    env:
+      - CGO_ENABLED=0
+
+archives:
+  - id: "incus-compose"
+    ids:
+      - "incus-compose"
+  - id: "ic-healthd"
+    ids:
+      - "ic-healthd"
+    name_template: "ic-healthd_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 changelog:
   sort: asc
@@ -24,6 +51,8 @@ changelog:
 
 dockers_v2:
   - id: ic-healthd
+    ids:
+      - "ic-healthd"
     dockerfile: cmd/ic-healthd/Dockerfile.goreleaser
     build_args:
       VERSION: "{{ .Version }}"

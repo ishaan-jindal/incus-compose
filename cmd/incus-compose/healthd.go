@@ -19,8 +19,10 @@ import (
 	"github.com/lxc/incus-compose/project"
 )
 
+// DefaultHealthdImage is the default healthd image to use, a var cause overwriteable by ldflags.
+var DefaultHealthdImage = "ghcr.io/lxc/incus-compose/ic-healthd:{version}"
+
 const (
-	defaultHealthdImage       = "ghcr.io/lxc/incus-compose/ic-healthd:{version}"
 	defaultHealthdCPULimit    = "1"
 	defaultHealthdMemoryLimit = "50MB"
 )
