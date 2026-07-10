@@ -16,13 +16,27 @@ func newSelfUpdateCommand() *cli.Command {
 		Name:     "self-update",
 		Usage:    `Self update incus-compose`,
 		Category: "extensions",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:  "drafts",
+				Usage: `Also consider draft releases when checking for updates`,
+			},
+		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			gc, err := clientFromContext(ctx)
 			if err != nil {
 				return err
 			}
 
-			latest, found, err := selfupdate.DetectLatest(context.Background(), selfupdate.ParseSlug("lxc/incus-compose"))
+			updater, err := selfupdate.NewUpdater(selfupdate.Config{
+				Draft: cmd.Bool("drafts"),
+			})
+			if err != nil {
+				gc.LogError("Creating updater", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			latest, found, err := updater.DetectLatest(context.Background(), selfupdate.ParseSlug("lxc/incus-compose"))
 			if err != nil {
 				gc.LogError("While detecting a version", "error", err)
 				return errLogged.Wrap(err)

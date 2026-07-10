@@ -9,6 +9,16 @@ Version numbering moved from `0.0.1` to `1.0.0` at beta11 (1.0.0 is the intended
 final version), and the beta suffix gained a dot (`beta.16`) from beta.16 onward
 for correct semver ordering. Headings below preserve each release's announced form.
 
+## [1.0.0] - 2026-07-10
+
+The first stable release! _hooray_
+
+### Changed
+
+- Refactored the whole image caching process, it's now doing the same as
+  the incus client would do and allows disabling caching by setting it to empty.
+- `self-update` got a `--drafts` flag and skips them by default.
+
 ## [1.0.0-rc.2] - 2026-07-08
 
 Second release candidate cause of the breaking `user.` -> `user.label.` change below.
@@ -60,6 +70,9 @@ E2E suite green.
 
 - CI runs slow tests with a 20m timeout and without parallelism to avoid overload;
   tooling paths and changelog links updated; lint fixes.
+
+<details>
+<summary><strong>Pre-1.0 beta history</strong> (beta1 through beta.22, 2026-06-01 to 2026-07-06)</summary>
 
 ## [1.0.0-beta.22] - 2026-07-06
 
@@ -591,3 +604,5 @@ Brian Ketelsen's proof-of-concept.
   `container_name`, etc.).
 - Configuration via `INCUS_COMPOSE_*` environment variables for every flag, with a
   configurable parallel worker count.
+
+</details>
