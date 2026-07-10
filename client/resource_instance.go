@@ -9,7 +9,7 @@ import (
 	"maps"
 	"net"
 	"os"
-	"path/filepath"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -132,7 +132,6 @@ type Instance struct {
 
 	// State - nil means not ensured.
 	IncusInstance *incusApi.Instance
-	ETag          string
 
 	// // UID/GID from the config or extracted from container (for volume shifting).
 	UID uint64
@@ -238,12 +237,11 @@ func (r *Instance) HasFull() bool {
 
 func (r *Instance) fetch() error {
 	// Fresh instance.
-	instance, eTag, err := r.conn.GetInstance(r.incusName)
+	instance, _, err := r.conn.GetInstance(r.incusName)
 	if err != nil {
 		return err
 	}
 	r.IncusInstance = instance
-	r.ETag = eTag
 
 	r.UID = r.Config.UID
 	r.GID = r.Config.GID
@@ -565,7 +563,7 @@ func (r *Instance) attachPostStartDevices(ctx context.Context) error {
 	w := r.IncusInstance.Writable()
 	w.Devices = devices
 
-	op, err := r.conn.UpdateInstance(r.IncusName(), w, r.ETag)
+	op, err := r.conn.UpdateInstance(r.IncusName(), w, "")
 	if err != nil {
 		return err
 	}
@@ -931,7 +929,7 @@ func (r *Instance) pushFile(sftpConn *sftp.Client, file InstanceFile) error {
 			dirMode = 0o755
 		}
 
-		err := sftpRecursiveMkdir(r.client, sftpConn, filepath.Dir(file.Target), &dirMode, uid, gid)
+		err := sftpRecursiveMkdir(r.client, sftpConn, path.Dir(file.Target), &dirMode, uid, gid)
 		if err != nil {
 			return ErrCreate.Wrap(err)
 		}
@@ -1088,12 +1086,12 @@ func sftpRecursiveMkdir(c *Client, sftpConn *sftp.Client, p string, mode *os.Fil
 
 	// Remove trailing "/" e.g. /A/B/C/. Otherwise we will end up with an
 	// empty array entry "" which will confuse the Mkdir() loop below.
-	pclean := filepath.Clean(p)
+	pclean := path.Clean(p)
 	parts := strings.Split(pclean, "/")
 	i := len(parts)
 
 	for ; i >= 1; i-- {
-		cur := filepath.Join(parts[:i]...)
+		cur := path.Join(parts[:i]...)
 		fInfo, err := sftpConn.Lstat(cur)
 		if err != nil {
 			continue
@@ -1108,7 +1106,7 @@ func sftpRecursiveMkdir(c *Client, sftpConn *sftp.Client, p string, mode *os.Fil
 	}
 
 	for ; i <= len(parts); i++ {
-		cur := filepath.Join(parts[:i]...)
+		cur := path.Join(parts[:i]...)
 		if cur == "" {
 			continue
 		}
@@ -1185,7 +1183,7 @@ func (r *Instance) stop(ctx context.Context, options Options) error {
 		Action:  "stop",
 		Force:   options.Force,
 		Timeout: options.incusTimeout(),
-	}, r.ETag)
+	}, "")
 	if err != nil {
 		return ErrOperation.WithText("stopping instance").Wrap(err)
 	}
@@ -1219,7 +1217,7 @@ func (r *Instance) SetHealthCheckingStopped(ctx context.Context, stopped bool) e
 	w := r.IncusInstance.Writable()
 	w.Config[HealthStoppedKey] = value
 
-	op, err := r.conn.UpdateInstance(r.IncusName(), w, r.ETag)
+	op, err := r.conn.UpdateInstance(r.IncusName(), w, "")
 	if err != nil {
 		return err
 	}
@@ -1244,7 +1242,6 @@ func (r *Instance) Delete(ctx context.Context, opts ...Option) error {
 
 	if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
 		r.IncusInstance = nil
-		r.ETag = ""
 
 		r.client.resources.Remove(r)
 		return err
@@ -1252,7 +1249,6 @@ func (r *Instance) Delete(ctx context.Context, opts ...Option) error {
 
 	if !r.IsEnsured() {
 		r.IncusInstance = nil
-		r.ETag = ""
 
 		r.client.resources.Remove(r)
 		return r.client.hookAfter(ctx, ActionDelete, r, options, ErrNotEnsured)
@@ -1265,14 +1261,12 @@ func (r *Instance) Delete(ctx context.Context, opts ...Option) error {
 
 	if err := r.client.hookAfter(ctx, ActionDelete, r, options, err); err != nil {
 		r.IncusInstance = nil
-		r.ETag = ""
 
 		r.client.resources.Remove(r)
 		return err
 	}
 
 	r.IncusInstance = nil
-	r.ETag = ""
 
 	r.client.resources.Remove(r)
 	return nil

@@ -195,7 +195,13 @@ func TestImageEnsure(t *testing.T) {
 		},
 		{
 			name:    "without create fails",
+			image:   "docker.io/library/busybox:glibc",
+			wantErr: true,
+		},
+		{
+			name:    "bad image fails",
 			image:   "docker.io/library/nonexistent-image-xyz123:latest",
+			opts:    []Option{OptionCreate()},
 			wantErr: true,
 		},
 	}
@@ -379,6 +385,42 @@ func TestImageProperties(t *testing.T) {
 	require.Equal(t, "/", image.Cwd)
 	require.Equal(t, 65534, int(image.UID))
 	require.Equal(t, 65534, int(image.GID))
+}
+
+func TestImageFromCache(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "image-from-cache-")
+
+	r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+	require.NoError(t, err)
+
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+	require.NoError(t, RunAction(ctx, r, ActionDelete))
+
+	img, ok := r.(*Image)
+	require.True(t, ok)
+
+	// Get should fail after delete.
+	require.Error(t, img.get())
+
+	// Create should work without a source (no panic) as we have the image in cache.
+	img.source = nil
+	require.NoError(t, img.create(ctx, NewOptions()))
+}
+
+func TestImageNoCache(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "image-no-cache-")
+	c.imageCache = nil
+
+	r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+	require.NoError(t, err)
+
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
 }
 
 // ----------------------------------------------------------------------------

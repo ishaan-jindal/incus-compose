@@ -8,7 +8,9 @@ import (
 	"maps"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/avast/retry-go/v5"
 	"github.com/distribution/reference"
 	incusClient "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
@@ -230,7 +232,9 @@ func (r *Image) Ensure(ctx context.Context, opts ...Option) error {
 				return ErrImageSource.WithText("getting image server for " + r.remote).Wrap(err)
 			}
 			r.source = is
-			if connInfo, err := is.GetConnectionInfo(); err == nil && connInfo.Protocol == "incus" {
+
+			connInfo, err := r.source.GetConnectionInfo()
+			if err == nil && connInfo.Protocol == "incus" {
 				r.nativeIncus = true
 			}
 		}
@@ -276,7 +280,9 @@ func (r *Image) get() error {
 	r.IncusAlias = alias
 	r.ETag = eTag
 
-	if img, _, err := r.conn.GetImage(alias.Target); err == nil {
+	img, _, err := r.conn.GetImage(alias.Target)
+	if err == nil {
+		r.size = img.Size
 		r.readOCIConfigFromProperties(img.Properties)
 	}
 
@@ -329,72 +335,94 @@ func (r *Image) refresh(ctx context.Context, args Options) error {
 }
 
 func (r *Image) create(ctx context.Context, args Options) error {
-	if r.source == nil {
-		return ErrImageSource.WithText("not configured")
-	}
-
-	var cacheAlias *incusApi.ImageAliasesEntry
-	var err error
-
-	// Check if the cache has the alias
-	cacheAlias, _, err = r.cache.GetImageAlias(r.incusName)
-	if err != nil {
-		// Resolve the total size up front so progress display can show scale
-		// even for OCI pulls, which report no percentage. Best-effort: the
-		// alias lookup is cached by the source server and reused by CopyImage.
-		sourceAlias, _, err := r.source.GetImageAlias(r.image)
+	if r.cache != nil {
+		cacheAlias, _, err := r.cache.GetImageAlias(r.incusName)
 		if err != nil {
-			r.client.LogDebug("Image not found on source", "image", r.image, "error", err)
-			return ErrNotFound.WithText("on source")
+			if r.source == nil {
+				return ErrImageSource.WithText("not configured")
+			}
+
+			var cacheImgInfo incusApi.Image
+			if r.NativeIncus() {
+				alias, _, err := r.source.GetImageAlias(r.image)
+				if err != nil {
+					return ErrNotFound.WithText("on source").Wrap(err)
+				}
+
+				image, _, err := r.source.GetImage(alias.Target)
+				if err != nil {
+					return ErrNotFound.WithText("resolved alias not found").Wrap(err)
+				}
+
+				cacheImgInfo = incusApi.Image{
+					Fingerprint: image.Fingerprint,
+					ImagePut: incusApi.ImagePut{
+						Public: true,
+					},
+				}
+			} else {
+				cacheImgInfo = incusApi.Image{
+					Fingerprint: r.image,
+					ImagePut: incusApi.ImagePut{
+						Public: true,
+					},
+				}
+			}
+
+			cacheCopyArgs := &incusClient.ImageCopyArgs{
+				Aliases: []incusApi.ImageAlias{
+					{
+						Name: r.incusName,
+					},
+				},
+				Mode: "pull",
+			}
+
+			// Copy from source to cache, we just warn on error as parallel operations might have caused this.
+			op, err := r.cache.CopyImage(r.source, cacheImgInfo, cacheCopyArgs)
+			if err != nil {
+				r.client.LogWarn("Creating a copy operation failed", "resource", r, "error", err)
+			} else {
+				// Wait for copy to complete
+				err = r.client.hookRemoteOperation(ctx, ActionEnsure, r, args, op, err)
+				if err != nil {
+					r.client.LogWarn("Copy to cache failed", "resource", r, "error", err)
+				}
+			}
+
+			// Retry fetch for up to 5 minutes.
+			cacheAlias, err = retry.NewWithData[*incusApi.ImageAliasesEntry](
+				retry.Attempts(10),
+				retry.Delay(30*time.Second),
+			).Do(func() (*incusApi.ImageAliasesEntry, error) {
+				alias, _, err := r.cache.GetImageAlias(r.incusName)
+				return alias, err
+			})
+			if err != nil {
+				return ErrNotFound.WithText("on cache after copy").Wrap(err)
+			}
+
+			// Extract oci informations with a temporary instance.
+			err = extractAndStoreOCIConfig(ctx, r.cache, cacheAlias.Target, r.client.Config().DefaultStoragePool)
+			if err != nil {
+				return ErrCreate.WithText("extracting OCI config from the image").Wrap(err)
+			}
 		}
 
-		sourceImage, _, err := r.source.GetImage(sourceAlias.Target)
-		if err != nil {
-			r.size = sourceImage.Size
-		}
-
-		cacheCopyArgs := &incusClient.ImageCopyArgs{
+		projectCopyArgs := &incusClient.ImageCopyArgs{
+			Aliases: []incusApi.ImageAlias{
+				{
+					Name: r.incusName,
+				},
+			},
 			Mode: "pull",
 		}
 
-		// Build image info for copy
-		cacheImgInfo := incusApi.Image{
-			Fingerprint: r.image,
-			ImagePut: incusApi.ImagePut{
-				Public: true,
-			},
-		}
-
-		// Copy from source to cache
-		op, err := r.cache.CopyImage(r.source, cacheImgInfo, cacheCopyArgs)
-
-		// Wait for copy to complete
-		if err = r.client.hookRemoteOperation(ctx, ActionEnsure, r, args, op, err); err != nil {
-			return ErrCreate.WithText("downloading the image to the cache").Wrap(err)
-		}
-
-		if err := extractAndStoreOCIConfig(ctx, r.cache, sourceAlias.Target, r.client.Config().DefaultStoragePool); err != nil {
-			return ErrCreate.WithText("extracting OCI config from the image").Wrap(err)
-		}
-
-		cacheAlias = &incusApi.ImageAliasesEntry{
-			ImageAliasesEntryPut: incusApi.ImageAliasesEntryPut{Target: sourceAlias.Target},
-		}
-	}
-
-	_, _, err = r.conn.GetImageAlias(r.incusName)
-	if err != nil {
-		projectCopyArgs := &incusClient.ImageCopyArgs{
-			Aliases:    []incusApi.ImageAlias{{Name: r.incusName}},
-			AutoUpdate: true,
-			Mode:       "pull",
-		}
-
-		if r.Cwd == "/" {
-			// Copy from cache, read oci.* from it.
-			if img, _, err := r.cache.GetImage(cacheAlias.Target); err == nil {
-				r.readOCIConfigFromProperties(img.Properties)
-			}
+		// Copy from cache, read oci.* from it.
+		img, _, err := r.cache.GetImage(cacheAlias.Target)
+		if err == nil {
+			r.size = img.Size
+			r.readOCIConfigFromProperties(img.Properties)
 		}
 
 		// Build image info for copy
@@ -416,6 +444,70 @@ func (r *Image) create(ctx context.Context, args Options) error {
 		// Wait for copy to complete
 		if err = r.client.hookRemoteOperation(ctx, ActionEnsure, r, args, op, err); err != nil {
 			return ErrCreate.WithText("project image").Wrap(err)
+		}
+	} else {
+		if r.source == nil {
+			return ErrImageSource.WithText("not configured")
+		}
+
+		var targetImageInfo incusApi.Image
+		if r.NativeIncus() {
+			alias, _, err := r.source.GetImageAlias(r.image)
+			if err != nil {
+				return ErrNotFound.WithText("on source").Wrap(err)
+			}
+
+			image, _, err := r.source.GetImage(alias.Target)
+			if err != nil {
+				return ErrNotFound.WithText("resolved alias not found").Wrap(err)
+			}
+
+			r.size = image.Size
+
+			targetImageInfo = incusApi.Image{
+				Fingerprint: image.Fingerprint,
+				ImagePut: incusApi.ImagePut{
+					Public: true,
+				},
+			}
+		} else {
+			targetImageInfo = incusApi.Image{
+				Fingerprint: r.image,
+				ImagePut: incusApi.ImagePut{
+					Public: true,
+				},
+			}
+		}
+
+		targetCopyArgs := &incusClient.ImageCopyArgs{
+			Aliases: []incusApi.ImageAlias{
+				{
+					Name: r.incusName,
+				},
+			},
+			Mode: "pull",
+		}
+
+		op, err := r.conn.CopyImage(r.source, targetImageInfo, targetCopyArgs)
+		if err != nil {
+			r.client.LogWarn("Creating a copy operation failed", "resource", r, "error", err)
+		} else {
+			// Wait for copy to complete
+			err = r.client.hookRemoteOperation(ctx, ActionEnsure, r, args, op, err)
+			if err != nil {
+				r.client.LogWarn("Copy to project failed", "resource", r, "error", err)
+			}
+		}
+
+		targetAlias, _, err := r.conn.GetImageAlias(r.incusName)
+		if err != nil {
+			return ErrNotFound.WithText("on project after copy").Wrap(err)
+		}
+
+		// Extract oci informations with a temporary instance.
+		err = extractAndStoreOCIConfig(ctx, r.conn, targetAlias.Target, r.client.Config().DefaultStoragePool)
+		if err != nil {
+			return ErrCreate.WithText("extracting OCI config from the image").Wrap(err)
 		}
 	}
 

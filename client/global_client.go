@@ -379,13 +379,15 @@ func (c *GlobalClient) setupImageCache() error {
 		// Use dedicated cache project (create if needed)
 		cacheClient, err := c.EnsureProject(c.config.CacheProject, EnsureProjectWithCreate())
 		if err != nil {
-			return fmt.Errorf("ensuring cache project %s: %w", c.config.CacheProject, err)
+			// Try again without create for parallel creates.
+			cacheClient, err = c.EnsureProject(c.config.CacheProject)
+			if err != nil {
+				return fmt.Errorf("ensuring cache project %s: %w", c.config.CacheProject, err)
+			}
 		}
 		c.imageCache = cacheClient.incus
-	} else {
-		// Default: use "default" project as cache
-		c.imageCache = c.incus.UseProject("default")
 	}
+
 	return nil
 }
 

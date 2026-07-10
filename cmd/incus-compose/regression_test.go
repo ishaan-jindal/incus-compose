@@ -85,3 +85,21 @@ func TestE2EStartStopIdempotent(t *testing.T) {
 		require.NoError(t, err)
 	}
 }
+
+func TestE2ENoImageCache(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+
+	ctx := context.Background()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--image-cache", "")
+	require.NoError(t, err)
+}

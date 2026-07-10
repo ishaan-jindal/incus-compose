@@ -238,7 +238,7 @@ func newRootCommand() *cli.Command {
 			},
 			&cli.StringFlag{
 				Name:    "image-cache",
-				Usage:   `Image cache project to use`,
+				Usage:   `Image cache project to use, set empty to disable`,
 				Value:   "default",
 				Sources: cli.EnvVars("INCUS_COMPOSE_IMAGE_CACHE"),
 			},
@@ -316,6 +316,11 @@ func newRootCommand() *cli.Command {
 			if err != nil {
 				return ctx, err
 			}
+
+			// cacheProject := cmd.String("image-cache")
+			// if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+			// 	cacheProject = ""
+			// }
 
 			opts := []client.ClientOption{
 				client.ClientProvideInstanceServer(server),

@@ -176,6 +176,10 @@ func TestClientProject_ImageCacheIsInCacheProfile(t *testing.T) {
 	gc, err := NewTestClient(ctx)
 	require.NoError(t, err)
 
+	if gc.imageCache == nil {
+		t.Skipf("Skipping INCUS_COMPOSE_IMAGE_CACHE_PROJECT is empty")
+	}
+
 	gInfo, err := gc.imageCache.GetConnectionInfo()
 	require.NoError(t, err)
 	require.Equal(t, "incus-compose-tests-cache", gInfo.Project)
