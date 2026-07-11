@@ -23,6 +23,7 @@ Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` 
 Status: **Stable**.
 
 - Familiar commands: `up`, `down`, `start`, `stop`, `restart`, `list` (and `ps`), `logs`, `exec`, `config`, plus `build`, `healthd`, `incus` (pass-through), and `self-update`
+- Windows and macOS clients: No Docker Desktop, no WSL, no local Linux VM. `incus-compose` and the `incus` client are portable Go binaries — from a Windows or macOS desktop you drive a remote Incus host over HTTPS and manage OCI containers, LXC system containers, and VMs directly. See [Installing on Windows](https://docs.incus-compose.org/getting-started/windows).
 - Compose project parsing via compose-go, with automatic `compose.incus.yaml` overrides and `x-incus` / `x-incus-compose` extensions for raw Incus options
 - OCI image pulling from docker.io, ghcr.io, and other registries
 - Two-stage image cache in a dedicated Incus project (survives `down`/`up`, avoids registry rate limits)
@@ -44,7 +45,7 @@ See [Getting Started](https://docs.incus-compose.org/getting-started) for the fu
 
 Install the latest release:
 
-Arch users: an `incus-compose` AUR package follows; `incus-compose-git` (maintained by @neitsab) already tracks main.
+Arch users: an [incus-compose-bin](https://aur.archlinux.org/packages/incus-compose-bin) and [incus-compose-git](https://aur.archlinux.org/packages/incus-compose-git) (maintained by @neitsab and @jochumdev) are available.
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/lxc/incus-compose/main/install.sh | sh -s -- -b ~/.local/bin
