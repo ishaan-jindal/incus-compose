@@ -1,0 +1,57 @@
+services:
+  mariadb:
+    image: library/mariadb:12
+    container_name: mariadb
+    volumes:
+      - mariadb:/var/lib/mysql
+    environment:
+      - MARIADB_DATABASE=${DB_NAME}
+      - MARIADB_USER=${DB_USER}
+      - MARIADB_PASSWORD_FILE=/run/secrets/db-password
+      - MARIADB_ROOT_PASSWORD_FILE=/run/secrets/db-root-password
+    secrets:
+      - db-password
+      - db-root-password
+      - source: db-my-cnf
+        target: /root/.my.cnf
+    restart: unless-stopped
+    healthcheck:
+      test: mariadb-admin -uroot ping -h 127.0.0.1 --silent
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+      start_interval: 5s
+
+  kimai:
+    image: kimai/kimai2:${VERSION}
+    container_name: kimai
+    depends_on:
+      mariadb:
+        condition: service_healthy
+        # restart: true
+    volumes:
+      - data:/opt/kimai/var
+      # - data:/opt/kimai/var/data
+      # - plugins:/opt/kimai/var/plugins
+    environment:
+      - TZ=${TIMEZONE}
+      - APP_SECRET=${APP_SECRET}
+      - TRUSTED_HOSTS=${TRUSTED_HOSTS}
+      - ADMINMAIL=${ADMINMAIL}
+      - ADMINPASS=${ADMINPASS}
+      - "DATABASE_URL=mysql://${DB_USER}:${DB_PASSWORD}@mariadb/${DB_NAME}?charset=utf8mb4&serverVersion=12.3.2-mariadb"
+    restart: unless-stopped
+
+secrets:
+  db-password:
+    environment: DB_PASSWORD
+  db-root-password:
+    environment: DB_ROOT_PASSWORD
+  db-my-cnf:
+    environment: DB_MY_CNF
+
+volumes:
+  data:
+  mariadb:
+  # plugins:

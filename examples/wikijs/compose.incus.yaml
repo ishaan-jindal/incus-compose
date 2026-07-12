@@ -2,24 +2,21 @@ services:
   database:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
-      interval: 10s
+      interval: 30s
       timeout: 10s
       retries: 3
-      start_interval: 1m
-      start_period: 4m
+      start_interval: 30s
+      start_period: 90s
     networks:
       default:
 
   wiki:
-    ports: !reset [] # do have static ip
-    init: false # not supported
+    ports: !reset []
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000"] # IPv4 only
       interval: 30s
       timeout: 10s
       retries: 3
-      start_interval: 1m
-      start_period: 5m
     networks:
       default:
         ipv4_address: 10.133.32.17
@@ -27,5 +24,6 @@ services:
 networks:
   default:
     x-incus:
-      ipv4.nat: "true"
       ipv4.address: 10.133.32.1/24
+    x-incus-compose:
+      network: nwiki0

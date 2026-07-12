@@ -9,7 +9,6 @@ services:
     #   file: hwaccel.transcoding.yml
     #   service: cpu # set to one of [nvenc, quicksync, rkmpp, vaapi, vaapi-wsl] for accelerated transcoding
     volumes:
-      # Do not edit the next line. If you want to change the media storage location on your system, edit the value of UPLOAD_LOCATION in the .env file
       - library:/data
     environment:
       IMMICH_WORKERS_INCLUDE: "api"
@@ -23,6 +22,10 @@ services:
       database:
         condition: service_healthy
         restart: true
+      machine-learning:
+        condition: service_healthy
+      microservices:
+        condition: service_healthy
     restart: unless-stopped
 
   machine-learning:
@@ -46,7 +49,6 @@ services:
     #   file: hwaccel.transcoding.yml
     #   service: cpu # set to one of [nvenc, quicksync, rkmpp, vaapi, vaapi-wsl] for accelerated transcoding
     volumes:
-      # Do not edit the next line. If you want to change the media storage location on your system, edit the value of UPLOAD_LOCATION in the .env file
       - library:/data
     environment:
       IMMICH_WORKERS_EXCLUDE: "api"

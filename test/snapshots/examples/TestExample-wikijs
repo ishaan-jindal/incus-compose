@@ -3,7 +3,7 @@
     "kind": "network",
     "name": "default",
     "description": "",
-    "incus_name": "ic-7zvrmnu6m2",
+    "incus_name": "nwiki0",
     "image": "",
     "status": "Exists",
     "health": "",

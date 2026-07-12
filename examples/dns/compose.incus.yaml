@@ -1,0 +1,29 @@
+services:
+  dnscrypt-proxy:
+    networks:
+      default:
+        x-incus:
+          ipv4.address: "${KNOT_IPV4_ADDRESS}/${IPV4_NETMASK}"
+          ipv4.gateway: "${IPV4_GATEWAY}"
+
+  knot:
+    volumes: !reset
+      - ./knot/config:/config:ro
+      - type: bind
+        source: ./knot/storage
+        target: /storage
+        x-incus:
+          security.shifted: "true"
+          initial.uid: "53"
+          initial.gid: "53"
+    networks:
+      default:
+        x-incus:
+          ipv4.address: "${DNSCRYPT_IPV4_ADDRESS}/${IPV4_NETMASK}"
+          ipv4.gateway: "${IPV4_GATEWAY}"
+
+networks:
+  default:
+    external: true
+    x-incus-compose:
+      network: incusbr0
