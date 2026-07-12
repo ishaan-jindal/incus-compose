@@ -982,10 +982,10 @@ func instanceConfigs(p *types.Project, service types.ServiceConfig) ([]client.In
 	return result, errs
 }
 
-// parseConfigMode parses a file mode to int, defaulting to 0444.
+// parseConfigMode parses a file mode to int, defaulting to 0644.
 func parseConfigMode(mode *types.FileMode) int {
 	if mode == nil {
-		return 0o444
+		return 0o644
 	}
 	return int(*mode)
 }
