@@ -336,6 +336,87 @@ func TestInstanceSecrets(t *testing.T) {
 	})
 }
 
+func TestInstanceConfigs(t *testing.T) {
+	t.Run("file source", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "config.txt")
+		require.NoError(t, os.WriteFile(path, []byte("config-value"), 0o644))
+		p := &types.Project{Configs: types.Configs{"app": {File: path}}}
+		service := types.ServiceConfig{Name: "web", Configs: []types.ServiceConfigObjConfig{{Source: "app", Target: "/etc/app.conf"}}}
+
+		configs, err := instanceConfigs(p, service)
+		require.NoError(t, err)
+		require.Len(t, configs, 1)
+		require.Equal(t, "/etc/app.conf", configs[0].Target)
+		assert.Equal(t, int64(-1), configs[0].UID)
+		assert.Equal(t, int64(-1), configs[0].GID)
+	})
+
+	t.Run("content source", func(t *testing.T) {
+		t.Parallel()
+		p := &types.Project{Configs: types.Configs{"app": {Content: "inline-config"}}}
+		service := types.ServiceConfig{Name: "web", Configs: []types.ServiceConfigObjConfig{{Source: "app", Target: "/etc/app.conf"}}}
+
+		configs, err := instanceConfigs(p, service)
+		require.NoError(t, err)
+		require.Len(t, configs, 1)
+		require.Equal(t, "/etc/app.conf", configs[0].Target)
+	})
+
+	t.Run("environment source", func(t *testing.T) {
+		p := &types.Project{Configs: types.Configs{"app": {Environment: "MY_CONFIG", Content: "env-value"}}}
+		service := types.ServiceConfig{Name: "web", Configs: []types.ServiceConfigObjConfig{{Source: "app", Target: "/etc/app.conf"}}}
+
+		configs, err := instanceConfigs(p, service)
+		require.NoError(t, err)
+		require.Len(t, configs, 1)
+		require.Equal(t, "/etc/app.conf", configs[0].Target)
+	})
+
+	t.Run("environment not found", func(t *testing.T) {
+		p := &types.Project{Configs: types.Configs{"app": {Environment: "MISSING"}}}
+		service := types.ServiceConfig{Name: "web", Configs: []types.ServiceConfigObjConfig{{Source: "app"}}}
+		_, err := instanceConfigs(p, service)
+		require.Error(t, err)
+	})
+
+	t.Run("undefined config", func(t *testing.T) {
+		t.Parallel()
+		service := types.ServiceConfig{Name: "web", Configs: []types.ServiceConfigObjConfig{{Source: "missing"}}}
+		_, err := instanceConfigs(&types.Project{}, service)
+		require.Error(t, err)
+	})
+
+	t.Run("no source", func(t *testing.T) {
+		t.Parallel()
+		p := &types.Project{Configs: types.Configs{"app": {}}}
+		service := types.ServiceConfig{Name: "web", Configs: []types.ServiceConfigObjConfig{{Source: "app"}}}
+		_, err := instanceConfigs(p, service)
+		require.Error(t, err)
+	})
+
+	t.Run("missing file", func(t *testing.T) {
+		t.Parallel()
+		p := &types.Project{Configs: types.Configs{"app": {File: filepath.Join(t.TempDir(), "nope")}}}
+		service := types.ServiceConfig{Name: "web", Configs: []types.ServiceConfigObjConfig{{Source: "app"}}}
+		_, err := instanceConfigs(p, service)
+		require.Error(t, err)
+	})
+
+	t.Run("default target", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "config.txt")
+		require.NoError(t, os.WriteFile(path, []byte("val"), 0o644))
+		p := &types.Project{Configs: types.Configs{"app": {File: path}}}
+		service := types.ServiceConfig{Name: "web", Configs: []types.ServiceConfigObjConfig{{Source: "app"}}}
+
+		configs, err := instanceConfigs(p, service)
+		require.NoError(t, err)
+		require.Len(t, configs, 1)
+		assert.Equal(t, "/app", configs[0].Target)
+	})
+}
+
 func TestServiceToInstanceUser(t *testing.T) {
 	t.Parallel()
 

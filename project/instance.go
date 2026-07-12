@@ -112,6 +112,12 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	}
 	files = append(files, secrets...)
 
+	configs, err := instanceConfigs(p, service)
+	if err != nil {
+		errs = errors.Join(errs, err)
+	}
+	files = append(files, configs...)
+
 	if errs != nil {
 		return nil, nil, errs
 	}
@@ -922,6 +928,66 @@ func formatTmpfsSize(opts *types.ServiceVolumeTmpfs) string {
 		return ""
 	}
 	return strconv.FormatInt(int64(opts.Size), 10)
+}
+
+// instanceConfigs resolves a service's configs from their compose definitions,
+// reading content from a file, inline content, or an environment variable.
+func instanceConfigs(p *types.Project, service types.ServiceConfig) ([]client.InstanceFile, error) {
+	var errs error
+	result := []client.InstanceFile{}
+
+	for _, svcConfig := range service.Configs {
+		configDef, ok := p.Configs[svcConfig.Source]
+		if !ok {
+			errs = errors.Join(errs, fmt.Errorf("config %q not defined", svcConfig.Source))
+			continue
+		}
+
+		target := svcConfig.Target
+		if target == "" {
+			target = "/" + svcConfig.Source
+		}
+
+		switch {
+		case configDef.File != "":
+			fp, err := os.Open(configDef.File)
+			if err != nil {
+				errs = errors.Join(errs, fmt.Errorf("config '%v' source not found or not readable", configDef.File))
+				continue
+			}
+			result = append(result, client.InstanceFile{
+				Target:  target,
+				Content: fp,
+				UID:     parseSecretID(svcConfig.UID),
+				GID:     parseSecretID(svcConfig.GID),
+				Mode:    parseConfigMode(svcConfig.Mode),
+			})
+		case configDef.Content != "":
+			result = append(result, client.InstanceFile{
+				Target:  target,
+				Content: client.NewReaderFromBytes([]byte(configDef.Content)),
+				UID:     parseSecretID(svcConfig.UID),
+				GID:     parseSecretID(svcConfig.GID),
+				Mode:    parseConfigMode(svcConfig.Mode),
+			})
+		case configDef.Environment != "":
+			errs = errors.Join(errs, fmt.Errorf("config '%v' environment variable '%v' not found", svcConfig.Source, configDef.Environment))
+			continue
+		default:
+			errs = errors.Join(errs, fmt.Errorf("config '%v' has no source (file, content, or environment)", svcConfig.Source))
+			continue
+		}
+	}
+
+	return result, errs
+}
+
+// parseConfigMode parses a file mode to int, defaulting to 0444.
+func parseConfigMode(mode *types.FileMode) int {
+	if mode == nil {
+		return 0o444
+	}
+	return int(*mode)
 }
 
 // parseSecretID parses a UID string to int64.
