@@ -82,8 +82,8 @@ func TestParseSecretOwnershipAndMode(t *testing.T) {
 	assert.Equal(t, int64(-1), parseSecretID(""))
 	assert.Equal(t, int64(1000), parseSecretID("1000"))
 	assert.Equal(t, int64(0), parseSecretID("not-a-number"))
-	assert.Equal(t, 0o600, parseSecretMode(nil))
-	assert.Equal(t, 0o640, parseSecretMode(&mode))
+	assert.Equal(t, 0o400, parseSecretMode(nil))
+	assert.Equal(t, 0o440, parseSecretMode(&mode))
 }
 
 func TestFormatCommand(t *testing.T) {

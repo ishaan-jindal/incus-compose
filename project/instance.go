@@ -982,12 +982,13 @@ func instanceConfigs(p *types.Project, service types.ServiceConfig) ([]client.In
 	return result, errs
 }
 
-// parseConfigMode parses a file mode to int, defaulting to 0644.
+// parseConfigMode parses a file mode to int, defaulting to 0444. Per the
+// compose-spec, the writable bit must be ignored for configs.
 func parseConfigMode(mode *types.FileMode) int {
 	if mode == nil {
-		return 0o644
+		return 0o444
 	}
-	return int(*mode)
+	return int(*mode) &^ 0o222
 }
 
 // parseSecretID parses a UID string to int64.
@@ -999,12 +1000,13 @@ func parseSecretID(id string) int64 {
 	return v
 }
 
-// parseSecretMode parses a file mode to int.
+// parseSecretMode parses a file mode to int. Per the
+// compose-spec, the writable bit must be ignored for secrets.
 func parseSecretMode(mode *types.FileMode) int {
 	if mode == nil {
-		return 0o600
+		return 0o400
 	}
-	return int(*mode)
+	return int(*mode) &^ 0o222
 }
 
 // xICInstanceNetwork extracts the x-incus-compose.network string override

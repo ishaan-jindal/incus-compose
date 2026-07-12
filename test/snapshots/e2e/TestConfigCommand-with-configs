@@ -9,7 +9,7 @@ project:
           target: /etc/nginx/nginx.conf
           uid: "101"
           gid: "101"
-          mode: "0644"
+          mode: "0640"
       image: docker.io/library/busybox:glibc
       networks:
         default: null
