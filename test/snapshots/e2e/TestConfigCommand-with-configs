@@ -1,0 +1,30 @@
+project:
+  name: test-local-config
+  services:
+    app:
+      configs:
+        - source: app_config
+        - source: db_config
+        - source: nginx_config
+          target: /etc/nginx/nginx.conf
+          uid: "101"
+          gid: "101"
+          mode: "0440"
+      image: docker.io/library/busybox:glibc
+      networks:
+        default: null
+  networks:
+    default:
+      name: test-local-config_default
+  configs:
+    app_config:
+      name: test-local-config_app_config
+      file: $FIXTURE_PATH/app_config.txt
+    db_config:
+      name: test-local-config_db_config
+      content: |
+        DB_HOST=localhost
+        DB_PORT=5432
+    nginx_config:
+      name: test-local-config_nginx_config
+      environment: NGINX_CONFIG
