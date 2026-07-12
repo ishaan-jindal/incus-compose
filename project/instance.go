@@ -809,6 +809,7 @@ func instanceSecrets(p *types.Project, service types.ServiceConfig) ([]client.In
 			})
 		default:
 			errs = errors.Join(errs, fmt.Errorf("secret '%v' has no source (file or environment)", svcSecret.Source))
+
 			continue
 		}
 	}
@@ -962,6 +963,7 @@ func instanceConfigs(p *types.Project, service types.ServiceConfig) ([]client.In
 				GID:     parseSecretID(svcConfig.GID),
 				Mode:    parseConfigMode(svcConfig.Mode),
 			})
+		// Content will be populated by compose-go from its environment.
 		case configDef.Content != "":
 			result = append(result, client.InstanceFile{
 				Target:  target,
@@ -970,11 +972,8 @@ func instanceConfigs(p *types.Project, service types.ServiceConfig) ([]client.In
 				GID:     parseSecretID(svcConfig.GID),
 				Mode:    parseConfigMode(svcConfig.Mode),
 			})
-		case configDef.Environment != "":
-			errs = errors.Join(errs, fmt.Errorf("config '%v' environment variable '%v' not found", svcConfig.Source, configDef.Environment))
-			continue
 		default:
-			errs = errors.Join(errs, fmt.Errorf("config '%v' has no source (file, content, or environment)", svcConfig.Source))
+			errs = errors.Join(errs, fmt.Errorf("config '%v' has no source (file or content - content would be populated from environment)", target))
 			continue
 		}
 	}
