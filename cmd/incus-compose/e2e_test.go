@@ -789,6 +789,33 @@ func TestE2EUpDownWithSecrets(t *testing.T) {
 	runE2ETests(t, ctx, pn, tests)
 }
 
+func TestE2EUpDownWithConfigs(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/with-configs/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []e2eTest{
+		{
+			name: "up with-configs",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name: "list with-configs",
+			args: []string{"-f", compose, "list"},
+		},
+	}
+
+	runE2ETests(t, ctx, pn, tests)
+}
+
 func TestE2EDownImages(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
