@@ -789,6 +789,115 @@ func TestE2EUpDownWithSecrets(t *testing.T) {
 	runE2ETests(t, ctx, pn, tests)
 }
 
+func TestE2EUpDownWithSecretsVerifyFiles(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/with-secrets/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	// Verify each secret file exists with correct perms/ownership
+	checks := []struct {
+		path  string
+		perms string
+		uid   string
+		gid   string
+	}{
+		{"/run/secrets/demo_secret", "-r--------", "0", "0"},   // default mode 0o600
+		{"/run/secrets/db_password", "-r--------", "0", "0"},   // default mode 0o600
+		{"/app/secrets/api.key", "-r--r--r--", "1000", "1000"}, // explicit 0o444 + uid/gid
+	}
+
+	for _, tc := range checks {
+		stdout, err := runCommand(t, ctx, pn, "-f", compose, "exec", "--no-tty", "app",
+			"--", "ls", "-ln", tc.path)
+		require.NoError(t, err)
+
+		fields := strings.Fields(stdout.String())
+		require.GreaterOrEqual(t, len(fields), 4, "unexpected ls output for %s: %q", tc.path, stdout.String())
+		assert.Equal(t, tc.perms, fields[0], "perms for %s", tc.path)
+		assert.Equal(t, tc.uid, fields[2], "uid for %s", tc.path)
+		assert.Equal(t, tc.gid, fields[3], "gid for %s", tc.path)
+	}
+}
+
+func TestE2EUpDownWithConfigs(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/with-configs/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []e2eTest{
+		{
+			name: "up with-configs",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name: "list with-configs",
+			args: []string{"-f", compose, "list"},
+		},
+	}
+
+	runE2ETests(t, ctx, pn, tests)
+}
+
+func TestE2EUpDownWithConfigsVerifyFiles(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/with-configs/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	// Verify each config file exists with correct perms/ownership
+	checks := []struct {
+		path  string
+		perms string
+		uid   string
+		gid   string
+	}{
+		{"/app_config", "-r--r--r--", "0", "0"},               // default mode 0o444
+		{"/db_config", "-r--r--r--", "0", "0"},                // default mode 0o444
+		{"/etc/nginx/nginx.conf", "-r--r-----", "101", "101"}, // explicit 0o640, write bit ignored -> 0o440
+	}
+
+	for _, tc := range checks {
+		stdout, err := runCommand(t, ctx, pn, "-f", compose, "exec", "--no-tty", "app",
+			"--", "ls", "-ln", tc.path)
+		require.NoError(t, err)
+
+		fields := strings.Fields(stdout.String())
+		require.GreaterOrEqual(t, len(fields), 4, "unexpected ls output for %s: %q", tc.path, stdout.String())
+		assert.Equal(t, tc.perms, fields[0], "perms for %s", tc.path)
+		assert.Equal(t, tc.uid, fields[2], "uid for %s", tc.path)
+		assert.Equal(t, tc.gid, fields[3], "gid for %s", tc.path)
+	}
+}
+
 func TestE2EDownImages(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)

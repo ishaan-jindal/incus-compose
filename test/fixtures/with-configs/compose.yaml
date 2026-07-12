@@ -1,0 +1,21 @@
+services:
+  app:
+    image: docker.io/library/busybox:glibc
+    configs:
+      - app_config
+      - db_config
+      - source: nginx_config
+        target: /etc/nginx/nginx.conf
+        uid: "101"
+        gid: "101"
+        mode: 0o640
+
+configs:
+  app_config:
+    file: ./app_config.txt
+  db_config:
+    content: |
+      DB_HOST=localhost
+      DB_PORT=5432
+  nginx_config:
+    environment: NGINX_CONFIG

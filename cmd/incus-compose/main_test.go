@@ -174,6 +174,11 @@ func TestConfigCommand(t *testing.T) {
 			fixture: "../../test/fixtures/with-secrets",
 		},
 		{
+			name:    "with-configs",
+			args:    []string{"-f", "../../test/fixtures/with-configs/compose.yaml", "config"},
+			fixture: "../../test/fixtures/with-configs",
+		},
+		{
 			name:    "with-restart",
 			args:    []string{"-f", "../../test/fixtures/with-restart/compose.yaml", "config"},
 			fixture: "../../test/fixtures/with-restart",

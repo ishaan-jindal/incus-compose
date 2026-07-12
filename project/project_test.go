@@ -520,6 +520,48 @@ func TestLoadWithSecrets(t *testing.T) {
 	assert.NotNil(t, app.Secrets[2].Mode)
 }
 
+// TestLoadWithConfigs tests loading a compose file with configs.
+func TestLoadWithConfigs(t *testing.T) {
+	t.Parallel()
+
+	proj, err := project.New().Load(
+		context.Background(), project.LoadWorkingDir(fixturePath("with-configs")),
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, proj)
+	assert.Equal(t, "with-configs", proj.Name)
+
+	// Check configs are defined.
+	assert.Len(t, proj.Configs, 3)
+	assert.Contains(t, proj.Configs, "app_config")
+	assert.Contains(t, proj.Configs, "db_config")
+	assert.Contains(t, proj.Configs, "nginx_config")
+
+	// Check app_config config (file-based).
+	appConfig := proj.Configs["app_config"]
+	assert.NotEmpty(t, appConfig.File)
+
+	// Check db_config config (content-based).
+	dbConfig := proj.Configs["db_config"]
+	assert.NotEmpty(t, dbConfig.Content)
+
+	// Check service has configs configured.
+	app, exists := proj.Services["app"]
+	assert.True(t, exists, "app service should exist")
+	assert.Len(t, app.Configs, 3)
+
+	// Check first config (simple reference).
+	assert.Equal(t, "app_config", app.Configs[0].Source)
+
+	// Check third config (with custom target).
+	assert.Equal(t, "nginx_config", app.Configs[2].Source)
+	assert.Equal(t, "/etc/nginx/nginx.conf", app.Configs[2].Target)
+	assert.Equal(t, "101", app.Configs[2].UID)
+	assert.Equal(t, "101", app.Configs[2].GID)
+	assert.NotNil(t, app.Configs[2].Mode)
+}
+
 // TestLoadWithRestartPolicies tests loading a compose file with restart policies.
 func TestLoadWithRestartPolicies(t *testing.T) {
 	t.Parallel()
