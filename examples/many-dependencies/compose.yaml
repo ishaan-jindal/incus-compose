@@ -9,6 +9,8 @@ x-service-templates:
   nginx: &nginx
     image: docker.io/nginxinc/nginx-unprivileged:alpine
     restart: unless-stopped
+    environment: &nginx-env
+      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     x-incus:
       limits.cpu: 1
     healthcheck:
@@ -22,8 +24,6 @@ x-service-templates:
 services:
   gateway:
     <<: *nginx
-    environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     depends_on:
       api:
         condition: service_healthy
@@ -35,8 +35,8 @@ services:
   frontend:
     <<: *nginx
     environment:
+      <<: *nginx-env
       API_URL: http://api:8080
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     depends_on:
       api:
         condition: service_healthy
@@ -47,12 +47,12 @@ services:
   api:
     <<: *nginx
     environment:
+      <<: *nginx-env
       AUTH_URL: http://auth:8080
       USERS_URL: http://users:8080
       PRODUCTS_URL: http://products:8080
       ORDERS_URL: http://orders:8080
       CACHE_HOST: cache
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     depends_on:
       auth:
         condition: service_healthy
@@ -71,13 +71,13 @@ services:
   auth:
     <<: *nginx
     environment:
+      <<: *nginx-env
       DB_HOST: auth-db
       DB_NAME: auth
       DB_USER: auth_user
       DB_PASSWORD: ${AUTH_DB_PASSWORD}
       CACHE_HOST: cache
       JWT_SECRET: ${JWT_SECRET}
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     depends_on:
       auth-db:
         condition: service_healthy
@@ -90,12 +90,12 @@ services:
   users:
     <<: *nginx
     environment:
+      <<: *nginx-env
       DB_HOST: users-db
       DB_NAME: users
       DB_USER: users_user
       DB_PASSWORD: ${USERS_DB_PASSWORD}
       CACHE_HOST: cache
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     depends_on:
       users-db:
         condition: service_healthy
@@ -108,13 +108,13 @@ services:
   products:
     <<: *nginx
     environment:
+      <<: *nginx-env
       DB_HOST: products-db
       DB_NAME: products
       DB_USER: products_user
       DB_PASSWORD: ${PRODUCTS_DB_PASSWORD}
       CACHE_HOST: cache
       SEARCH_URL: http://search:8080
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     depends_on:
       products-db:
         condition: service_healthy
@@ -129,6 +129,7 @@ services:
   orders:
     <<: *nginx
     environment:
+      <<: *nginx-env
       DB_HOST: orders-db
       DB_NAME: orders
       DB_USER: orders_user
@@ -136,7 +137,6 @@ services:
       USERS_URL: http://users:8080
       PRODUCTS_URL: http://products:8080
       QUEUE_HOST: queue
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     depends_on:
       orders-db:
         condition: service_healthy
@@ -153,10 +153,10 @@ services:
   notifications:
     <<: *nginx
     environment:
+      <<: *nginx-env
       USERS_URL: http://users:8080
       QUEUE_HOST: queue
       MAILER_HOST: mailer
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     depends_on:
       queue:
         condition: service_healthy
@@ -170,10 +170,10 @@ services:
   mailer:
     <<: *nginx
     environment:
+      <<: *nginx-env
       QUEUE_HOST: queue
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT:-587}
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     depends_on:
       queue:
         condition: service_healthy
@@ -183,12 +183,12 @@ services:
   worker:
     <<: *nginx
     environment:
+      <<: *nginx-env
       QUEUE_HOST: queue
       DB_HOST: orders-db
       DB_NAME: orders
       DB_USER: orders_user
       DB_PASSWORD: ${ORDERS_DB_PASSWORD}
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     deploy:
       replicas: 3
     depends_on:
@@ -203,8 +203,8 @@ services:
   search:
     <<: *nginx
     environment:
+      <<: *nginx-env
       DB_HOST: search-db
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     depends_on:
       search-db:
         condition: service_healthy
@@ -214,8 +214,6 @@ services:
 
   auth-db:
     <<: *nginx
-    environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     volumes:
       - auth-db-data:/var/lib/data
     networks:
@@ -223,8 +221,6 @@ services:
 
   users-db:
     <<: *nginx
-    environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     volumes:
       - users-db-data:/var/lib/data
     networks:
@@ -232,8 +228,6 @@ services:
 
   products-db:
     <<: *nginx
-    environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     volumes:
       - products-db-data:/var/lib/data
     networks:
@@ -241,8 +235,6 @@ services:
 
   orders-db:
     <<: *nginx
-    environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     volumes:
       - orders-db-data:/var/lib/data
     networks:
@@ -250,8 +242,6 @@ services:
 
   search-db:
     <<: *nginx
-    environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     volumes:
       - search-db-data:/var/lib/data
     networks:
@@ -259,8 +249,6 @@ services:
 
   cache:
     <<: *nginx
-    environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     volumes:
       - cache-data:/var/lib/data
     networks:
@@ -268,8 +256,6 @@ services:
 
   queue:
     <<: *nginx
-    environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     volumes:
       - queue-data:/var/lib/data
     networks:

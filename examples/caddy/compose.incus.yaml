@@ -1,0 +1,13 @@
+services:
+  caddy:
+    networks:
+      default:
+        x-incus:
+          ipv4.address: 10.179.215.4/24
+          ipv4.gateway: 10.179.215.1
+
+networks:
+  default:
+    external: true
+    x-incus-compose:
+      network: incusbr0

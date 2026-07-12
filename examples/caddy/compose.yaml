@@ -1,0 +1,11 @@
+services:
+  caddy:
+    image: docker.io/library/caddy:2.11.4-alpine
+    command: /bin/sh -c "/bin/sleep 5; caddy run --config /etc/caddy/Caddyfile --adapter caddyfile"
+    volumes:
+      - ./caddy:/etc/caddy:ro
+      - ./sites:/var/www:ro
+      - data:/data/caddy
+
+volumes:
+  data:

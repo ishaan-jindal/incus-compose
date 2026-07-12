@@ -1,0 +1,14 @@
+services:
+  gitea:
+    networks:
+      default:
+        x-incus:
+          ipv4.address: "${IPV4_ADDRESS}/24"
+          ipv4.gateway: "${IPV4_GATEWAY}"
+
+networks:
+  default:
+    x-incus:
+      ipv4.address: "${IPV4_GATEWAY}/24"
+    x-incus-compose:
+      network: ${NETWORK}

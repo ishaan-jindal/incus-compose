@@ -1,0 +1,28 @@
+services:
+  wiki:
+    image: ghcr.io/perber/leafwiki:v0.11.3
+    container_name: wiki
+    command: sh -c "sleep 5; /docker-entrypoint.sh"
+    user: "1000:1000"
+    environment:
+      TZ: "${TIMEZONE}"
+      LEAFWIKI_JWT_SECRET: "${JWT_SECRET}"
+      LEAFWIKI_ADMIN_PASSWORD: "${ADMIN_PASSWORD}"
+      LEAFWIKI_ALLOW_INSECURE: "${ALLOW_INSECURE}"
+      LEAFWIKI_PUBLIC_ACCESS: "${PUBLIC_ACCESS}"
+      LEAFWIKI_ENABLE_REVISION: "${ENABLE_REVISION}"
+      LEAFWIKI_ENABLE_LINK_REFACTOR: "${ENABLE_LINK_REFACTOR}"
+      LEAFWIKI_GIT_BACKUP: "${GIT_BACKUP}"
+      LEAFWIKI_GIT_BACKUP_REMOTE: "${GIT_BACKUP_REMOTE}"
+      LEAFWIKI_GIT_BACKUP_BRANCH: "${GIT_BACKUP_BRANCH}"
+      LEAFWIKI_GIT_BACKUP_SSH_KEY_PATH: "/app/ssh.key"
+      LEAFWIKI_GIT_BACKUP_INTERVAL: "${GIT_BACKUP_INTERVAL}"
+      LEAFWIKI_INJECT_CODE_IN_HEADER: "${INJECT_CODE_IN_HEADER}"
+    volumes:
+      - ./ssh.key:/app/ssh.key:ro
+      - /etc/timezone:/etc/timezone:ro
+      - data:/app/data
+    restart: unless-stopped
+
+volumes:
+  data:
