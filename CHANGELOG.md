@@ -9,6 +9,28 @@ Version numbering moved from `0.0.1` to `1.0.0` at beta11 (1.0.0 is the intended
 final version), and the beta suffix gained a dot (`beta.16`) from beta.16 onward
 for correct semver ordering. Headings below preserve each release's announced form.
 
+## [1.1.0] - unreleased
+
+### Added
+
+- `services.{name}.configs` / top-level `configs:`: mount config files into
+  the container, sourced from a file, inline `content`, or an environment
+  variable. `mode` defaults to `0444` (world-readable); the writable bit is
+  always ignored per the compose-spec, even if an explicit `mode` is set.
+- New examples: `caddy`, `dns`, `gitea`, `kimai`, `leafwiki`; `hugo` now builds
+  via `dockerfile_inline` instead of a separate `Dockerfile`. Example docs moved
+  to the wiki; `examples/README.md` indexes them with a link to each.
+- README documents Windows/macOS usage (no Docker Desktop, no WSL, no local
+  Linux VM), linking to the new Windows getting-started guide.
+- `incus-compose-bin` and `incus-compose-git` AUR packages are now referenced
+  in the README as install options.
+
+### Fixed
+
+- `install.sh`: fixed the checksum filename to match goreleaser's current
+  release-artifact naming (`checksums.txt`), it was still using the old
+  `${PROJECT_NAME}_${VERSION}_checksums.txt` pattern.
+
 ## [1.0.0] - 2026-07-10
 
 The first stable release! _hooray_
