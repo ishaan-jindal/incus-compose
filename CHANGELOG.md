@@ -24,6 +24,10 @@ for correct semver ordering. Headings below preserve each release's announced fo
   Linux VM), linking to the new Windows getting-started guide.
 - `incus-compose-bin` and `incus-compose-git` AUR packages are now referenced
   in the README as install options.
+- Well-known OCI registries (`docker.io`, `ghcr.io`, `mcr.microsoft.com`,
+  `quay.io`, `registry.gitlab.com`) are now auto-added to the in-memory Incus CLI config
+  when an image from that registry is used, removing the need for manual
+  `incus remote add` steps.
 
 ### Fixed
 
