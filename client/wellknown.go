@@ -14,15 +14,17 @@ import (
 var WellKnownRegistries = map[string]string{
 	"ghcr.io":             "https://ghcr.io",
 	"docker.io":           "https://docker.io",
+	"mcr.microsoft.com":   "https://mcr.microsoft.com",
+	"quay.io":             "https://quay.io",
 	"registry.gitlab.com": "https://registry.gitlab.com",
 }
-
-var wellKnownMu = &sync.Mutex{}
 
 // AddWellKnownRegistriesHook registers a hook that transparently adds
 // well-known OCI registries to the in-memory CLI config when an image from
 // that registry is about to be ensured.
 func AddWellKnownRegistriesHook(c *GlobalClient) {
+	wellKnownMu := &sync.Mutex{}
+
 	c.AddHookBefore(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
 		if action != ActionEnsure || r.Kind() != KindImage {
 			return err
