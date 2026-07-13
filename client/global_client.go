@@ -160,6 +160,8 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 		return ErrUnknown.WithResource(r).Wrap(err)
 	}
 
+	AddWellKnownRegistriesHook(c)
+
 	c.hookOperation = func(ctx context.Context, action Action, r Resource, args Options, op incusClient.Operation, err error) error {
 		if err != nil {
 			return err
