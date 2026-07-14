@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	incusClient "github.com/lxc/incus/v7/client"
@@ -834,4 +835,40 @@ func (c *GlobalClient) HTTPSAddress() (string, error) {
 	}
 
 	return "", NewError("core.https_address is not set on the server")
+}
+
+// ServerVersionAtLeast reports whether the Incus server is at least the
+// given major.minor version. Returns false on older or disconnected servers.
+func (c *GlobalClient) ServerVersionAtLeast(major, minor int) bool {
+	if !c.connected {
+		return false
+	}
+
+	server, _, err := c.incus.GetServer()
+	if err != nil {
+		return false
+	}
+
+	v := server.Environment.ServerVersion
+	parts := strings.Split(v, ".")
+	if len(parts) < 2 {
+		return false
+	}
+
+	majorVer, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return false
+	}
+	minorVer, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return false
+	}
+
+	if majorVer > major {
+		return true
+	}
+	if majorVer == major && minorVer >= minor {
+		return true
+	}
+	return false
 }

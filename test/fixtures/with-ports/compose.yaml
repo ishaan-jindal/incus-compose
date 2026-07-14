@@ -1,0 +1,9 @@
+services:
+  web:
+    image: docker.io/nginx:alpine
+    ports:
+      - "8080:80"
+    environment:
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    x-incus:
+      limits.cpu: 1
