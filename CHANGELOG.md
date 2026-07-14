@@ -17,31 +17,25 @@ for correct semver ordering. Headings below preserve each release's announced fo
   the container, sourced from a file, inline `content`, or an environment
   variable. `mode` defaults to `0444` (world-readable); the writable bit is
   always ignored per the compose-spec, even if an explicit `mode` is set.
-- New examples: `caddy`, `dns`, `gitea`, `kimai`, `leafwiki`; `hugo` now builds
-  via `dockerfile_inline` instead of a separate `Dockerfile`. Example docs moved
-  to the wiki; `examples/README.md` indexes them with a link to each.
-- README documents Windows/macOS usage (no Docker Desktop, no WSL, no local
-  Linux VM), linking to the new Windows getting-started guide.
-- `incus-compose-bin` and `incus-compose-git` AUR packages are now referenced
-  in the README as install options.
+  (by @ishaan-jindal)
 - Well-known OCI registries (`docker.io`, `ghcr.io`, `mcr.microsoft.com`,
   `quay.io`, `registry.gitlab.com`) are now auto-added to the in-memory Incus CLI config
   when an image from that registry is used, removing the need for manual
-  `incus remote add` steps.
+  `incus remote add` steps. (by @ishaan-jindal)
 - Do not ignore healthd in `up --no-deps <service>` it allows script to wait
   on the service to be ready. Use `up --no-deps --no-healthd <service>` if you
-  want the old behaviour.
+  want the old behaviour. (by @jochumdev)
 
 ### Fixed
 
 - `install.sh`: fixed the checksum filename to match goreleaser's current
   release-artifact naming (`checksums.txt`), it was still using the old
-  `${PROJECT_NAME}_${VERSION}_checksums.txt` pattern.
+  `${PROJECT_NAME}_${VERSION}_checksums.txt` pattern. (by @jochumdev)
 
 ### Internal
 
 - `.golangci.yml`: enabled a much stricter linter set, and fixed the
-  resulting findings across the codebase.
+  resulting findings across the codebase. (by @jochumdev)
 
 ## [1.0.0] - 2026-07-10
 
