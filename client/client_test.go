@@ -32,7 +32,7 @@ func skipLocal(t *testing.T) {
 
 // newRandomTestClient creates a GlobalClient, a fresh project-scoped Client,
 // and registers t.Cleanup to delete the project on teardown.
-func newRandomTestClient(t *testing.T, ctx context.Context, prefix string) *Client {
+func newRandomTestClient(ctx context.Context, t *testing.T, prefix string) *Client {
 	t.Helper()
 	gc, err := NewTestClient(ctx)
 	require.NoError(t, err)

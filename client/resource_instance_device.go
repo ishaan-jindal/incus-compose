@@ -179,7 +179,7 @@ func proxyEndpoint(addr string, port uint32) string {
 	return fmt.Sprintf("%s:%d", addr, port)
 }
 
-func (d *InstanceDevice) toProxyDevice() (map[string]string, error) {
+func (d *InstanceDevice) toProxyDevice() (map[string]string, error) { //nolint:unparam // signature matches the other toXDevice methods dispatched from ToIncusDevice
 	cfg := d.Config.Proxy
 
 	device := map[string]string{
@@ -197,7 +197,7 @@ func (d *InstanceDevice) toProxyDevice() (map[string]string, error) {
 	return device, nil
 }
 
-func (d *InstanceDevice) toDiskDevice() (map[string]string, error) {
+func (d *InstanceDevice) toDiskDevice() (map[string]string, error) { //nolint:unparam // signature matches the other toXDevice methods dispatched from ToIncusDevice
 	cfg := d.Config.Disk
 
 	device := map[string]string{
@@ -225,7 +225,7 @@ func (d *InstanceDevice) toDiskDevice() (map[string]string, error) {
 	return device, nil
 }
 
-func (d *InstanceDevice) toTmpfsDevice() (map[string]string, error) {
+func (d *InstanceDevice) toTmpfsDevice() (map[string]string, error) { //nolint:unparam // signature matches the other toXDevice methods dispatched from ToIncusDevice
 	cfg := d.Config.Tmpfs
 
 	device := map[string]string{

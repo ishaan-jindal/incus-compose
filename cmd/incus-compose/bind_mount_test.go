@@ -28,21 +28,21 @@ func TestBindMounts(t *testing.T) {
 	skipNotSameHost(t, gc)
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	t.Run("file bind-mount", func(t *testing.T) {
 		t.Parallel()
-		err := pollServiceHTTP(t, ctx, pn, compose, "file-web", "file-bind-mount-ok", 60*time.Second)
+		err := pollServiceHTTP(ctx, t, pn, compose, "file-web", "file-bind-mount-ok", 60*time.Second)
 		require.NoError(t, err)
 	})
 
 	t.Run("dir bind-mount", func(t *testing.T) {
 		t.Parallel()
-		err := pollServiceHTTP(t, ctx, pn, compose, "dir-web", "dir-bind-mount-ok", 60*time.Second)
+		err := pollServiceHTTP(ctx, t, pn, compose, "dir-web", "dir-bind-mount-ok", 60*time.Second)
 		require.NoError(t, err)
 	})
 }
@@ -64,7 +64,7 @@ func TestBindMountErrorsOnRemote(t *testing.T) {
 		t.Skip("this test requires the incus server to be on a remote host")
 	}
 
-	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.Error(t, err)
 }
 
@@ -81,21 +81,21 @@ func TestSeededBindMounts(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	t.Run("file bind-mount", func(t *testing.T) {
 		t.Parallel()
-		err := pollServiceHTTP(t, ctx, pn, compose, "file-web", "file-bind-mount-ok", 60*time.Second)
+		err := pollServiceHTTP(ctx, t, pn, compose, "file-web", "file-bind-mount-ok", 60*time.Second)
 		require.NoError(t, err)
 	})
 
 	t.Run("dir bind-mount", func(t *testing.T) {
 		t.Parallel()
-		err := pollServiceHTTP(t, ctx, pn, compose, "dir-web", "dir-bind-mount-ok", 60*time.Second)
+		err := pollServiceHTTP(ctx, t, pn, compose, "dir-web", "dir-bind-mount-ok", 60*time.Second)
 		require.NoError(t, err)
 	})
 }
@@ -116,30 +116,30 @@ func TestBindMountNoShift(t *testing.T) {
 	skipNotSameHost(t, gc)
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	// With security.shifted=false the bind mount is not id-shifted, so the host
 	// file shows up as nobody (65534) inside the unprivileged container.
-	err = pollServiceExec(t, ctx, pn, compose, "web",
+	err = pollServiceExec(ctx, t, pn, compose, "web",
 		[]string{"ls", "-ln", "/usr/share/nginx/html/index.html"}, "65534", 60*time.Second)
 	require.NoError(t, err)
 }
 
 // pollServiceHTTP execs wget inside the service's instance until the response
 // body contains want or timeout elapses.
-func pollServiceHTTP(t *testing.T, ctx context.Context, pn, compose, service, want string, timeout time.Duration) error {
-	return pollServiceExec(t, ctx, pn, compose, service,
+func pollServiceHTTP(ctx context.Context, t *testing.T, pn, compose, service, want string, timeout time.Duration) error {
+	return pollServiceExec(ctx, t, pn, compose, service,
 		[]string{"wget", "-q", "-O", "-", "http://127.0.0.1:8080/"}, want, timeout)
 }
 
 // pollServiceExec runs `incus-compose exec` for the service until stdout
 // contains want or timeout elapses. Checks before sleeping so the last attempt
 // is never skipped.
-func pollServiceExec(t *testing.T, ctx context.Context, pn, compose, service string, cmd []string, want string, timeout time.Duration) error {
+func pollServiceExec(ctx context.Context, t *testing.T, pn, compose, service string, cmd []string, want string, timeout time.Duration) error {
 	t.Helper()
 
 	args := append([]string{"-f", compose, "exec", "--no-tty", service, "--"}, cmd...)
@@ -149,7 +149,7 @@ func pollServiceExec(t *testing.T, ctx context.Context, pn, compose, service str
 	var lastErr error
 
 	for {
-		stdout, err := runCommand(t, ctx, pn, args...)
+		stdout, err := runCommand(ctx, t, pn, args...)
 		out := stdout.String()
 		if err == nil {
 			if !strings.Contains(out, want) {

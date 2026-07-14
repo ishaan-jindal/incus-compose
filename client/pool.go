@@ -71,7 +71,7 @@ func (p *WorkerPool) Run(args PoolRunArgs) error {
 		go func() {
 			defer wg.Done()
 			for task := range taskCh {
-				// Check if cancelled
+				// Check if canceled
 				select {
 				case <-cancelCh:
 					return

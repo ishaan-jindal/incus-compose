@@ -434,7 +434,7 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 
 	// Create instance from project image.
 	op, err := r.conn.CreateInstanceFromImage(r.conn, *incusImage, req)
-	if err = r.client.hookRemoteOperation(ctx, ActionEnsure, r, options, op, err); err != nil {
+	if err := r.client.hookRemoteOperation(ctx, ActionEnsure, r, options, op, err); err != nil {
 		return err
 	}
 
@@ -443,7 +443,7 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 		return ErrCreate.WithText("fetching created instance").Wrap(err)
 	}
 
-	if err = r.ensured(); err != nil {
+	if err := r.ensured(); err != nil {
 		return err
 	}
 
@@ -474,7 +474,7 @@ func (r *Instance) buildDevices() (map[string]map[string]string, error) {
 		}
 
 		// The code below would have allowed us to overwrite `eth0`,
-		// but it breaks normal incus behaviour (instances overwrite profile).
+		// but it breaks normal incus behavior (instances overwrite profile).
 		// foundInProfile := false
 		// for _, profile := range profiles {
 		// 	foundInProfile = profile.HasDevice(name)
@@ -974,7 +974,7 @@ func sftpSetOwnerMode(sftpConn *sftp.Client, targetPath string, args incusClient
 	// Skip if not on UNIX.
 	_, err := sftpConn.StatVFS("/")
 	if err != nil {
-		return nil
+		return nil //nolint:nilerr // StatVFS failing means the remote isn't UNIX; nothing to set
 	}
 
 	// Get the current stat information.
@@ -985,7 +985,7 @@ func sftpSetOwnerMode(sftpConn *sftp.Client, targetPath string, args incusClient
 
 	fileStat, ok := st.Sys().(*sftp.FileStat)
 	if !ok {
-		return fmt.Errorf("Invalid filestat data for %q", targetPath)
+		return fmt.Errorf("invalid filestat data for %q", targetPath)
 	}
 
 	// Set owner.
@@ -1334,7 +1334,7 @@ func (r *Instance) logBuffer(outputHandler func(Action, Resource, []byte)) error
 	return nil
 }
 
-// logStream streams the console using WebSocket until context is cancelled.
+// logStream streams the console using WebSocket until context is canceled.
 func (r *Instance) logStream(ctx context.Context, options Options, outputHandler func(Action, Resource, []byte)) error {
 	// Channel to signal disconnect
 	consoleDisconnect := make(chan bool)
@@ -1379,7 +1379,7 @@ func (r *Instance) logStream(ctx context.Context, options Options, outputHandler
 
 	// Context cancellation (including timeout) is not an error
 	if ctx.Err() != nil {
-		return nil
+		return nil //nolint:nilerr // caller-initiated cancellation, not a streaming failure
 	}
 
 	if err != nil {

@@ -23,10 +23,10 @@ func TestExecSelectsCorrectInstance(t *testing.T) {
 	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -40,7 +40,7 @@ func TestExecSelectsCorrectInstance(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.service, func(t *testing.T) {
-			stdout, err := runCommand(t, ctx, pn, "-f", compose, "exec", "--no-tty", tt.service, "hostname")
+			stdout, err := runCommand(ctx, t, pn, "-f", compose, "exec", "--no-tty", tt.service, "hostname")
 			require.NoError(t, err)
 			if strings.TrimSpace(stdout.String()) != tt.wantHost {
 				t.Errorf("got hostname %q, want %q", strings.TrimSpace(stdout.String()), tt.wantHost)
@@ -62,19 +62,19 @@ func TestE2EExecRunsAsInstanceUser(t *testing.T) {
 	compose := "../../test/fixtures/with-user/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project", "--volumes")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project", "--volumes")
 	})
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	// The write only succeeds if the process runs as 1000, since /data is owned
 	// by the shifted instance user.
-	_, err = runCommand(t, ctx, pn, "-f", compose, "exec", "--no-tty", "web",
+	_, err = runCommand(ctx, t, pn, "-f", compose, "exec", "--no-tty", "web",
 		"--", "sh", "-c", "echo hello > /data/test.txt")
 	require.NoError(t, err)
 
-	stdout, err := runCommand(t, ctx, pn, "-f", compose, "exec", "--no-tty", "web",
+	stdout, err := runCommand(ctx, t, pn, "-f", compose, "exec", "--no-tty", "web",
 		"--", "ls", "-ln", "/data/test.txt")
 	require.NoError(t, err)
 

@@ -113,7 +113,7 @@ func TestParallelImageDownload(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "stack-parallel-")
+	c := newRandomTestClient(ctx, t, "stack-parallel-")
 
 	imageNames := []string{
 		"docker.io/library/busybox:1.36",
@@ -147,7 +147,7 @@ func TestStackHooksWithStack(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "stack-hooks-")
+	c := newRandomTestClient(ctx, t, "stack-hooks-")
 
 	var beforeCalled, afterCalled bool
 	var afterErr error
@@ -186,7 +186,7 @@ func TestStackErrorAggregation(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "stack-erragg-")
+	c := newRandomTestClient(ctx, t, "stack-erragg-")
 
 	stack := NewStack(c)
 
@@ -208,7 +208,7 @@ func TestStackInstanceWithSecrets(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "stack-secrets-")
+	c := newRandomTestClient(ctx, t, "stack-secrets-")
 
 	network, err := c.Resource(KindNetwork, "default", &NetworkConfig{})
 	require.NoError(t, err)
@@ -266,7 +266,7 @@ func TestStackEnsureWithoutCreate_Fails(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "stack-nocreate-")
+	c := newRandomTestClient(ctx, t, "stack-nocreate-")
 
 	profile, err := c.Resource(KindProfile, "p1", &ProfileConfig{})
 	require.NoError(t, err)
@@ -280,7 +280,7 @@ func TestStackSingleProfileEnsure(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "stack-profile-")
+	c := newRandomTestClient(ctx, t, "stack-profile-")
 
 	profile, err := c.Resource(KindProfile, "p1", &ProfileConfig{})
 	require.NoError(t, err)
@@ -299,7 +299,7 @@ func TestStackProfileAndNetworkMixedPriorities(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "stack-mixed-")
+	c := newRandomTestClient(ctx, t, "stack-mixed-")
 
 	profile, err := c.Resource(KindProfile, "p1", &ProfileConfig{})
 	require.NoError(t, err)
@@ -321,7 +321,7 @@ func TestStackSimpleNginx(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "stack-nginx-")
+	c := newRandomTestClient(ctx, t, "stack-nginx-")
 
 	network, err := c.Resource(KindNetwork, "default", &NetworkConfig{})
 	require.NoError(t, err)
@@ -364,7 +364,7 @@ func TestStackNginxScale(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "stack-scale-")
+	c := newRandomTestClient(ctx, t, "stack-scale-")
 
 	network, err := c.Resource(KindNetwork, "default", &NetworkConfig{})
 	require.NoError(t, err)

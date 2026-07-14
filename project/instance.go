@@ -93,7 +93,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		}
 	}
 
-	volumes, files, volumeResources, err := instanceVolumeDevices(c, p, service, image, uid, gid, options)
+	volumes, files, volumeResources, err := instanceVolumeDevices(c, p, service, image, uid, gid)
 	if err != nil {
 		errs = errors.Join(errs, err)
 	}
@@ -542,8 +542,8 @@ func instanceProxyDevices(c *client.Client, service types.ServiceConfig, nicDevi
 
 // instanceVolumeDevices builds disk, bind, and tmpfs devices for a service's
 // volumes plus the shm_size tmpfs. It returns any storage volume resources
-// (when options.StorageVolumes is set) and the files map for single-file binds.
-func instanceVolumeDevices(c *client.Client, p *types.Project, service types.ServiceConfig, image client.Resource, uid, gid uint64, options *ResourcesOptions) ([]client.InstanceDevice, []client.InstanceFile, []client.Resource, error) {
+// and the files map for single-file binds.
+func instanceVolumeDevices(c *client.Client, p *types.Project, service types.ServiceConfig, image client.Resource, uid, gid uint64) ([]client.InstanceDevice, []client.InstanceFile, []client.Resource, error) {
 	var errs error
 	devices := []client.InstanceDevice{}
 	resources := []client.Resource{}
@@ -727,7 +727,7 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 			}
 			devices = append(devices, client.InstanceDevice{Name: devName, Config: devConfig})
 		default:
-			err := fmt.Errorf("Unknown volume type %q for service %q", cVol.Type, service.Name)
+			err := fmt.Errorf("unknown volume type %q for service %q", cVol.Type, service.Name)
 			errs = errors.Join(errs, err)
 			continue
 		}
@@ -830,7 +830,7 @@ func instanceDependencyWaits(p *types.Project, service types.ServiceConfig, opti
 		if s, ok := options.Scale[depName]; ok {
 			depScale = s
 		} else if depSvc.Deploy != nil && depSvc.Deploy.Replicas != nil {
-			depScale = int(*depSvc.Deploy.Replicas)
+			depScale = *depSvc.Deploy.Replicas
 		}
 		if depSvc.ContainerName != "" {
 			deps[client.SanitizeIncusName(depSvc.ContainerName, client.MaxIncusNameLen)] = client.HealthStatusHealthy
@@ -1113,7 +1113,7 @@ func serviceExtraDevices(service types.ServiceConfig) ([]client.InstanceDevice, 
 	var raw map[string]any
 	ok, err := service.Extensions.Get("x-incus-compose", &raw)
 	if !ok || err != nil {
-		return nil, nil
+		return nil, nil //nolint:nilerr // missing/malformed extension means no extra devices
 	}
 
 	devicesRaw, ok := raw["devices"].(map[string]any)

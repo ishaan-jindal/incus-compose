@@ -337,7 +337,7 @@ func (c *GlobalClient) Connect() error {
 	}
 
 	if c.config.DefaultStoragePool == "detect" {
-		if err = c.detectStoragePool(); err != nil {
+		if err := c.detectStoragePool(); err != nil {
 			return err
 		}
 	}
@@ -759,9 +759,14 @@ func (c *GlobalClient) ConnectionIPs() ([]net.IP, error) {
 		return c.connectionIPs, nil
 	}
 
-	ips, err := net.LookupIP(u.Hostname())
+	addrs, err := net.DefaultResolver.LookupIPAddr(context.Background(), u.Hostname())
 	if err != nil {
 		return nil, fmt.Errorf("while looking up the IP for %q: %w", c.config.URL, err)
+	}
+
+	ips := make([]net.IP, len(addrs))
+	for i, addr := range addrs {
+		ips[i] = addr.IP
 	}
 
 	c.connectionIPs = ips

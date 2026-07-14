@@ -20,13 +20,13 @@ func TestNoDanglingNetworksAfterDown(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
-	_, err = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	_, err = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	require.NoError(t, err)
 
 	gc, err := client.NewTestClient(ctx)
@@ -54,7 +54,7 @@ func TestE2EStartStopIdempotent(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -81,7 +81,7 @@ func TestE2EStartStopIdempotent(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		_, err := runCommand(t, ctx, pn, tt.args...)
+		_, err := runCommand(ctx, t, pn, tt.args...)
 		require.NoError(t, err)
 	}
 }
@@ -97,9 +97,9 @@ func TestE2ENoImageCache(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--image-cache", "")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach", "--image-cache", "")
 	require.NoError(t, err)
 }

@@ -194,7 +194,7 @@ func (p *Project) InstanceNames() []string {
 
 		replicas := 1
 		if service.Deploy != nil && service.Deploy.Replicas != nil {
-			replicas = int(*service.Deploy.Replicas)
+			replicas = *service.Deploy.Replicas
 		}
 
 		for i := 1; i <= replicas; i++ {
@@ -284,7 +284,7 @@ func (p *Project) Resources(c *client.Client, opts ...ResourcesOption) (map[stri
 		if s, ok := options.Scale[service.Name]; ok {
 			desired = s
 		} else if service.Deploy != nil && service.Deploy.Replicas != nil {
-			desired = int(*service.Deploy.Replicas)
+			desired = *service.Deploy.Replicas
 		}
 
 		// Discover existing instances above the desired count so they can be
@@ -296,7 +296,7 @@ func (p *Project) Resources(c *client.Client, opts ...ResourcesOption) (map[stri
 				break
 			}
 
-			scale = scale + 1
+			scale++
 		}
 
 		instances := []*client.Instance{}
@@ -349,7 +349,7 @@ func ServiceGraph(serviceConfigs types.Services, reverse bool) ([]string, error)
 			}
 			// Edge from dependency to dependent (dep must start before n)
 			err := g.AddEdge(dep, s.Name)
-			if err != nil && err != graph.ErrEdgeAlreadyExists {
+			if err != nil && !errors.Is(err, graph.ErrEdgeAlreadyExists) {
 				return nil, fmt.Errorf("adding dependency edge %s -> %s: %w", dep, s.Name, err)
 			}
 		}
@@ -380,13 +380,16 @@ func buildProjectOptions(options LoadOptions, extraOpts ...cli.ProjectOptionsFn)
 		projectOptions = append(projectOptions, cli.WithOsEnv)
 	}
 
-	// Load .env files with OS env available for interpolation but not added to project
+	// Load .env files with OS env available for interpolation but not added to project.
+	// cli.WithDefaultConfigPath resolves the working directory from the discovered
+	// compose file when options.WorkingDir wasn't set, so the env file options are
+	// deliberately re-applied afterwards to resolve relative paths against it.
+	//nolint:gocritic // intentional re-application after working dir resolution, not a copy/paste duplicate
 	projectOptions = append(projectOptions,
 		cli.WithEnvFiles(options.EnvFiles...),
 		withDotEnvAndOsEnv, // Custom handler: uses OS env for interpolation only
 		cli.WithConfigFileEnv,
 		cli.WithDefaultConfigPath,
-		// Apply env files again after working dir is determined
 		cli.WithEnvFiles(options.EnvFiles...),
 		withDotEnvAndOsEnv,
 	)

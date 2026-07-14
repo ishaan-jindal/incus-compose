@@ -51,7 +51,7 @@ type Options struct {
 	// Pull forces cached images to refresh from their source registry (for ActionEnsure).
 	Pull bool
 
-	// Build controls rebuild behaviour for build-configured images (for ActionEnsure).
+	// Build controls rebuild behavior for build-configured images (for ActionEnsure).
 	Build BuildInfo
 
 	// Healthd indicates that we use healthd features.

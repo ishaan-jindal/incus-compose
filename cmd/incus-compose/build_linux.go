@@ -59,7 +59,7 @@ func newBuildCommand() *cli.Command {
 				globalClient.LogError("Getting the incus project", "error", err)
 				return errLogged.Wrap(err)
 			}
-			defer func() { _ = c.Done() }()
+			defer func() { c.WarnError(c.Done, "Failure during Client.Done()") }()
 
 			if err := c.Open(); err != nil {
 				globalClient.LogError("Opening the project client", "error", err)
