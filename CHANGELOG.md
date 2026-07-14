@@ -28,6 +28,9 @@ for correct semver ordering. Headings below preserve each release's announced fo
   `quay.io`, `registry.gitlab.com`) are now auto-added to the in-memory Incus CLI config
   when an image from that registry is used, removing the need for manual
   `incus remote add` steps.
+- Do not ignore healthd in `up --no-deps <service>` it allows script to wait
+  on the service to be ready. Use `up --no-deps --no-healthd <service>` if you
+  want the old behaviour.
 
 ### Fixed
 
