@@ -14,7 +14,7 @@ const (
 
 // BuildInfo carries the rebuild mode and optional builder selection for ActionEnsure.
 type BuildInfo struct {
-	// Mode controls rebuild behaviour.
+	// Mode controls rebuild behavior.
 	Mode BuildMode
 
 	// PreferredBuilder is the container builder binary name or absolute path.

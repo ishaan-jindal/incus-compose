@@ -204,12 +204,12 @@ func newListCommand() *cli.Command {
 
 			w := cmd.Root().Writer
 			if cmd.String("output") != "" {
-				fd, err := os.OpenFile(cmd.String("output"), os.O_APPEND|os.O_CREATE, 0o644)
+				fd, err := os.OpenFile(cmd.String("output"), os.O_APPEND|os.O_CREATE, 0o600)
 				if err != nil {
 					c.LogError(err.Error())
 					return errLogged.Wrap(err)
 				}
-				defer fd.Close()
+				defer c.WarnError(fd.Close, "Failure during close")
 				w = fd
 			}
 

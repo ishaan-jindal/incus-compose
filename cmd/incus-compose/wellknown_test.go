@@ -24,10 +24,10 @@ func TestWellKnownRegistryQuayIO(t *testing.T) {
 	compose := filepath.Join(dir, "compose.yaml")
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "pull", "--no-healthd", "hello")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "pull", "--no-healthd", "hello")
 	require.NoError(t, err)
 }
 
@@ -47,9 +47,9 @@ func TestWellKnownRegistryMCR(t *testing.T) {
 	compose := filepath.Join(dir, "compose.yaml")
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "pull", "--no-healthd", "hello")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "pull", "--no-healthd", "hello")
 	require.NoError(t, err)
 }

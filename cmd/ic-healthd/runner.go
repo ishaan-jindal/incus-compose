@@ -46,7 +46,7 @@ func NewRunner(cfg *Config) (*Runner, error) {
 	}, nil
 }
 
-// Run starts all health checkers and blocks until context is cancelled.
+// Run starts all health checkers and blocks until context is canceled.
 // This is the main entry point, it should never exit except the context is done.
 func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
 	var (
@@ -56,7 +56,7 @@ func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
 
 	for {
 		if conn == nil {
-			conn, err = r.connect(ctx)
+			conn, err = r.connect()
 			if err != nil {
 				slog.Error("connecting to incus", "error", err)
 
@@ -136,7 +136,7 @@ func (r *Runner) startCheckers(ctx context.Context) {
 	r.running = []context.CancelFunc{}
 
 	for name, inst := range instances {
-		chkCtx, cancel := context.WithCancel(ctx)
+		chkCtx, cancel := context.WithCancel(ctx) //nolint:gosec // cancel is stored in r.running and invoked on the next startCheckers/shutdown
 		checker := NewChecker(r.conn, name, inst)
 		go func() {
 			checker.Run(chkCtx, true, false)
@@ -151,7 +151,7 @@ func (r *Runner) startCheckers(ctx context.Context) {
 // On first run, the persisted cert is missing: we generate one, register it
 // with the one-time TrustToken, and persist it for subsequent runs.
 // On restart, the persisted cert is reused and the token (already consumed) is ignored.
-func (r *Runner) connect(ctx context.Context) (incus.InstanceServer, error) {
+func (r *Runner) connect() (incus.InstanceServer, error) {
 	// Token to register (generates KEY/CERT)
 	tokenPath := filepath.Join(r.config.SecretsDir, tokenFile)
 

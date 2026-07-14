@@ -151,7 +151,7 @@ func (s *Stack) groupByPriority() [][]Resource {
 	return batches
 }
 
-func (s *Stack) runBatch(ctx context.Context, batch []Resource, kind Kind, action Action, opts ...Option) error {
+func (s *Stack) runBatch(ctx context.Context, batch []Resource, action Action, opts ...Option) error {
 	if len(batch) == 0 {
 		return nil
 	}
@@ -192,8 +192,7 @@ func (s *Stack) Run(ctx context.Context, action Action, stdout io.Writer, stderr
 	var errs error
 
 	for _, batch := range batches {
-		kind := batch[0].Kind()
-		err := s.runBatch(ctx, batch, kind, action, opts...)
+		err := s.runBatch(ctx, batch, action, opts...)
 		errs = errors.Join(errs, err)
 
 		if err != nil && s.options.FailFast {

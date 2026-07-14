@@ -107,7 +107,7 @@ func TestProfileEnsure(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			c := newRandomTestClient(t, ctx, "profile-ensure-")
+			c := newRandomTestClient(ctx, t, "profile-ensure-")
 
 			r, err := c.Resource(KindProfile, tt.profile, tt.config)
 			require.NoError(t, err)
@@ -131,7 +131,7 @@ func TestProfileEnsure_Idempotent(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "profile-idempotent-")
+	c := newRandomTestClient(ctx, t, "profile-idempotent-")
 
 	r, err := c.Resource(KindProfile, "test-idempotent", &ProfileConfig{})
 	require.NoError(t, err)
@@ -147,7 +147,7 @@ func TestProfileEnsure_WithoutCreate_ThenWithCreate(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "profile-retry-")
+	c := newRandomTestClient(ctx, t, "profile-retry-")
 
 	r, err := c.Resource(KindProfile, "test-retry", &ProfileConfig{})
 	require.NoError(t, err)
@@ -165,7 +165,7 @@ func TestProfileEnsure_ExistsOnNewClient(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "profile-persist-")
+	c := newRandomTestClient(ctx, t, "profile-persist-")
 
 	r, err := c.Resource(KindProfile, "test-persist", &ProfileConfig{})
 	require.NoError(t, err)
@@ -206,7 +206,7 @@ func TestProfileDelete(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			c := newRandomTestClient(t, ctx, "profile-delete-")
+			c := newRandomTestClient(ctx, t, "profile-delete-")
 
 			r, err := c.Resource(KindProfile, "test-delete", &ProfileConfig{})
 			require.NoError(t, err)
@@ -375,7 +375,7 @@ func TestProfileHooks(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			c := newRandomTestClient(t, ctx, "profile-hook-")
+			c := newRandomTestClient(ctx, t, "profile-hook-")
 			tt.run(t, c)
 		})
 	}

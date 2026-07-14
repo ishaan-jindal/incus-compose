@@ -59,7 +59,10 @@ func buildRootfs(ctx context.Context, builder string, cfg *BuildConfig, stdout i
 		return nil, nil, fmt.Errorf("creating temp file: %w", err)
 	}
 	rootfsPath := rootfsTmp.Name()
-	rootfsTmp.Close()
+	err = rootfsTmp.Close()
+	if err != nil {
+		return nil, nil, err
+	}
 
 	buildCfg, cleanup, err := buildConfigWithInlineDockerfile(cfg)
 	if err != nil {
@@ -69,7 +72,7 @@ func buildRootfs(ctx context.Context, builder string, cfg *BuildConfig, stdout i
 	defer cleanup()
 
 	args := buildArgs(isPodman, buildCfg, tmpTag, rootfsPath)
-	cmd := exec.CommandContext(ctx, builder, args...)
+	cmd := exec.CommandContext(ctx, builder, args...) //nolint:gosec
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
@@ -88,7 +91,7 @@ func buildRootfs(ctx context.Context, builder string, cfg *BuildConfig, stdout i
 	}
 
 	// Remove the temporary image tag; ignore errors (best-effort cleanup).
-	rmi := exec.CommandContext(ctx, builder, "rmi", tmpTag)
+	rmi := exec.CommandContext(ctx, builder, "rmi", tmpTag) //nolint:gosec
 	rmi.Stdout = stdout
 	rmi.Stderr = stderr
 	_ = rmi.Run()
@@ -110,7 +113,7 @@ func buildConfigJSON(ctx context.Context, builder, tmpTag string, logW io.Writer
 	}
 	defer func() { _ = os.RemoveAll(ociDir) }()
 
-	save := exec.CommandContext(ctx, builder, "save", "--format", "oci-dir", "-o", ociDir, tmpTag)
+	save := exec.CommandContext(ctx, builder, "save", "--format", "oci-dir", "-o", ociDir, tmpTag) //nolint:gosec
 	save.Stderr = logW
 	if err := save.Run(); err != nil {
 		return nil, fmt.Errorf("saving OCI image: %w", err)

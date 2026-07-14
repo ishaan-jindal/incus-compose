@@ -150,13 +150,17 @@ func (f *logHandler) stopStream(incusName string) {
 		return
 	}
 
-	v.(context.CancelFunc)()
+	if cancel, ok := v.(context.CancelFunc); ok {
+		cancel()
+	}
 }
 
 // stopStreams cancels all running log goroutines.
 func (f *logHandler) stopStreams() {
 	f.cancels.Range(func(key, value any) bool {
-		value.(context.CancelFunc)()
+		if cancel, ok := value.(context.CancelFunc); ok {
+			cancel()
+		}
 		f.cancels.Delete(key)
 		return true
 	})

@@ -25,7 +25,7 @@ func skipExamples(t *testing.T) {
 	}
 }
 
-func runCommand(t *testing.T, ctx context.Context, projectName string, args ...string) (*bytes.Buffer, error) {
+func runCommand(ctx context.Context, t *testing.T, projectName string, args ...string) (*bytes.Buffer, error) {
 	t.Helper()
 
 	projectName = strings.ToLower(strings.ReplaceAll(projectName, "/", "-"))
@@ -47,8 +47,7 @@ func runCommand(t *testing.T, ctx context.Context, projectName string, args ...s
 func stripListOutput(t *testing.T, output *bytes.Buffer) string {
 	t.Helper()
 
-	ipRegex, err := regexp.Compile(`\d+\.\d+\.\d+\.\d+`)
-	require.NoError(t, err)
+	ipRegex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
 	outStr := ipRegex.ReplaceAllString(output.String(), "-stripped-")
 
 	// // Strip health status for now, its flaky.
@@ -104,18 +103,18 @@ func TestExample(t *testing.T) {
 
 			ctx := context.Background()
 			t.Cleanup(func() {
-				_, _ = runCommand(t, ctx, t.Name(), "--project-directory", example.dir, "down", "--project")
+				_, _ = runCommand(ctx, t, t.Name(), "--project-directory", example.dir, "down", "--project")
 			})
 
 			args := []string{"--project-directory", example.dir, "up", "--detach"}
-			_, err := runCommand(t, ctx, t.Name(), args...)
+			_, err := runCommand(ctx, t, t.Name(), args...)
 			require.NoError(t, err)
 
 			// Sometimes this is needed to get the real health status.
 			time.Sleep(1 * time.Second)
 
 			args = []string{"--project-directory", example.dir, "list", "--format", "json"}
-			stdout, err := runCommand(t, ctx, t.Name(), args...)
+			stdout, err := runCommand(ctx, t, t.Name(), args...)
 			require.NoError(t, err)
 
 			snapshotter.SnapshotT(t, stripListOutput(t, stdout))

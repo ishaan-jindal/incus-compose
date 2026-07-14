@@ -587,8 +587,8 @@ func extractAndStoreOCIConfig(ctx context.Context, server incusClient.InstanceSe
 	if props == nil {
 		props = make(map[string]string)
 	}
-	props["oci.uid"] = strconv.FormatUint(uint64(uid), 10)
-	props["oci.gid"] = strconv.FormatUint(uint64(gid), 10)
+	props["oci.uid"] = strconv.FormatUint(uid, 10)
+	props["oci.gid"] = strconv.FormatUint(gid, 10)
 	props["oci.entrypoint"] = entrypoint
 	props["oci.cwd"] = cwd
 
@@ -697,7 +697,7 @@ func (r *Image) buildImage(ctx context.Context, args Options) error {
 	if err != nil {
 		return ErrCreate.WithText("building container image").Wrap(err)
 	}
-	defer rootfs.Close()
+	defer r.client.WarnError(rootfs.Close, "Failure during close")
 
 	meta, err := buildMetadataTar(r.incusName, incusArch, configJSON)
 	if err != nil {

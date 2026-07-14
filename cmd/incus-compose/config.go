@@ -101,14 +101,14 @@ func newConfigCommand() *cli.Command {
 			// Determine output writer
 			writer := cmd.Root().Writer
 			if cmd.String("output") != "" {
-				fp, err := os.OpenFile(cmd.String("output"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+				fp, err := os.OpenFile(cmd.String("output"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 				if err != nil {
 					return err
 				}
 
 				writer = fp
 
-				defer fp.Close()
+				defer func() { _ = fp.Close() }()
 			}
 
 			// Handle filter-only options

@@ -39,7 +39,7 @@ func skipNotSameHost(t *testing.T, gc *client.GlobalClient) {
 	}
 }
 
-func runCommand(t *testing.T, ctx context.Context, projectName string, args ...string) (*bytes.Buffer, error) {
+func runCommand(ctx context.Context, t *testing.T, projectName string, args ...string) (*bytes.Buffer, error) {
 	t.Helper()
 
 	projectName = strings.ToLower(strings.ReplaceAll(projectName, "/", "-"))
@@ -61,13 +61,11 @@ func runCommand(t *testing.T, ctx context.Context, projectName string, args ...s
 func stripListOutput(t *testing.T, output *bytes.Buffer, stripHealth bool) string {
 	t.Helper()
 
-	ipRegex, err := regexp.Compile(`\d+\.\d+\.\d+\.\d+`)
-	require.NoError(t, err)
+	ipRegex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
 	outStr := ipRegex.ReplaceAllString(output.String(), "-stripped-")
 
 	if stripHealth {
-		healthRegex, err := regexp.Compile(`"health": "[a-zA-Z]+",`)
-		require.NoError(t, err)
+		healthRegex := regexp.MustCompile(`"health": "[a-zA-Z]+",`)
 		outStr = healthRegex.ReplaceAllString(outStr, `"health": "-stripped-",`)
 	}
 
@@ -75,7 +73,7 @@ func stripListOutput(t *testing.T, output *bytes.Buffer, stripHealth bool) strin
 	return strings.Trim(outStr, "\n")
 }
 
-func plannedNetworkNames(t *testing.T, ctx context.Context, projectName, compose string) []string {
+func plannedNetworkNames(ctx context.Context, t *testing.T, projectName, compose string) []string {
 	t.Helper()
 
 	projectName = strings.ToLower(strings.ReplaceAll(projectName, "/", "-"))
@@ -98,7 +96,7 @@ func plannedNetworkNames(t *testing.T, ctx context.Context, projectName, compose
 	return names
 }
 
-func projectClient(t *testing.T, ctx context.Context, projectName string, opts ...client.EnsureProjectOption) *client.Client {
+func projectClient(ctx context.Context, t *testing.T, projectName string, opts ...client.EnsureProjectOption) *client.Client {
 	t.Helper()
 
 	gc, err := client.NewTestClient(ctx)
@@ -121,10 +119,10 @@ type e2eTest struct {
 	snapStripHealth bool
 }
 
-func runE2ETests(t *testing.T, ctx context.Context, projectName string, tests []e2eTest) {
+func runE2ETests(ctx context.Context, t *testing.T, projectName string, tests []e2eTest) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stdout, err := runCommand(t, ctx, projectName, tt.args...)
+			stdout, err := runCommand(ctx, t, projectName, tt.args...)
 
 			if !tt.wantErr {
 				require.NoError(t, err)
@@ -228,7 +226,7 @@ func TestConfigCommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			stdout, err := runCommand(t, context.Background(), "test-local-config", tt.args...)
+			stdout, err := runCommand(context.Background(), t, "test-local-config", tt.args...)
 
 			if tt.wantErr {
 				require.Error(t, err, "Stdout: %s", stdout.String())
@@ -283,7 +281,7 @@ func TestConfigFilterByService(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			stdout, err := runCommand(t, context.Background(), "test-local-config-filter", tt.args...)
+			stdout, err := runCommand(context.Background(), t, "test-local-config-filter", tt.args...)
 			require.NoError(t, err)
 
 			if tt.fixture != "" {
@@ -304,7 +302,7 @@ func TestUpDownUpSimpleNginx(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -337,7 +335,7 @@ func TestUpDownUpSimpleNginx(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 func TestNormalLifecycle(t *testing.T) {
@@ -349,7 +347,7 @@ func TestNormalLifecycle(t *testing.T) {
 	compose := "../../test/fixtures/two-services/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -368,7 +366,7 @@ func TestNormalLifecycle(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 // dnsServiceIPs aggregates the dnsmasq address records for a service across the
@@ -399,17 +397,17 @@ func TestUpDownscaleRemovesInstancesAndDNS(t *testing.T) {
 	pn := t.Name()
 	compose := "../../test/fixtures/nginx-downscale/compose.yaml"
 
-	networks := plannedNetworkNames(t, ctx, pn, compose)
+	networks := plannedNetworkNames(ctx, t, pn, compose)
 	require.NotEmpty(t, networks)
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
-	c := projectClient(t, ctx, pn)
+	c := projectClient(ctx, t, pn)
 	for _, name := range []string{"web-1", "web-2", "web-3"} {
 		ok, err := c.InstanceExists(name)
 		require.NoError(t, err)
@@ -419,7 +417,7 @@ func TestUpDownscaleRemovesInstancesAndDNS(t *testing.T) {
 	before := dnsServiceIPs(t, c, networks, "web")
 	require.NotEmpty(t, before, "web should have DNS records for 3 replicas")
 
-	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--scale=web=1")
+	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach", "--scale=web=1")
 	require.NoError(t, err)
 
 	survivor, err := c.InstanceExists("web-1")
@@ -449,14 +447,14 @@ func TestUpReconcilesToReplicas(t *testing.T) {
 	compose := "../../test/fixtures/nginx-downscale/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	// Baseline: deploy.replicas=3.
-	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
-	c := projectClient(t, ctx, pn)
+	c := projectClient(ctx, t, pn)
 	allNames := []string{"web-1", "web-2", "web-3", "web-4", "web-5"}
 	assertCount := func(want int) {
 		t.Helper()
@@ -469,22 +467,22 @@ func TestUpReconcilesToReplicas(t *testing.T) {
 	assertCount(3)
 
 	// Manual downscale to 1.
-	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--scale=web=1")
+	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach", "--scale=web=1")
 	require.NoError(t, err)
 	assertCount(1)
 
 	// Plain up restores replicas=3 (scales back up).
-	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 	assertCount(3)
 
 	// Manual upscale to 5.
-	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--scale=web=5")
+	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach", "--scale=web=5")
 	require.NoError(t, err)
 	assertCount(5)
 
 	// Plain up reconciles back down to replicas=3.
-	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 	assertCount(3)
 }

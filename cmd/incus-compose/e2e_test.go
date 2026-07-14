@@ -34,16 +34,16 @@ func TestE2EUpNoDeps(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--no-deps", "nginx")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach", "--no-deps", "nginx")
 	require.NoError(t, err)
 
-	_, err = runCommand(t, ctx, pn, "-f", compose, "ps", "--quiet")
+	_, err = runCommand(ctx, t, pn, "-f", compose, "ps", "--quiet")
 	require.NoError(t, err)
 
-	c := projectClient(t, ctx, pn)
+	c := projectClient(ctx, t, pn)
 	exists, err := c.InstanceExists("nginx-1")
 	require.NoError(t, err)
 	assert.True(t, exists)
@@ -70,13 +70,13 @@ func TestE2EUpDeps(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "nginx")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach", "nginx")
 	require.NoError(t, err)
 
-	c := projectClient(t, ctx, pn)
+	c := projectClient(ctx, t, pn)
 	exists, err := c.InstanceExists("nginx-1")
 	require.NoError(t, err)
 	assert.True(t, exists)
@@ -103,16 +103,16 @@ func TestE2EDownNoDeps(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
-	_, err = runCommand(t, ctx, pn, "-f", compose, "down", "--no-deps", "backend1")
+	_, err = runCommand(ctx, t, pn, "-f", compose, "down", "--no-deps", "backend1")
 	require.NoError(t, err)
 
-	c := projectClient(t, ctx, pn)
+	c := projectClient(ctx, t, pn)
 	exists, err := c.InstanceExists("nginx-1")
 	require.NoError(t, err)
 	assert.True(t, exists)
@@ -139,18 +139,18 @@ func TestE2EDownDeps(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
-	c := projectClient(t, ctx, pn)
+	c := projectClient(ctx, t, pn)
 	exists, err := c.InstanceExists("nginx-1")
 	require.NoError(t, err)
 	assert.True(t, exists)
 
-	_, err = runCommand(t, ctx, pn, "-f", compose, "down", "backend1")
+	_, err = runCommand(ctx, t, pn, "-f", compose, "down", "backend1")
 	require.NoError(t, err)
 
 	exists, err = c.InstanceExists("backend2-1")
@@ -176,13 +176,13 @@ func TestE2EPsDeps(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
-	stdoutNoDeps, err := runCommand(t, ctx, pn, "-f", compose, "ps", "--services", "nginx")
+	stdoutNoDeps, err := runCommand(ctx, t, pn, "-f", compose, "ps", "--services", "nginx")
 	require.NoError(t, err)
 
 	noDeps := cleanLines(t, stdoutNoDeps.String())
@@ -190,7 +190,7 @@ func TestE2EPsDeps(t *testing.T) {
 	require.NotContains(t, noDeps, "backend1")
 	require.NotContains(t, noDeps, "backend2")
 
-	stdoutDeps, err := runCommand(t, ctx, pn, "-f", compose, "ps", "--services", "--with-deps", "nginx")
+	stdoutDeps, err := runCommand(ctx, t, pn, "-f", compose, "ps", "--services", "--with-deps", "nginx")
 	require.NoError(t, err)
 
 	withDeps := cleanLines(t, stdoutDeps.String())
@@ -214,7 +214,7 @@ func TestE2EStartStopRestartWithDeps(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -267,7 +267,7 @@ func TestE2EStartStopRestartWithDeps(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 func TestE2EUpDownGrafana(t *testing.T) {
@@ -280,7 +280,7 @@ func TestE2EUpDownGrafana(t *testing.T) {
 	compose := "../../test/fixtures/grafana/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -294,7 +294,7 @@ func TestE2EUpDownGrafana(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 func TestE2EUpUp(t *testing.T) {
@@ -307,7 +307,7 @@ func TestE2EUpUp(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -321,7 +321,7 @@ func TestE2EUpUp(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 func TestE2EDownDown(t *testing.T) {
@@ -334,7 +334,7 @@ func TestE2EDownDown(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -352,7 +352,7 @@ func TestE2EDownDown(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 func TestE2EDownProjectDeletesNetworks(t *testing.T) {
@@ -364,20 +364,20 @@ func TestE2EDownProjectDeletesNetworks(t *testing.T) {
 	pn := t.Name()
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
-	networks := plannedNetworkNames(t, ctx, pn, compose)
+	networks := plannedNetworkNames(ctx, t, pn, compose)
 	require.NotEmpty(t, networks)
 
 	cleaned := false
 	t.Cleanup(func() {
 		if !cleaned {
-			_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+			_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 		}
 	})
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
-	c := projectClient(t, ctx, pn)
+	c := projectClient(ctx, t, pn)
 
 	for _, name := range networks {
 		conn, err := c.Connection()
@@ -386,7 +386,7 @@ func TestE2EDownProjectDeletesNetworks(t *testing.T) {
 		require.NoError(t, err, "for network %q", name)
 	}
 
-	_, err = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	_, err = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	require.NoError(t, err)
 	cleaned = true
 
@@ -408,7 +408,7 @@ func TestE2EUpRecreate(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -422,7 +422,7 @@ func TestE2EUpRecreate(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 func TestE2EUpUpRecreate(t *testing.T) {
@@ -435,7 +435,7 @@ func TestE2EUpUpRecreate(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -457,7 +457,7 @@ func TestE2EUpUpRecreate(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 func TestE2EUpRecreateDown(t *testing.T) {
@@ -470,7 +470,7 @@ func TestE2EUpRecreateDown(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -492,7 +492,7 @@ func TestE2EUpRecreateDown(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 func TestE2ELifecycleSimpleNginx(t *testing.T) {
@@ -505,7 +505,7 @@ func TestE2ELifecycleSimpleNginx(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -556,7 +556,7 @@ func TestE2ELifecycleSimpleNginx(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 func TestE2EUpDownScale(t *testing.T) {
@@ -569,7 +569,7 @@ func TestE2EUpDownScale(t *testing.T) {
 	compose := "../../test/fixtures/nginx-scale/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -583,7 +583,7 @@ func TestE2EUpDownScale(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 func TestE2EUpDownDownscale(t *testing.T) {
@@ -596,7 +596,7 @@ func TestE2EUpDownDownscale(t *testing.T) {
 	compose := "../../test/fixtures/nginx-scale/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -610,7 +610,7 @@ func TestE2EUpDownDownscale(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 func TestE2EUpDownWithScale(t *testing.T) {
@@ -623,7 +623,7 @@ func TestE2EUpDownWithScale(t *testing.T) {
 	compose := "../../test/fixtures/nginx-scale/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -637,7 +637,7 @@ func TestE2EUpDownWithScale(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 func TestE2EListSnapshots(t *testing.T) {
@@ -649,11 +649,11 @@ func TestE2EListSnapshots(t *testing.T) {
 	pn := t.Name()
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -667,7 +667,7 @@ func TestE2EListSnapshots(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 func TestE2EExternalNetwork(t *testing.T) {
@@ -691,7 +691,7 @@ func TestE2EExternalNetwork(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -705,7 +705,7 @@ func TestE2EExternalNetwork(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 func TestE2EUpDownWithIncusOptions(t *testing.T) {
@@ -718,7 +718,7 @@ func TestE2EUpDownWithIncusOptions(t *testing.T) {
 	compose := "../../test/fixtures/with-incus-options/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -732,7 +732,7 @@ func TestE2EUpDownWithIncusOptions(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 func TestE2EUpDownWithProjectOptions(t *testing.T) {
@@ -745,7 +745,7 @@ func TestE2EUpDownWithProjectOptions(t *testing.T) {
 	compose := "../../test/fixtures/with-project-options/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -759,7 +759,7 @@ func TestE2EUpDownWithProjectOptions(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 func TestE2EUpDownWithSecrets(t *testing.T) {
@@ -772,7 +772,7 @@ func TestE2EUpDownWithSecrets(t *testing.T) {
 	compose := "../../test/fixtures/with-secrets/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -786,7 +786,7 @@ func TestE2EUpDownWithSecrets(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 func TestE2EUpDownWithSecretsVerifyFiles(t *testing.T) {
@@ -799,10 +799,10 @@ func TestE2EUpDownWithSecretsVerifyFiles(t *testing.T) {
 	compose := "../../test/fixtures/with-secrets/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	// Verify each secret file exists with correct perms/ownership
@@ -818,7 +818,7 @@ func TestE2EUpDownWithSecretsVerifyFiles(t *testing.T) {
 	}
 
 	for _, tc := range checks {
-		stdout, err := runCommand(t, ctx, pn, "-f", compose, "exec", "--no-tty", "app",
+		stdout, err := runCommand(ctx, t, pn, "-f", compose, "exec", "--no-tty", "app",
 			"--", "ls", "-ln", tc.path)
 		require.NoError(t, err)
 
@@ -840,7 +840,7 @@ func TestE2EUpDownWithConfigs(t *testing.T) {
 	compose := "../../test/fixtures/with-configs/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -854,7 +854,7 @@ func TestE2EUpDownWithConfigs(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }
 
 func TestE2EUpDownWithConfigsVerifyFiles(t *testing.T) {
@@ -867,10 +867,10 @@ func TestE2EUpDownWithConfigsVerifyFiles(t *testing.T) {
 	compose := "../../test/fixtures/with-configs/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	// Verify each config file exists with correct perms/ownership
@@ -886,7 +886,7 @@ func TestE2EUpDownWithConfigsVerifyFiles(t *testing.T) {
 	}
 
 	for _, tc := range checks {
-		stdout, err := runCommand(t, ctx, pn, "-f", compose, "exec", "--no-tty", "app",
+		stdout, err := runCommand(ctx, t, pn, "-f", compose, "exec", "--no-tty", "app",
 			"--", "ls", "-ln", tc.path)
 		require.NoError(t, err)
 
@@ -908,24 +908,24 @@ func TestE2EDownImages(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
-	_, err = runCommand(t, ctx, pn, "-f", compose, "down")
+	_, err = runCommand(ctx, t, pn, "-f", compose, "down")
 	require.NoError(t, err)
 
-	c := projectClient(t, ctx, pn)
+	c := projectClient(ctx, t, pn)
 	r, err := c.Resource(client.KindImage, "docker.io/nginx:alpine", &client.ImageConfig{})
 	require.NoError(t, err)
 	require.NoError(t, client.RunAction(ctx, r, client.ActionEnsure), "image should survive plain down")
 
-	_, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
-	_, err = runCommand(t, ctx, pn, "-f", compose, "down", "--images")
+	_, err = runCommand(ctx, t, pn, "-f", compose, "down", "--images")
 	require.NoError(t, err)
 
 	r, err = c.Resource(client.KindImage, "docker.io/nginx:alpine", &client.ImageConfig{})
@@ -943,7 +943,7 @@ func TestE2EUpDownWithVolume(t *testing.T) {
 	compose := "../../test/fixtures/with-volume/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -957,5 +957,5 @@ func TestE2EUpDownWithVolume(t *testing.T) {
 		},
 	}
 
-	runE2ETests(t, ctx, pn, tests)
+	runE2ETests(ctx, t, pn, tests)
 }

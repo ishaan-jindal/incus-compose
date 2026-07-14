@@ -35,6 +35,11 @@ for correct semver ordering. Headings below preserve each release's announced fo
   release-artifact naming (`checksums.txt`), it was still using the old
   `${PROJECT_NAME}_${VERSION}_checksums.txt` pattern.
 
+### Internal
+
+- `.golangci.yml`: enabled a much stricter linter set, and fixed the
+  resulting findings across the codebase.
+
 ## [1.0.0] - 2026-07-10
 
 The first stable release! _hooray_

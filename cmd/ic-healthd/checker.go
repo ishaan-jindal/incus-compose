@@ -43,7 +43,7 @@ const (
 	phaseRestart                    // restart the instance and re-enter the start period
 )
 
-// Run drives the health check loop until ctx is cancelled. It alternates
+// Run drives the health check loop until ctx is canceled. It alternates
 // between the start-period checker (start interval, bounded by the start
 // period) and the normal checker, restarting the instance with exponential
 // backoff when it stays unhealthy. inStart selects the start-period checker;
@@ -111,7 +111,7 @@ func (c *Checker) Run(ctx context.Context, inStart bool, startInstance bool) {
 // runPhase runs a single checking phase until a transition is required. When
 // inStart is true it uses the start interval and is bounded by the start
 // period; otherwise it uses the normal interval and runs until ctx is
-// cancelled. The returned phaseResult tells Run how to proceed.
+// canceled. The returned phaseResult tells Run how to proceed.
 func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 	interval := c.config.Interval
 	retries := c.config.Retries
@@ -287,7 +287,7 @@ func (c *Checker) exec(ctx context.Context, cmd []string) (int, string, string, 
 	case <-args.DataDone:
 	case <-ctx.Done():
 		if err := op.Cancel(); err != nil {
-			slog.Debug("cancelling exec operation", "instance", c.name, "error", err)
+			slog.Debug("canceling exec operation", "instance", c.name, "error", err)
 		}
 		return -1, "", "", ctx.Err()
 	}

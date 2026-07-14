@@ -147,6 +147,8 @@ func (c *Client) RegisterDNSWatcher() error {
 				delete(instanceIPs, inst.IncusName())
 
 				changed = true
+			default:
+				// ActionDelete and ActionLog don't affect DNS registration.
 			}
 
 			if !changed {
@@ -204,6 +206,9 @@ func (c *Client) RegisterDNSWatcher() error {
 			}
 
 			return nil
+
+		default:
+			// Other kinds are not relevant to DNS watching.
 		}
 
 		return nil

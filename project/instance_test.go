@@ -692,7 +692,6 @@ func TestInstanceVolumeDevices(t *testing.T) {
 	t.Parallel()
 
 	c := client.NewOfflineClient(context.Background(), "test")
-	opts := &ResourcesOptions{}
 
 	t.Run("named volume", func(t *testing.T) {
 		t.Parallel()
@@ -701,7 +700,7 @@ func TestInstanceVolumeDevices(t *testing.T) {
 			{Type: "volume", Source: "data", Target: "/data"},
 		}}
 
-		devices, files, resources, err := instanceVolumeDevices(c, p, service, nil, 0, 0, opts)
+		devices, files, resources, err := instanceVolumeDevices(c, p, service, nil, 0, 0)
 		require.NoError(t, err)
 		assert.Empty(t, files)
 		require.Len(t, devices, 1)
@@ -719,7 +718,7 @@ func TestInstanceVolumeDevices(t *testing.T) {
 			{Type: "volume", Source: "data", Target: "/data"},
 		}}
 
-		devices, _, resources, err := instanceVolumeDevices(c, p, service, nil, 0, 0, opts)
+		devices, _, resources, err := instanceVolumeDevices(c, p, service, nil, 0, 0)
 		require.NoError(t, err)
 		require.Len(t, devices, 1)
 		require.Len(t, resources, 1)
@@ -736,7 +735,7 @@ func TestInstanceVolumeDevices(t *testing.T) {
 			{Type: "volume", Source: "data", Target: "/data"},
 		}}
 
-		devices, _, resources, err := instanceVolumeDevices(c, p, service, nil, 0, 0, opts)
+		devices, _, resources, err := instanceVolumeDevices(c, p, service, nil, 0, 0)
 		require.NoError(t, err)
 		require.Len(t, devices, 1)
 		require.Len(t, resources, 1)
@@ -757,7 +756,7 @@ func TestInstanceVolumeDevices(t *testing.T) {
 			},
 		}}
 
-		devices, _, resources, err := instanceVolumeDevices(c, p, service, nil, 0, 0, opts)
+		devices, _, resources, err := instanceVolumeDevices(c, p, service, nil, 0, 0)
 		require.NoError(t, err)
 		require.Len(t, devices, 1)
 		require.Len(t, resources, 1)
@@ -776,7 +775,7 @@ func TestInstanceVolumeDevices(t *testing.T) {
 			{Type: "volume", Source: "data", Target: "/data"},
 		}}
 
-		devices, _, resources, err := instanceVolumeDevices(c, p, service, nil, 0, 0, opts)
+		devices, _, resources, err := instanceVolumeDevices(c, p, service, nil, 0, 0)
 		require.NoError(t, err)
 		require.Len(t, devices, 1)
 		require.Len(t, resources, 1)
@@ -795,7 +794,7 @@ func TestInstanceVolumeDevices(t *testing.T) {
 			},
 		}}
 
-		devices, files, resources, err := instanceVolumeDevices(c, &types.Project{}, service, nil, 0, 0, opts)
+		devices, files, resources, err := instanceVolumeDevices(c, &types.Project{}, service, nil, 0, 0)
 		require.NoError(t, err)
 		assert.Empty(t, devices)
 		assert.Empty(t, resources)
@@ -821,7 +820,7 @@ func TestInstanceVolumeDevices(t *testing.T) {
 			},
 		}}
 
-		devices, files, resources, err := instanceVolumeDevices(c, &types.Project{}, service, nil, 0, 0, opts)
+		devices, files, resources, err := instanceVolumeDevices(c, &types.Project{}, service, nil, 0, 0)
 		require.NoError(t, err)
 		assert.Empty(t, files)
 		require.Len(t, devices, 1)
@@ -838,7 +837,7 @@ func TestInstanceVolumeDevices(t *testing.T) {
 			{Type: "bind", Source: dir, Target: "/mnt", Extensions: types.Extensions{"x-incus": map[string]any{"security.shifted": "false"}}},
 		}}
 
-		devices, _, _, err := instanceVolumeDevices(c, &types.Project{}, service, nil, 0, 0, opts)
+		devices, _, _, err := instanceVolumeDevices(c, &types.Project{}, service, nil, 0, 0)
 		require.NoError(t, err)
 		require.Len(t, devices, 1)
 		assert.Equal(t, client.InstanceDeviceTypeDisk, devices[0].Config.DeviceType)
@@ -851,7 +850,7 @@ func TestInstanceVolumeDevices(t *testing.T) {
 			{Type: "tmpfs", Target: "/cache"},
 		}}
 
-		devices, _, _, err := instanceVolumeDevices(c, &types.Project{}, service, nil, 0, 0, opts)
+		devices, _, _, err := instanceVolumeDevices(c, &types.Project{}, service, nil, 0, 0)
 		require.NoError(t, err)
 		require.Len(t, devices, 1)
 		assert.Equal(t, client.InstanceDeviceTypeTmpfs, devices[0].Config.DeviceType)
@@ -865,7 +864,7 @@ func TestInstanceVolumeDevices(t *testing.T) {
 			{Type: "bind", Source: dir, Target: "/mnt"},
 		}}
 
-		devices, files, resources, err := instanceVolumeDevices(c, &types.Project{}, service, nil, 0, 0, opts)
+		devices, files, resources, err := instanceVolumeDevices(c, &types.Project{}, service, nil, 0, 0)
 		require.NoError(t, err)
 		assert.Empty(t, files)
 		require.Len(t, devices, 1)
@@ -878,7 +877,7 @@ func TestInstanceVolumeDevices(t *testing.T) {
 		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
 			{Type: "weird", Source: "x", Target: "/y"},
 		}}
-		_, _, _, err := instanceVolumeDevices(c, &types.Project{}, service, nil, 0, 0, opts)
+		_, _, _, err := instanceVolumeDevices(c, &types.Project{}, service, nil, 0, 0)
 		require.Error(t, err)
 	})
 
@@ -887,7 +886,7 @@ func TestInstanceVolumeDevices(t *testing.T) {
 		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
 			{Type: "bind", Source: filepath.Join(t.TempDir(), "nope"), Target: "/m"},
 		}}
-		_, _, _, err := instanceVolumeDevices(c, &types.Project{}, service, nil, 0, 0, opts)
+		_, _, _, err := instanceVolumeDevices(c, &types.Project{}, service, nil, 0, 0)
 		require.Error(t, err)
 	})
 }

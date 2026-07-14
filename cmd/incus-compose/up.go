@@ -244,7 +244,7 @@ func newUpCommand() *cli.Command {
 
 				rc.LogDebug("Ensure", "resources", stack.All())
 
-				recreateOptions := append(runOptions, client.OptionForce())
+				recreateOptions := append(append([]client.Option{}, runOptions...), client.OptionForce())
 
 				// Ensure without create for "recreate" (resolution only, no progress).
 				if err := ensureStack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, stdout, stderr); err != nil {
@@ -347,7 +347,7 @@ func newUpCommand() *cli.Command {
 
 			// Ensure with create. --pull=always refreshes cached images from registry.
 			// policy and missing only use the local cache (pull if not present).
-			startOptions := append(runOptions, client.OptionCreate())
+			startOptions := append(append([]client.Option{}, runOptions...), client.OptionCreate())
 			if cmd.String("pull") == "always" {
 				startOptions = append(startOptions, client.OptionPull())
 			}

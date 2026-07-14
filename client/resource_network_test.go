@@ -369,7 +369,7 @@ func TestNetworkEnsure(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			c := newRandomTestClient(t, ctx, "network-ensure-")
+			c := newRandomTestClient(ctx, t, "network-ensure-")
 
 			r, err := c.Resource(KindNetwork, tt.network, tt.config)
 			require.NoError(t, err)
@@ -393,7 +393,7 @@ func TestNetworkEnsure_Idempotent(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "network-idempotent-")
+	c := newRandomTestClient(ctx, t, "network-idempotent-")
 
 	r, err := c.Resource(KindNetwork, "test-idempotent", &NetworkConfig{})
 	require.NoError(t, err)
@@ -409,7 +409,7 @@ func TestNetworkEnsure_WithoutCreate_ThenWithCreate(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "network-retry-")
+	c := newRandomTestClient(ctx, t, "network-retry-")
 
 	r, err := c.Resource(KindNetwork, "test-retry", &NetworkConfig{})
 	require.NoError(t, err)
@@ -427,7 +427,7 @@ func TestNetworkEnsure_ExistsOnNewClient(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "network-persist-")
+	c := newRandomTestClient(ctx, t, "network-persist-")
 
 	r, err := c.Resource(KindNetwork, "test-persist", &NetworkConfig{})
 	require.NoError(t, err)
@@ -447,7 +447,7 @@ func TestNetworkProjectDeletesNetwork(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "network-projdel-")
+	c := newRandomTestClient(ctx, t, "network-projdel-")
 
 	r, err := c.Resource(KindNetwork, "test-project-net", &NetworkConfig{})
 	require.NoError(t, err)
@@ -494,7 +494,7 @@ func TestNetworkDelete(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			c := newRandomTestClient(t, ctx, "network-delete-")
+			c := newRandomTestClient(ctx, t, "network-delete-")
 
 			r, err := c.Resource(KindNetwork, "test-delete", &NetworkConfig{})
 			require.NoError(t, err)
@@ -634,7 +634,7 @@ func TestNetworkHooks(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			c := newRandomTestClient(t, ctx, "network-hook-")
+			c := newRandomTestClient(ctx, t, "network-hook-")
 			tt.run(t, c)
 		})
 	}
@@ -648,7 +648,7 @@ func TestNetworkExternal_EnsureFailsIfNotExists(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "network-ext-")
+	c := newRandomTestClient(ctx, t, "network-ext-")
 
 	r, err := c.Resource(KindNetwork, "non-existent-external", &NetworkConfig{External: true})
 	require.NoError(t, err)
@@ -663,7 +663,7 @@ func TestNetworkExternal_DeleteIsNoOp(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "network-extdel-")
+	c := newRandomTestClient(ctx, t, "network-extdel-")
 
 	r, err := c.Resource(KindNetwork, "test-ext-del", &NetworkConfig{})
 	require.NoError(t, err)

@@ -49,9 +49,6 @@ func newHealthdDownCommand() *cli.Command {
 
 			params := healthdParams{
 				projectName: p.Name,
-				binary:      "",
-				image:       resolveHealthdImage(cmd.String("image")),
-				timeout:     cmd.Duration("timeout"),
 			}
 
 			c, err := globalClient.EnsureProject(p.Name)

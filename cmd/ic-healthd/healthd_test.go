@@ -37,7 +37,7 @@ func skipE2E(t *testing.T) {
 	}
 }
 
-func runIncusCommand(t *testing.T, ctx context.Context, projectName string, args ...string) (*bytes.Buffer, *bytes.Buffer, error) {
+func runIncusCommand(ctx context.Context, t *testing.T, projectName string, args ...string) (*bytes.Buffer, *bytes.Buffer, error) {
 	t.Helper()
 
 	projectName = strings.ToLower(strings.ReplaceAll(projectName, "/", "-"))
@@ -61,8 +61,7 @@ func runIncusCommand(t *testing.T, ctx context.Context, projectName string, args
 func stripListOutput(t *testing.T, output *bytes.Buffer) string {
 	t.Helper()
 
-	ipRegex, err := regexp.Compile(`\d+\.\d+\.\d+\.\d+`)
-	require.NoError(t, err)
+	ipRegex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
 	outStr := ipRegex.ReplaceAllString(output.String(), "-stripped-")
 
 	// // Strip health status for now, its flaky.
@@ -74,7 +73,7 @@ func stripListOutput(t *testing.T, output *bytes.Buffer) string {
 	return strings.Trim(outStr, "\n")
 }
 
-func projectClient(t *testing.T, ctx context.Context, projectName string, opts ...client.EnsureProjectOption) *client.Client {
+func projectClient(ctx context.Context, t *testing.T, projectName string, opts ...client.EnsureProjectOption) *client.Client {
 	t.Helper()
 
 	gc, err := client.NewTestClient(ctx)
@@ -89,7 +88,7 @@ func projectClient(t *testing.T, ctx context.Context, projectName string, opts .
 	return c
 }
 
-func loadProject(t *testing.T, ctx context.Context, compose string, projectName string) (*client.Client, *project.Project) {
+func loadProject(ctx context.Context, t *testing.T, compose string, projectName string) (*client.Client, *project.Project) {
 	files := []string{compose}
 	incusCFile := filepath.Join(
 		filepath.Dir(compose),
@@ -108,7 +107,7 @@ func loadProject(t *testing.T, ctx context.Context, compose string, projectName 
 	)
 	require.NoError(t, err)
 
-	c := projectClient(t, ctx, projectName,
+	c := projectClient(ctx, t, projectName,
 		client.EnsureProjectWithCreate(),
 		client.EnsureProjectWithConfig(p.ProjectConfig()),
 	)
@@ -247,7 +246,7 @@ func TestE2EHDNginx(t *testing.T) {
 	projectName := strings.ToLower(t.Name())
 	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
 
-	c, p := loadProject(t, ctx, compose, projectName)
+	c, p := loadProject(ctx, t, compose, projectName)
 	err := c.Open()
 	require.NoError(t, err)
 
@@ -265,7 +264,7 @@ func TestE2EHDNginx(t *testing.T) {
 	t.Cleanup(func() {
 		_ = c.Done()
 
-		_, _, _ = runIncusCommand(t, ctx, projectName, "-f", compose, "down", "--project")
+		_, _, _ = runIncusCommand(ctx, t, projectName, "-f", compose, "down", "--project")
 		hCleanup()
 		cancel()
 	})
@@ -312,7 +311,7 @@ func TestE2EHDNginx(t *testing.T) {
 	require.NoError(t, err)
 
 	args := []string{"-f", compose, "list", "--format", "json"}
-	stdout, _, err := runIncusCommand(t, ctx, projectName, args...)
+	stdout, _, err := runIncusCommand(ctx, t, projectName, args...)
 	require.NoError(t, err)
 	snapshotter.SnapshotT(t, stripListOutput(t, stdout))
 }

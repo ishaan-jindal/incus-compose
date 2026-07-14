@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"maps"
 	"os"
-	"path/filepath"
 	"strconv"
 
 	incusClient "github.com/lxc/incus/v7/client"
@@ -285,12 +284,13 @@ func (r *StorageVolume) pushDirectoryContent() error {
 		}
 	}
 
-	return filepath.WalkDir(r.Config.HostPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
+	root, err := os.OpenRoot(r.Config.HostPath)
+	if err != nil {
+		return err
+	}
+	defer r.client.WarnError(root.Close, "Failure during close")
 
-		rel, err := filepath.Rel(r.Config.HostPath, path)
+	return fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -314,11 +314,11 @@ func (r *StorageVolume) pushDirectoryContent() error {
 			return r.conn.CreateStorageVolumeFile(r.Config.Pool, "custom", r.incusName, rel, args)
 		}
 
-		f, err := os.Open(path)
+		f, err := root.Open(rel)
 		if err != nil {
 			return err
 		}
-		defer f.Close()
+		defer r.client.WarnError(f.Close, "Failure during close")
 
 		args.Type = "file"
 		args.Content = f

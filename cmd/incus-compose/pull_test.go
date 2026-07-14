@@ -13,10 +13,10 @@ import (
 
 // pulledImageAliases runs the wrapped `incus image list --format=json` inside the
 // compose project's Incus project and returns the alias names of the images found.
-func pulledImageAliases(t *testing.T, ctx context.Context, projectName, compose string) []string {
+func pulledImageAliases(ctx context.Context, t *testing.T, projectName, compose string) []string {
 	t.Helper()
 
-	stdout, err := runCommand(t, ctx, projectName, "-f", compose, "incus", "image", "list", "--format=json")
+	stdout, err := runCommand(ctx, t, projectName, "-f", compose, "incus", "image", "list", "--format=json")
 	require.NoError(t, err)
 
 	var images []struct {
@@ -55,7 +55,7 @@ func TestE2EPull(t *testing.T) {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -78,10 +78,10 @@ func TestE2EPull(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := runCommand(t, ctx, pn, tt.args...)
+			_, err := runCommand(ctx, t, pn, tt.args...)
 			require.NoError(t, err)
 
-			aliases := pulledImageAliases(t, ctx, pn, compose)
+			aliases := pulledImageAliases(ctx, t, pn, compose)
 			require.True(t, hasImage(aliases, "nginx"),
 				"expected the nginx image in the project, got %v", aliases)
 		})
@@ -100,23 +100,23 @@ func TestE2EPullWithDeps(t *testing.T) {
 	compose := "../../test/fixtures/postgres-redis/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	// Pulling just "api" copies its own image, not its dependencies.
-	_, err := runCommand(t, ctx, pn, "-f", compose, "pull", "--no-healthd", "api")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "pull", "--no-healthd", "api")
 	require.NoError(t, err)
 
-	aliases := pulledImageAliases(t, ctx, pn, compose)
+	aliases := pulledImageAliases(ctx, t, pn, compose)
 	require.True(t, hasImage(aliases, "node"), "expected the api image, got %v", aliases)
 	require.False(t, hasImage(aliases, "postgres"), "did not expect dep images, got %v", aliases)
 	require.False(t, hasImage(aliases, "redis"), "did not expect dep images, got %v", aliases)
 
 	// --with-deps follows depends_on and also pulls postgres and redis.
-	_, err = runCommand(t, ctx, pn, "-f", compose, "pull", "--no-healthd", "--with-deps", "api")
+	_, err = runCommand(ctx, t, pn, "-f", compose, "pull", "--no-healthd", "--with-deps", "api")
 	require.NoError(t, err)
 
-	aliases = pulledImageAliases(t, ctx, pn, compose)
+	aliases = pulledImageAliases(ctx, t, pn, compose)
 	require.True(t, hasImage(aliases, "node"), "expected the api image, got %v", aliases)
 	require.True(t, hasImage(aliases, "postgres"), "expected the postgres dep image, got %v", aliases)
 	require.True(t, hasImage(aliases, "redis"), "expected the redis dep image, got %v", aliases)
@@ -140,10 +140,10 @@ func TestE2EPullInvalidImage(t *testing.T) {
 	compose := filepath.Join(dir, "compose.yaml")
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(t, ctx, pn, "-f", compose, "pull")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "pull")
 	require.Error(t, err)
 }
 
@@ -159,10 +159,10 @@ func TestE2EPullIgnoreBuildable(t *testing.T) {
 	compose := "../../test/fixtures/with-build/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
 	// --ignore-buildable skips images with a build config, leaving nothing to pull.
-	_, err := runCommand(t, ctx, pn, "-f", compose, "pull", "--ignore-buildable")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "pull", "--ignore-buildable")
 	require.NoError(t, err)
 }
