@@ -187,10 +187,7 @@ func newUpCommand() *cli.Command {
 			}
 
 			runOptions := []client.Option{client.OptionTimeout(cmd.Duration("timeout"))}
-			// With --no-deps the linked services are out of scope, so don't wait on
-			// healthd dependency conditions (depends_on: service_healthy) that maybe can't
-			// be satisfied because those dependencies were never started.
-			if !cmd.Bool("external-healthd") && (!usesHealthd || cmd.Bool("no-deps")) {
+			if !cmd.Bool("external-healthd") && !usesHealthd {
 				runOptions = append(runOptions, client.OptionNoHealthd())
 			}
 
