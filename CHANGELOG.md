@@ -11,6 +11,19 @@ for correct semver ordering. Headings below preserve each release's announced fo
 
 ## [1.1.0] - unreleased
 
+### Changed
+
+- Published ports (`ports:`) now use an Incus NAT proxy with ARP/NDP-based
+  instance IP detection, available since Incus 7.0. The old userspace proxy
+  and the `x-incus-compose.nat-proxy` extension are replaced transparently
+  by this single universal proxy.
+
+### Removed
+
+- `x-incus-compose.nat-proxy` extension: no longer functional, preserved
+  for YAML compatibility only. Post-start device attachment machinery
+  removed.
+
 ### Added
 
 - `services.{name}.configs` / top-level `configs:`: mount config files into
