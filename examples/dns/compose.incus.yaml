@@ -3,7 +3,7 @@ services:
     networks:
       default:
         x-incus:
-          ipv4.address: "${KNOT_IPV4_ADDRESS}/${IPV4_NETMASK}"
+          ipv4.address: "${DNSCRYPT_IPV4_ADDRESS}/${IPV4_NETMASK}"
           ipv4.gateway: "${IPV4_GATEWAY}"
 
   knot:
@@ -19,7 +19,7 @@ services:
     networks:
       default:
         x-incus:
-          ipv4.address: "${DNSCRYPT_IPV4_ADDRESS}/${IPV4_NETMASK}"
+          ipv4.address: "${KNOT_IPV4_ADDRESS}/${IPV4_NETMASK}"
           ipv4.gateway: "${IPV4_GATEWAY}"
 
 networks:

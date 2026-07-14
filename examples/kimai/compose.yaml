@@ -12,11 +12,9 @@ services:
     secrets:
       - db-password
       - db-root-password
-      - source: db-my-cnf
-        target: /root/.my.cnf
     restart: unless-stopped
     healthcheck:
-      test: mariadb-admin -uroot ping -h 127.0.0.1 --silent
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -32,8 +30,6 @@ services:
         # restart: true
     volumes:
       - data:/opt/kimai/var
-      # - data:/opt/kimai/var/data
-      # - plugins:/opt/kimai/var/plugins
     environment:
       - TZ=${TIMEZONE}
       - APP_SECRET=${APP_SECRET}
@@ -48,10 +44,7 @@ secrets:
     environment: DB_PASSWORD
   db-root-password:
     environment: DB_ROOT_PASSWORD
-  db-my-cnf:
-    environment: DB_MY_CNF
 
 volumes:
   data:
   mariadb:
-  # plugins:

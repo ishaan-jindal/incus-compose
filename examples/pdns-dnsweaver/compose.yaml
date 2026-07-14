@@ -1,0 +1,148 @@
+# Based on https://computingforgeeks.com/running-powerdns-and-powerdns-admin-in-docker-containers/
+services:
+  mariadb:
+    image: mariadb:12
+    container_name: mariadb
+    volumes:
+      - mariadb:/var/lib/mysql
+    environment:
+      - MARIADB_DATABASE=${DB_NAME}
+      - MARIADB_USER=${DB_USER}
+      - MARIADB_PASSWORD_FILE=/run/secrets/db-password
+      - MARIADB_ROOT_PASSWORD_FILE=/run/secrets/db-root-password
+    secrets:
+      - db-password
+      - db-root-password
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+      start_interval: 5s
+
+  pdns:
+    image: powerdns/pdns-auth-51:5.1.3
+    container_name: pdns-auth
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    volumes:
+      - ./pdns/pdns.conf:/etc/powerdns/pdns.conf:ro
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "127.0.0.1:8081:8081"
+    healthcheck:
+      test: ["CMD", "pdns_control", "rping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  dnscrypt-proxy:
+    image: klutchell/dnscrypt-proxy:main
+    container_name: dnscrypt-proxy
+    volumes:
+      - ./dnscrypt-proxy:/config:ro
+      - dnscrypt:/storage
+    restart: unless-stopped
+    depends_on:
+      pdns:
+        condition: service_healthy
+
+  dnsweaver:
+    build:
+      context: ./work/dnsweaver/
+    image: maxamill/dnsweaver:latest-custom
+    container_name: dnsweaver
+    environment:
+      DNSWEAVER_INSTANCES: pdns
+      DNSWEAVER_PDNS_TYPE: powerdns
+      DNSWEAVER_PDNS_URL: http://$PDNS_IPV4_ADDRESS:8081
+      DNSWEAVER_PDNS_API_KEY_FILE: /run/secrets/pdns_api_key
+      DNSWEAVER_PDNS_ZONE: "$DNSWEAVER_PDNS_ZONE"
+      DNSWEAVER_PDNS_DOMAINS: "$DNSWEAVER_PDNS_DOMAINS"
+      DNSWEAVER_PDNS_TTL: "5"
+      DNSWEAVER_PDNS_TARGET: "$PDNS_IPV4_ADDRESS"
+
+      DNSWEAVER_PLATFORM: none
+      DNSWEAVER_SOURCES: incus
+      DNSWEAVER_INCUS_ALL_PROJECTS: "true"
+      DNSWEAVER_INCUS_URL: "$DNSWEAVER_INCUS_URL"
+      DNSWEAVER_INCUS_DOMAIN_SUFFIX: "$DNSWEAVER_INCUS_DOMAIN_SUFFIX"
+      DNSWEAVER_INCUS_TLS_CERT_FILE: /run/secrets/incus_client_cert
+      DNSWEAVER_INCUS_TLS_KEY_FILE: /run/secrets/incus_client_key
+      DNSWEAVER_INCUS_CERT_STORE: /var/lib/dnsweaver/incus
+    secrets:
+      - source: pdns_api_key
+        uid: "1000"
+        gid: "1000"
+        mode: 0o400
+      - source: incus_client_cert
+        uid: "1000"
+        gid: "1000"
+        mode: 0o400
+      - source: incus_client_key
+        uid: "1000"
+        gid: "1000"
+        mode: 0o400
+    depends_on:
+      pdns:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/bin/sh",
+          "-c",
+          "echo -e 'GET /health HTTP/1.0\r\nHost: localhost\r\n\r\n' | nc localhost 8080 | grep -q '200 OK' || exit 1",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  pdns-admin:
+    image: powerdnsadmin/pda-legacy:latest
+    container_name: pdns-admin
+    restart: unless-stopped
+    depends_on:
+      pdns:
+        condition: service_healthy
+    environment:
+      SQLALCHEMY_DATABASE_URI: "mysql://${DB_USER}:${DB_PASSWORD}@mariadb/${ADMIN_DB_NAME}"
+      GUNICORN_TIMEOUT: "60"
+      GUNICORN_WORKERS: "2"
+      GUNICORN_LOGLEVEL: "INFO"
+      OFFLINE_MODE: "False"
+    ports:
+      - "9191:80"
+    volumes:
+      - pdnsadmin:/app/upload
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:80"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_interval: 5s
+      start_period: 1m
+
+volumes:
+  mariadb:
+  pdnsadmin:
+  dnscrypt:
+
+secrets:
+  db-password:
+    environment: DB_PASSWORD
+  db-root-password:
+    environment: DB_ROOT_PASSWORD
+  pdns_api_key:
+    environment: API_KEY
+  incus_client_cert:
+    file: client.crt
+  incus_client_key:
+    file: client.key
