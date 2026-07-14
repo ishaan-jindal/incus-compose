@@ -23,7 +23,7 @@ import (
 	incus "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 
-	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/shared"
 )
 
 // Runner manages all health checkers.
@@ -70,7 +70,7 @@ func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
 			r.conn = conn
 		}
 
-		err = r.writeStatus(client.HealthStatusHealthy)
+		err = r.writeStatus(shared.HealthStatusHealthy)
 		if err != nil {
 			slog.Warn("Failed to update my own status", "error", err)
 
@@ -87,7 +87,7 @@ func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
 
 		select {
 		case <-ctx.Done():
-			return r.writeStatus(client.HealthStatusUnhealthy)
+			return r.writeStatus(shared.HealthStatusUnhealthy)
 		case <-reload:
 			slog.Info("loading additional checkers")
 		}
@@ -109,7 +109,7 @@ func (r *Runner) writeStatus(status string) error {
 	}
 
 	wInst := inst.Writable()
-	wInst.Config[client.HealthStatusKey] = status
+	wInst.Config[shared.HealthStatusKey] = status
 
 	op, err := myConn.UpdateInstance(r.config.OwnName, wInst, etag)
 	if err != nil {
@@ -276,19 +276,19 @@ func (r *Runner) discover(conn incus.InstanceServer) (map[string]InstanceConfig,
 		slog.Debug("Found instances", "project", project, "count", len(incusInstances))
 
 		for _, inst := range incusInstances {
-			if inst.Config[client.HealthKeyPrefix+"daemon"] == "true" {
+			if inst.Config[shared.HealthKeyPrefix+"daemon"] == "true" {
 				continue
 			}
 
 			restart := false
-			if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, inst.Config[client.HealthKeyPrefix+"restart"]) {
+			if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, inst.Config[shared.HealthKeyPrefix+"restart"]) {
 				restart = true
-				if inst.Config[client.HealthKeyPrefix+"test"] == "" {
-					inst.Config[client.HealthKeyPrefix+"test"] = "[\"NONE\"]"
+				if inst.Config[shared.HealthKeyPrefix+"test"] == "" {
+					inst.Config[shared.HealthKeyPrefix+"test"] = "[\"NONE\"]"
 				}
 			}
 
-			if inst.Config[client.HealthKeyPrefix+"test"] == "" && !restart {
+			if inst.Config[shared.HealthKeyPrefix+"test"] == "" && !restart {
 				slog.Debug("Skipping instance: no test and no restart", "instance", inst.Name)
 				continue
 			}
@@ -321,7 +321,7 @@ func parseInstance(project string, cfg map[string]string) (InstanceConfig, error
 		RestartDelay:  defaultRestartDelay,
 	}
 
-	if err := json.Unmarshal([]byte(cfg[client.HealthKeyPrefix+"test"]), &svc.Test); err != nil {
+	if err := json.Unmarshal([]byte(cfg[shared.HealthKeyPrefix+"test"]), &svc.Test); err != nil {
 		return svc, fmt.Errorf("parsing test: %w", err)
 	}
 
@@ -329,7 +329,7 @@ func parseInstance(project string, cfg map[string]string) (InstanceConfig, error
 		return svc, errors.New("CMD-SHELL requires a command")
 	}
 
-	if v := cfg[client.HealthKeyPrefix+"start_period"]; v != "" {
+	if v := cfg[shared.HealthKeyPrefix+"start_period"]; v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
 			return svc, fmt.Errorf("parsing start_period: %w", err)
@@ -337,7 +337,7 @@ func parseInstance(project string, cfg map[string]string) (InstanceConfig, error
 		svc.StartPeriod = d
 	}
 
-	if v := cfg[client.HealthKeyPrefix+"start_interval"]; v != "" {
+	if v := cfg[shared.HealthKeyPrefix+"start_interval"]; v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
 			return svc, fmt.Errorf("parsing start_interval: %w", err)
@@ -345,7 +345,7 @@ func parseInstance(project string, cfg map[string]string) (InstanceConfig, error
 		svc.StartInterval = d
 	}
 
-	if v := cfg[client.HealthKeyPrefix+"interval"]; v != "" {
+	if v := cfg[shared.HealthKeyPrefix+"interval"]; v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
 			return svc, fmt.Errorf("parsing interval: %w", err)
@@ -353,7 +353,7 @@ func parseInstance(project string, cfg map[string]string) (InstanceConfig, error
 		svc.Interval = d
 	}
 
-	if v := cfg[client.HealthKeyPrefix+"timeout"]; v != "" {
+	if v := cfg[shared.HealthKeyPrefix+"timeout"]; v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
 			return svc, fmt.Errorf("parsing timeout: %w", err)
@@ -361,7 +361,7 @@ func parseInstance(project string, cfg map[string]string) (InstanceConfig, error
 		svc.Timeout = d
 	}
 
-	if v := cfg[client.HealthKeyPrefix+"retries"]; v != "" {
+	if v := cfg[shared.HealthKeyPrefix+"retries"]; v != "" {
 		n, err := strconv.ParseUint(v, 10, 32)
 		if err != nil {
 			return svc, fmt.Errorf("parsing retries: %w", err)
@@ -372,11 +372,11 @@ func parseInstance(project string, cfg map[string]string) (InstanceConfig, error
 		svc.Retries = int(n)
 	}
 
-	if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, cfg[client.HealthStatusKey+"restart"]) {
+	if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, cfg[shared.HealthStatusKey+"restart"]) {
 		svc.Restart = true
 	}
 
-	if cfg[client.HealthKeyPrefix+"restart"] == "unless-stopped" {
+	if cfg[shared.HealthKeyPrefix+"restart"] == "unless-stopped" {
 		svc.UnlessStopped = true
 	}
 

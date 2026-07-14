@@ -1,25 +1,31 @@
 package client
 
-import "context"
+import (
+	"context"
+
+	"github.com/lxc/incus-compose/shared"
+)
 
 // MaxIncusNameLen is the maximum length for Incus instance names.
 // Incus allows up to 63 characters (DNS hostname limit).
 const MaxIncusNameLen = 63
 
 // Health check status constants written to HealthConfigKey by ic-healthd.
+// Re-exported from the shared package for backward compatibility with
+// existing client.Health* references.
 const (
-	HealthStatusUnknown   = "unknown"
-	HealthStatusHealthy   = "healthy"
-	HealthStatusUnhealthy = "unhealthy"
-	HealthStatusStopped   = "stopped"
+	HealthStatusUnknown   = shared.HealthStatusUnknown
+	HealthStatusHealthy   = shared.HealthStatusHealthy
+	HealthStatusUnhealthy = shared.HealthStatusUnhealthy
+	HealthStatusStopped   = shared.HealthStatusStopped
 
-	HealthKeyPrefix = "user.healthcheck."
+	HealthKeyPrefix = shared.HealthKeyPrefix
 
 	// HealthStatusKey is the instance config key used to store health status.
-	HealthStatusKey = HealthKeyPrefix + "status"
+	HealthStatusKey = shared.HealthStatusKey
 
 	// HealthStoppedKey when "true" means healthchecking is stopped.
-	HealthStoppedKey = HealthKeyPrefix + "stopped"
+	HealthStoppedKey = shared.HealthStoppedKey
 )
 
 // Kind identifies a resource type.

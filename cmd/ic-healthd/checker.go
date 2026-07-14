@@ -11,7 +11,7 @@ import (
 	incus "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 
-	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/shared"
 )
 
 // Checker monitors a single instance and restarts it when unhealthy.
@@ -74,7 +74,7 @@ func (c *Checker) Run(ctx context.Context, inStart bool, startInstance bool) {
 		inst, _, err := c.conn.GetInstance(c.name)
 		if err != nil ||
 			(inst != nil && inst.StatusCode != incusApi.Running) ||
-			(inst != nil && inst.Config[client.HealthStoppedKey] == "true") {
+			(inst != nil && inst.Config[shared.HealthStoppedKey] == "true") {
 			slog.Debug("Loop not ready", "instance", c.name, "error", err)
 
 			select {
@@ -131,7 +131,7 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 		c.failures = 0
 		c.restartDelay = c.config.RestartDelay
 
-		if err := c.writeStatus(client.HealthStatusHealthy); err != nil {
+		if err := c.writeStatus(shared.HealthStatusHealthy); err != nil {
 			slog.Debug("updating healthcheck status", "instance", c.name, "error", err)
 		}
 
@@ -152,7 +152,7 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 			if err == nil {
 				c.failures = 0
 				c.restartDelay = c.config.RestartDelay
-				status = client.HealthStatusHealthy
+				status = shared.HealthStatusHealthy
 
 				if inStart {
 					// First success during the start period: switch to the normal checker.
@@ -167,7 +167,7 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 					"inStart", inStart,
 					"error", err,
 				)
-				status = client.HealthStatusUnhealthy
+				status = shared.HealthStatusUnhealthy
 
 				if c.failures >= retries {
 					switch {
@@ -176,7 +176,7 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 						result, done = phaseStop, true
 					case c.config.UnlessStopped && c.isStopped():
 						c.failures = 0
-						status = client.HealthStatusStopped
+						status = shared.HealthStatusStopped
 						slog.Debug("unless-stopped: intentionally stopped, skipping restart", "instance", c.name)
 					default:
 						c.failures = 0
@@ -319,8 +319,8 @@ func (c *Checker) writeStatus(status string) error {
 		return err
 	}
 
-	if inst.Config[client.HealthStoppedKey] == "true" {
-		status = client.HealthStatusStopped
+	if inst.Config[shared.HealthStoppedKey] == "true" {
+		status = shared.HealthStatusStopped
 
 		if c.status == status {
 			// We already wrote that.
@@ -328,14 +328,14 @@ func (c *Checker) writeStatus(status string) error {
 		}
 	}
 
-	if inst.Config[client.HealthStatusKey] == status {
+	if inst.Config[shared.HealthStatusKey] == status {
 		return nil
 	}
 
-	slog.Info("Status update", "instance", c.name, "current", status, "old", inst.Config[client.HealthStatusKey])
+	slog.Info("Status update", "instance", c.name, "current", status, "old", inst.Config[shared.HealthStatusKey])
 
 	wInst := inst.Writable()
-	wInst.Config[client.HealthStatusKey] = status
+	wInst.Config[shared.HealthStatusKey] = status
 	op, err := c.conn.UpdateInstance(c.name, wInst, etag)
 	if err != nil {
 		return err
@@ -356,7 +356,7 @@ func (c *Checker) isStopped() bool {
 	if err != nil {
 		return true
 	}
-	return inst.Config[client.HealthStoppedKey] == "true"
+	return inst.Config[shared.HealthStoppedKey] == "true"
 }
 
 // restart brings the instance back to Running. If it's already stopped we
