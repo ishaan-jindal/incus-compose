@@ -17,12 +17,13 @@ for correct semver ordering. Headings below preserve each release's announced fo
   device uses NAT mode (`nat=true`) with ARP/NDP-based instance IP
   detection; on older servers it falls back to a userspace proxy
   targeting the container loopback (`nat=false`, connect `127.0.0.1`).
+  (by @ishaan-jindal)
 
 ### Removed
 
 - `x-incus-compose.nat-proxy` extension and all associated post-start
   device attachment machinery. Ports are now handled entirely through
-  the standard `ports:` field.
+  the standard `ports:` field. (by @ishaan-jindal)
 
 ### Added
 
