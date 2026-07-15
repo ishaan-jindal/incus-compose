@@ -34,12 +34,12 @@ func newUpCommand() *cli.Command {
 			&cli.DurationFlag{
 				Name:  "timeout",
 				Usage: "Timeout for stopping/starting a service",
-				Value: 5 * time.Minute,
+				Value: 2 * time.Minute,
 			},
 			&cli.DurationFlag{
 				Name:  "dependency-timeout",
 				Usage: "Max time to wait for service_healthy depends_on (0 = no limit)",
-				Value: 5 * time.Minute,
+				Value: 2 * time.Minute,
 			},
 			&cli.StringSliceFlag{
 				Name:  "scale",

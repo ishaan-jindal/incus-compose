@@ -37,7 +37,7 @@ func TestE2EUpNoDeps(t *testing.T) {
 		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach", "--no-deps", "nginx")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach", "--no-healthd", "--no-deps", "nginx")
 	require.NoError(t, err)
 
 	_, err = runCommand(ctx, t, pn, "-f", compose, "ps", "--quiet")
