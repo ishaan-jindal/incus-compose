@@ -23,7 +23,7 @@ func newStartCommand() *cli.Command {
 			&cli.DurationFlag{
 				Name:  "timeout",
 				Usage: "Timeout for starting",
-				Value: 1 * time.Minute,
+				Value: 2 * time.Minute,
 			},
 			&cli.BoolFlag{
 				Name:  "with-deps",

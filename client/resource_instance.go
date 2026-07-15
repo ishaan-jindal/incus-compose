@@ -546,8 +546,9 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 		// Wait for the healthcheck to success if a test is defined.
 		_, hasTest := r.IncusInstance.Config[HealthKeyPrefix+"test"]
 		_, isHealthd := r.IncusInstance.Config[HealthKeyPrefix+"daemon"]
+		restart := r.IncusInstance.Config[HealthKeyPrefix+"restart"]
 
-		if hasTest && !isHealthd {
+		if (hasTest || restart == "true") && !isHealthd {
 			err = r.waitForHealthCheck(ctx, ActionStart, options)
 			if err != nil {
 				return r.client.hookAfter(ctx, ActionStart, r, options, err)
@@ -568,14 +569,8 @@ func (r *Instance) Running() bool {
 }
 
 func (r *Instance) waitForHealthCheck(ctx context.Context, action Action, options Options) error {
-	var cancel context.CancelFunc
-	if options.Timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, options.Timeout)
-		defer cancel()
-	} else {
-		ctx, cancel = context.WithCancel(ctx)
-		defer cancel()
-	}
+	ctx, cancel := context.WithTimeout(ctx, options.Timeout)
+	defer cancel()
 
 	if !options.ExternalHealthd {
 		// Wait for healthd to be available for 3 seconds.
@@ -608,6 +603,11 @@ func (r *Instance) waitForHealthCheck(ctx context.Context, action Action, option
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
+	r.client.globalClient.emitProgress(action, r, options, Progress{
+		Percent: -1,
+		Text:    "Waiting for the healthcheck",
+	})
+
 	for {
 		err := r.fetch()
 		if err == nil && r.IncusInstance.Config[HealthStatusKey] == HealthStatusHealthy {
@@ -615,11 +615,6 @@ func (r *Instance) waitForHealthCheck(ctx context.Context, action Action, option
 
 			return nil
 		}
-
-		r.client.globalClient.emitProgress(action, r, options, Progress{
-			Percent: -1,
-			Text:    "Waiting for the healthcheck",
-		})
 
 		select {
 		case <-ticker.C:
@@ -703,7 +698,7 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 
 			select {
 			case <-startTimeout:
-				if inst.StatusCode != incusApi.Running {
+				if err == nil && inst.StatusCode != incusApi.Running {
 					cancel()
 					return fmt.Errorf("dependency '%v' not running after %s", depName, timeout/3)
 				}

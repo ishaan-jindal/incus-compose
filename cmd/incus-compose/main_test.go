@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/stretchr/testify/require"
@@ -122,6 +123,11 @@ type e2eTest struct {
 func runE2ETests(ctx context.Context, t *testing.T, projectName string, tests []e2eTest) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.snapshot {
+				// This ugly sleep lets incus settle before we ask for "list".
+				time.Sleep(time.Second)
+			}
+
 			stdout, err := runCommand(ctx, t, projectName, tt.args...)
 
 			if !tt.wantErr {

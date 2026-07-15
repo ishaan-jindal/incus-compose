@@ -31,25 +31,6 @@ func TestAddWellKnownRegistriesHook(t *testing.T) {
 	require.Equal(t, []string{"https://ghcr.io"}, remote.Addrs)
 }
 
-func TestWellKnownHookSkipsNonEnsure(t *testing.T) {
-	gc := New(context.Background())
-
-	delete(gc.CliConfig().Remotes, "ghcr.io")
-
-	img := &Image{
-		BaseResource: NewBaseResource(KindImage, "ghcr.io/something:latest", PriorityImage),
-		incusName:    "ghcr.io/something:latest",
-		remote:       "ghcr.io",
-		image:        "something:latest",
-	}
-
-	err := gc.hookBefore(context.Background(), ActionDelete, img, Options{}, nil)
-	require.NoError(t, err)
-
-	_, ok := gc.CliConfig().Remotes["ghcr.io"]
-	require.False(t, ok, "ghcr.io should not be added for non-Ensure actions")
-}
-
 func TestWellKnownHookSkipsUnknownRegistries(t *testing.T) {
 	gc := New(context.Background())
 

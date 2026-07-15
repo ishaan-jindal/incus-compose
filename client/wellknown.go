@@ -26,7 +26,7 @@ func AddWellKnownRegistriesHook(c *GlobalClient) {
 	wellKnownMu := &sync.Mutex{}
 
 	c.AddHookBefore(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
-		if action != ActionEnsure || r.Kind() != KindImage {
+		if r.Kind() != KindImage {
 			return err
 		}
 
@@ -35,13 +35,15 @@ func AddWellKnownRegistriesHook(c *GlobalClient) {
 			return err
 		}
 
+		wellKnownMu.Lock()
+		defer wellKnownMu.Unlock()
+
 		remote := img.Remote()
 		url, ok := WellKnownRegistries[remote]
 		if !ok {
 			return err
 		}
 
-		wellKnownMu.Lock()
 		if _, exists := c.CliConfig().Remotes[remote]; !exists {
 			c.CliConfig().Remotes[remote] = cliconfig.Remote{
 				Addrs:    []string{url},
@@ -49,7 +51,6 @@ func AddWellKnownRegistriesHook(c *GlobalClient) {
 				Public:   true,
 			}
 		}
-		wellKnownMu.Unlock()
 
 		return err
 	})

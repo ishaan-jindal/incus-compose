@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -15,85 +14,132 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
-	"slices"
-	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	incus "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 
-	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/shared"
 )
 
-// Runner manages all health checkers.
+// Runner manages all health checkers for one project via event-driven
+// discovery: it reacts to the Incus lifecycle event stream instead of
+// re-listing instances on a timer or SIGHUP. tracked is the single source of
+// truth for what's running - every code path (initial discover, reconnect
+// reseed, event handling) reconciles against it: start/kill exactly the
+// delta, leave everything else running untouched.
 type Runner struct {
 	config *Config
-	conn   incus.InstanceServer
 
-	running []context.CancelFunc
+	conn incus.InstanceServer
+
+	mu      sync.Mutex
+	tracked map[string]*trackedInstance
 }
 
 // NewRunner creates a new runner with the given configuration.
 func NewRunner(cfg *Config) (*Runner, error) {
-	if len(cfg.Projects) == 0 {
-		return nil, errors.New("at least one --project is required")
+	if cfg.Project == "" {
+		return nil, errors.New("--project is required")
 	}
 
 	return &Runner{
 		config:  cfg,
-		running: []context.CancelFunc{},
+		tracked: map[string]*trackedInstance{},
 	}, nil
 }
 
-// Run starts all health checkers and blocks until context is canceled.
-// This is the main entry point, it should never exit except the context is done.
+func (r *Runner) trackedCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.tracked)
+}
+
+// Run connects to Incus, discovers instances, and reacts to lifecycle events
+// until ctx is canceled. This is the main entry point, it should never exit
+// except when the context is done. reload triggers a manual full resync (see
+// resync) without tearing down the current connection/listener - the
+// replacement for the old SIGHUP path; normal operation no longer needs it.
 func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
-	var (
-		conn incus.InstanceServer
-		err  error
-	)
-
 	for {
-		if conn == nil {
-			conn, err = r.connect()
-			if err != nil {
-				slog.Error("connecting to incus", "error", err)
-
-				select {
-				case <-ctx.Done():
-					return fmt.Errorf("failed to connect to incus: %w", err)
-				case <-time.After(time.Second):
-					continue
-				}
-			}
-			r.conn = conn
-		}
-
-		err = r.writeStatus(client.HealthStatusHealthy)
+		conn, err := r.connect()
 		if err != nil {
-			slog.Warn("Failed to update my own status", "error", err)
+			slog.Error("connecting to incus", "error", err)
 
 			select {
 			case <-ctx.Done():
-				return fmt.Errorf("failed to update the status: %w", err)
-			case <-time.After(500 * time.Millisecond):
+				return fmt.Errorf("failed to connect to incus: %w", err)
+			case <-time.After(time.Second):
+				continue
+			}
+		}
+		r.conn = conn.UseProject(r.config.Project)
+
+		err = r.writeStatus(shared.HealthStatusHealthy)
+		if err != nil {
+			slog.Warn("Failed to update my own status", "error", err)
+		}
+
+		err = r.resync(ctx)
+		if err != nil {
+			slog.Warn("discovery had errors", "error", err)
+		}
+
+		listener, err := r.conn.GetEventsByType([]string{incusApi.EventTypeLifecycle})
+		if err != nil {
+			slog.Error("opening event listener", "error", err)
+
+			select {
+			case <-ctx.Done():
+				return r.writeStatus(shared.HealthStatusUnhealthy)
+			case <-time.After(time.Second):
 				continue
 			}
 		}
 
-		r.startCheckers(ctx)
-		slog.Info("Health daemon running", "instances", len(r.running))
+		_, err = listener.AddHandler([]string{incusApi.EventTypeLifecycle}, func(event incusApi.Event) {
+			r.handleEvent(ctx, event)
+		})
+		if err != nil {
+			listener.Disconnect()
+			slog.Error("registering event handler", "error", err)
+			continue
+		}
 
-		select {
-		case <-ctx.Done():
-			return r.writeStatus(client.HealthStatusUnhealthy)
-		case <-reload:
-			slog.Info("loading additional checkers")
+		slog.Info("Health daemon running", "tracked", r.trackedCount())
+
+		disconnected := make(chan struct{})
+		go func() {
+			err := listener.Wait()
+			if err != nil {
+				slog.Error("While waiting for events", "error", err)
+			}
+			close(disconnected)
+		}()
+
+		stop := false
+		for !stop {
+			select {
+			case <-ctx.Done():
+				listener.Disconnect()
+				return r.writeStatus(shared.HealthStatusUnhealthy)
+			case <-reload:
+				slog.Info("manual resync requested")
+				if err := r.resync(ctx); err != nil {
+					slog.Warn("resync had errors", "error", err)
+				}
+			case <-disconnected:
+				slog.Warn("event listener disconnected, reconnecting")
+				stop = true
+			}
 		}
 	}
 }
 
+// writeStatus persists status into the daemon's own instance, if configured
+// to know its own project/name (see Config.OwnProject/OwnName).
 func (r *Runner) writeStatus(status string) error {
 	if r.config.OwnName == "" || r.config.OwnProject == "" {
 		return nil
@@ -109,41 +155,14 @@ func (r *Runner) writeStatus(status string) error {
 	}
 
 	wInst := inst.Writable()
-	wInst.Config[client.HealthStatusKey] = status
+	wInst.Config[shared.HealthStatusKey] = status
 
 	op, err := myConn.UpdateInstance(r.config.OwnName, wInst, etag)
 	if err != nil {
 		return err
 	}
 
-	err = op.Wait()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (r *Runner) startCheckers(ctx context.Context) {
-	instances, err := r.discover(r.conn)
-	if err != nil {
-		slog.Warn("instance discovery had errors", "error", err)
-	}
-
-	for _, cancel := range r.running {
-		cancel()
-	}
-	r.running = []context.CancelFunc{}
-
-	for name, inst := range instances {
-		chkCtx, cancel := context.WithCancel(ctx) //nolint:gosec // cancel is stored in r.running and invoked on the next startCheckers/shutdown
-		checker := NewChecker(r.conn, name, inst)
-		go func() {
-			checker.Run(chkCtx, true, false)
-		}()
-
-		r.running = append(r.running, cancel)
-	}
+	return op.Wait()
 }
 
 // connect returns an authenticated Incus client.
@@ -227,9 +246,9 @@ func (r *Runner) register(token string) (incus.InstanceServer, error) {
 	if err := conn.CreateCertificate(
 		incusApi.CertificatesPost{
 			CertificatePut: incusApi.CertificatePut{
-				Name:       "ic-healthd-" + r.config.Projects[0],
+				Name:       r.config.Project + "-ic-healthd",
 				Restricted: true,
-				Projects:   r.config.Projects,
+				Projects:   []string{r.config.Project},
 			}, TrustToken: token,
 		}); err != nil {
 		return nil, fmt.Errorf("registering cert with token: %w", err)
@@ -251,143 +270,6 @@ func (r *Runner) register(token string) (incus.InstanceServer, error) {
 
 	slog.Debug("certificate registered and persisted")
 	return conn, nil
-}
-
-// discover returns instance configs from the set of healthchecks declared on
-// instances in the project the client is scoped to. Instances carrying
-// user.healthcheck.daemon=true are skipped (the healthd itself).
-// Instances without user.healthcheck.test are skipped (no healthcheck).
-// Per-instance parse errors are collected and returned as a joined error;
-// valid instance are still registered so one broken instances cannot stop
-// the daemon.
-func (r *Runner) discover(conn incus.InstanceServer) (map[string]InstanceConfig, error) {
-	instances := map[string]InstanceConfig{}
-	var errs error
-
-	for _, project := range r.config.Projects {
-		pConn := conn.UseProject(project)
-
-		incusInstances, err := pConn.GetInstances(incusApi.InstanceTypeAny)
-		if err != nil {
-			errs = errors.Join(errs, fmt.Errorf("listing instances for project %v: %w", project, err))
-			continue
-		}
-
-		slog.Debug("Found instances", "project", project, "count", len(incusInstances))
-
-		for _, inst := range incusInstances {
-			if inst.Config[client.HealthKeyPrefix+"daemon"] == "true" {
-				continue
-			}
-
-			restart := false
-			if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, inst.Config[client.HealthKeyPrefix+"restart"]) {
-				restart = true
-				if inst.Config[client.HealthKeyPrefix+"test"] == "" {
-					inst.Config[client.HealthKeyPrefix+"test"] = "[\"NONE\"]"
-				}
-			}
-
-			if inst.Config[client.HealthKeyPrefix+"test"] == "" && !restart {
-				slog.Debug("Skipping instance: no test and no restart", "instance", inst.Name)
-				continue
-			}
-
-			instConfig, err := parseInstance(project, inst.Config)
-			if err != nil {
-				errs = errors.Join(errs, fmt.Errorf("%s: %w", inst.Name, err))
-				continue
-			}
-
-			slog.Debug("Found instance", "instance", inst.Name, "config", instConfig)
-
-			instances[inst.Name] = instConfig
-		}
-	}
-
-	return instances, errs
-}
-
-// parseInstance decodes user.healthcheck.* keys into a InstanceConfig.
-// Missing optional keys fall back to sensible defaults.
-func parseInstance(project string, cfg map[string]string) (InstanceConfig, error) {
-	svc := InstanceConfig{
-		Project:       project,
-		StartPeriod:   defaultStartPeriod,
-		StartInterval: defaultStartInterval,
-		Interval:      defaultInterval,
-		Timeout:       defaultTimeout,
-		Retries:       defaultRetries,
-		RestartDelay:  defaultRestartDelay,
-	}
-
-	if err := json.Unmarshal([]byte(cfg[client.HealthKeyPrefix+"test"]), &svc.Test); err != nil {
-		return svc, fmt.Errorf("parsing test: %w", err)
-	}
-
-	if len(svc.Test) > 0 && svc.Test[0] == "CMD-SHELL" && len(svc.Test) < 2 {
-		return svc, errors.New("CMD-SHELL requires a command")
-	}
-
-	if v := cfg[client.HealthKeyPrefix+"start_period"]; v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return svc, fmt.Errorf("parsing start_period: %w", err)
-		}
-		svc.StartPeriod = d
-	}
-
-	if v := cfg[client.HealthKeyPrefix+"start_interval"]; v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return svc, fmt.Errorf("parsing start_interval: %w", err)
-		}
-		svc.StartInterval = d
-	}
-
-	if v := cfg[client.HealthKeyPrefix+"interval"]; v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return svc, fmt.Errorf("parsing interval: %w", err)
-		}
-		svc.Interval = d
-	}
-
-	if v := cfg[client.HealthKeyPrefix+"timeout"]; v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return svc, fmt.Errorf("parsing timeout: %w", err)
-		}
-		svc.Timeout = d
-	}
-
-	if v := cfg[client.HealthKeyPrefix+"retries"]; v != "" {
-		n, err := strconv.ParseUint(v, 10, 32)
-		if err != nil {
-			return svc, fmt.Errorf("parsing retries: %w", err)
-		}
-		if n == 0 {
-			return svc, errors.New("retries must be greater than 0")
-		}
-		svc.Retries = int(n)
-	}
-
-	if slices.Contains([]string{"always", "on-failure", "unless-stopped"}, cfg[client.HealthStatusKey+"restart"]) {
-		svc.Restart = true
-	}
-
-	if cfg[client.HealthKeyPrefix+"restart"] == "unless-stopped" {
-		svc.UnlessStopped = true
-	}
-
-	if svc.Interval.Seconds() > 0 && svc.Retries > 0 {
-		svc.RestartDelay = max(
-			min(time.Duration(svc.Interval.Milliseconds()*int64(svc.Retries)), maxRestartDelay),
-			defaultRestartDelay,
-		)
-	}
-
-	return svc, nil
 }
 
 // generateClientCert returns a fresh ECDSA P-384 key pair and self-signed

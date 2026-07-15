@@ -195,10 +195,6 @@ func (r *Image) NativeIncus() bool {
 func (r *Image) Ensure(ctx context.Context, opts ...Option) error {
 	args := NewOptions(opts...)
 
-	if err := r.client.hookBefore(ctx, ActionEnsure, r, args, nil); err != nil {
-		return err
-	}
-
 	conn, err := r.client.Connection()
 	if err != nil {
 		return err
@@ -209,7 +205,55 @@ func (r *Image) Ensure(ctx context.Context, opts ...Option) error {
 		return r.ensureBuild(ctx, args)
 	}
 
-	// Resolve cache: CacheServer > CacheProject > default imageCache
+	// Just run refresh (with create) if pulling.
+	if args.Pull {
+		err = r.deleteCached(ctx, args)
+
+		if err == nil {
+			err = r.client.hookBefore(ctx, ActionEnsure, r, args, nil)
+			if err != nil {
+				return err
+			}
+
+			r.IncusAlias = nil
+			r.ETag = ""
+			err = r.create(ctx, args)
+			return r.client.hookAfter(ctx, ActionEnsure, r, args, err)
+		}
+	}
+
+	if err := r.client.hookBefore(ctx, ActionEnsure, r, args, nil); err != nil {
+		return err
+	}
+
+	err = r.setupCacheAndSource()
+	if err != nil {
+		err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
+		return err
+	}
+
+	// Try to get existing image
+	err = r.get()
+	if err == nil {
+		err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
+
+		return err
+	}
+
+	if !args.Create || !errors.Is(err, ErrNotFound) {
+		err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
+
+		return err
+	}
+
+	err = r.create(ctx, args)
+	err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
+
+	return err
+}
+
+func (r *Image) setupCacheAndSource() error {
+	// Resolve cache: CacheServer > CacheProject > default imageCache which might be nil
 	if r.cache == nil {
 		if r.Config.CacheServer != nil {
 			r.cache = r.Config.CacheServer
@@ -244,28 +288,7 @@ func (r *Image) Ensure(ctx context.Context, opts ...Option) error {
 		}
 	}
 
-	// Try to get existing image
-	err = r.get()
-	if err == nil {
-		if args.Pull {
-			err = r.refresh(ctx, args)
-		}
-
-		err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
-
-		return err
-	}
-
-	if !args.Create || !errors.Is(err, ErrNotFound) {
-		err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
-
-		return err
-	}
-
-	err = r.create(ctx, args)
-	err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
-
-	return err
+	return nil
 }
 
 func (r *Image) get() error {
@@ -289,49 +312,58 @@ func (r *Image) get() error {
 	return nil
 }
 
-// refresh updates the cached image from its source registry if the remote
-// fingerprint has changed.
-//
-// RefreshImage (incus image refresh) is unreliable for OCI floating tags:
-// Incus fingerprints are computed from layer digests, not manifest SHAs, so a
-// registry update that only changes manifest metadata is invisible to refresh.
-// The only reliable approach is to delete the stale cache entry and re-copy,
-// which always runs skopeo copy against the current registry state.
-//
-// Before deleting, the remote fingerprint is queried (skopeo inspect for OCI,
-// no layer pull). If it matches the cached fingerprint, the refresh is skipped.
-// On query failure the refresh proceeds to be safe.
-func (r *Image) refresh(ctx context.Context, args Options) error {
-	// No source || no cache || no alias, no download.
-	if r.source == nil || r.cache == nil || r.IncusAlias == nil {
-		return nil
+// deleteCached deletes the image from the cache and the project.
+func (r *Image) deleteCached(ctx context.Context, args Options) error {
+	err := r.client.hookBefore(ctx, ActionDelete, r, args, nil)
+	if err != nil {
+		return err
+	}
+
+	err = r.setupCacheAndSource()
+	if err != nil {
+		return err
 	}
 
 	// Check if the remote image has the same fingerprint
-	remoteAlias, _, err := r.source.GetImageAlias(r.image)
-	if err == nil && remoteAlias != nil && remoteAlias.Target == r.IncusAlias.Target {
-		return nil
+	sourceAlias, _, err := r.source.GetImageAlias(r.image)
+	if err != nil {
+		// Image not found on the source, stop here but go on with ensure.
+		r.client.LogDebug("Image not found on the source", "resource", r)
+		return r.client.hookAfter(ctx, ActionDelete, r, args, nil)
 	}
 
 	if r.cache != nil {
-		op, err := r.cache.DeleteImage(r.IncusAlias.Target)
+		cacheAlias, _, err := r.source.GetImageAlias(r.incusName)
+		if err == nil && sourceAlias.Target == cacheAlias.Target {
+			r.client.LogDebug("Deleting from cache", "resource", r)
+			op, err := r.cache.DeleteImage(cacheAlias.Target)
 
-		// On the cache the error is ignored.
-		if err = r.client.hookOperation(ctx, ActionDelete, r, args, op, err); err != nil {
-			r.client.LogDebug("deleting stale cache image for refresh", "error", err)
-			return nil
+			// On the cache the error is ignored.
+			if err = r.client.hookOperation(ctx, ActionDelete, r, args, op, err); err != nil {
+				r.client.LogDebug("deleting stale cache image for refresh", "error", err)
+			}
 		}
 	}
 
+	err = r.get()
+	if err != nil {
+		// Project doesn't have the image, ignore this.
+		return r.client.hookAfter(ctx, ActionDelete, r, args, nil)
+	}
+
+	r.client.LogDebug("Deleting from project", "resource", r)
 	op, err := r.conn.DeleteImage(r.IncusAlias.Target)
 	if err = r.client.hookOperation(ctx, ActionEnsure, r, args, op, err); err != nil {
 		r.client.LogDebug("deleting stale project image for refresh", "error", err)
-		return nil
+		return r.client.hookAfter(ctx, ActionDelete, r, args, err)
 	}
 
-	r.IncusAlias = nil
-	r.ETag = ""
-	return r.create(ctx, args)
+	err = r.client.hookAfter(ctx, ActionDelete, r, args, err)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (r *Image) create(ctx context.Context, args Options) error {
@@ -424,10 +456,12 @@ func (r *Image) create(ctx context.Context, args Options) error {
 
 		// Copy from cache, read oci.* from it.
 		img, _, err := r.cache.GetImage(cacheAlias.Target)
-		if err == nil {
-			r.size = img.Size
-			r.readOCIConfigFromProperties(img.Properties)
+		if err != nil {
+			return ErrCreate.WithText("cannot resolve the image from cache after copy")
 		}
+
+		r.size = img.Size
+		r.readOCIConfigFromProperties(img.Properties)
 
 		// Build image info for copy
 		projectImageInfo := incusApi.Image{

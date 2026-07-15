@@ -58,9 +58,10 @@ func newRunCommand() *cli.Command {
 				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_TOKEN"),
 			},
 			&cli.StringSliceFlag{
-				Name:    "project",
-				Usage:   "Projects to manage",
-				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_PROJECTS"),
+				Name:     "project",
+				Usage:    "Project(s) to manage",
+				Required: true,
+				Sources:  cli.EnvVars("INCUS_COMPOSE_HEALTHD_PROJECTS"),
 			},
 			&cli.StringFlag{
 				Name:    "own-project",
@@ -143,10 +144,10 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 	cfg.DataDir = cmd.String("data-dir")
 	cfg.SecretsDir = cmd.String("secrets-dir")
 	cfg.IncusURL = cmd.String("incus")
-	cfg.Projects = cmd.StringSlice("project")
+	cfg.Project = cmd.StringSlice("project")[0] // this works cause project is required.
 	cfg.OwnProject = cmd.String("own-project")
 	cfg.OwnName = cmd.String("own-name")
-	cfg.Token = "<redacted>"
+	cfg.Token = fmt.Sprintf("<redacted-(%d)>", len(cmd.String("token")))
 
 	slog.Info("Version", "version", version.Current(), "pid", os.Getpid())
 

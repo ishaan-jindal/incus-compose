@@ -209,7 +209,7 @@ func prepareHealthd(t *testing.T, c *client.Client) (func(), *Runner) {
 	cfg.DataDir = dataDir
 	cfg.SecretsDir = secretsDir
 	cfg.IncusURL = incusURL
-	cfg.Projects = []string{c.IncusProject()}
+	cfg.Project = c.IncusProject()
 	cfg.Token = token
 
 	runner, err := NewRunner(cfg)

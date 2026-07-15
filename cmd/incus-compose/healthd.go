@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/types"
@@ -166,11 +165,12 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 		Image: imgRes.Name(),
 		Type:  incusApi.InstanceTypeContainer,
 		Extensions: map[string]string{
-			"limits.cpu":                      defaultHealthdCPULimit,
-			"limits.memory":                   defaultHealthdMemoryLimit,
-			client.HealthKeyPrefix + "test":   "[\"NONE\"]",
-			client.HealthKeyPrefix + "daemon": "true",
-			client.HealthStatusKey:            client.HealthStatusUnknown,
+			"limits.cpu":                       defaultHealthdCPULimit,
+			"limits.memory":                    defaultHealthdMemoryLimit,
+			client.HealthKeyPrefix + "restart": "unless-stopped", // Needed for instance.Start to wait for it.
+			client.HealthKeyPrefix + "daemon":  "true",
+			client.HealthKeyPrefix + "ignore":  "true",
+			client.HealthStatusKey:             client.HealthStatusUnknown,
 		},
 		Resources: []client.Resource{img},
 		Priority:  client.PriorityInstance - 1,
@@ -202,6 +202,20 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 	c.AddHookBefore(func(ctx context.Context, action client.Action, r client.Resource, _ client.Options, err error) error {
 		if err != nil || action != client.ActionEnsure || r.IncusName() != inst.IncusName() {
 			return err
+		}
+
+		conn, err := c.Connection()
+		if err != nil {
+			return err
+		}
+
+		incusInstance, _, err := conn.GetInstance(r.IncusName())
+		if err == nil {
+			// No need to setup the instance when we already did that.
+			_, ok := incusInstance.Config["environment.INCUS_COMPOSE_HEALTHD_INCUS"]
+			if ok {
+				return nil
+			}
 		}
 
 		ref, err := parseHealthdNetwork(c, params.network)
@@ -377,7 +391,7 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			}
 		}
 
-		return healthdRegisterReloader(c, inst)
+		return nil
 	})
 
 	return inst, []client.Resource{img, volume}, nil
@@ -432,85 +446,6 @@ func healthdResolve(c *client.Client) (*client.Instance, error) {
 		return nil, errors.New("unexpected resource type for healthd")
 	}
 	return inst, nil
-}
-
-var errHealthdReloader = client.NewError("HealthdReloader")
-
-func healthdRegisterReloader(c *client.Client, h *client.Instance) error {
-	mu := &sync.Mutex{}
-	reloading := false
-
-	c.AddHookAfter(func(ctx context.Context, action client.Action, r client.Resource, _ client.Options, err error) error {
-		if err != nil || !r.IsEnsured() || r.Kind() != client.KindInstance {
-			return err
-		}
-
-		inst, ok := r.(*client.Instance)
-		if !ok || inst.IncusName() == h.IncusName() {
-			return err
-		}
-
-		changed := false
-		switch action {
-		case client.ActionEnsure:
-			changed = inst.Created()
-		case client.ActionStart, client.ActionStop, client.ActionDelete:
-			changed = true
-		default:
-			changed = false
-		}
-
-		mu.Lock()
-		if !changed || reloading {
-			mu.Unlock()
-			return err
-		}
-
-		reloading = true
-
-		conn, e := c.Connection()
-		if e != nil {
-			c.LogDebug("HealthdReloader connection failed, skipping reload", "healthd", h.IncusName(), "error", e)
-			reloading = false
-			mu.Unlock()
-			return errHealthdReloader.Wrap(e)
-		}
-
-		state, _, e := conn.GetInstanceState(h.IncusName())
-		if e != nil {
-			c.LogDebug("HealthdReloader healthd missing, skipping reload", "healthd", h.IncusName(), "error", e)
-			reloading = false
-			mu.Unlock()
-			return errHealthdReloader.Wrap(e)
-		}
-		if state.StatusCode != incusApi.Running {
-			c.LogDebug("HealthdReloader healthd not running, skipping reload", "healthd", h.IncusName(), "status", state.Status)
-			reloading = false
-			mu.Unlock()
-
-			return errHealthdReloader.WithText("not running")
-		}
-
-		if e := healthdReload(c, h); e == nil {
-			c.LogDebug("HealthdReloader reloaded healthd", "healthd", h.IncusName())
-			reloading = false
-			mu.Unlock()
-			return nil
-		}
-
-		c.LogWarn("Reloading healthd failed, restarting", "healthd", h.IncusName(), "error", e)
-		err = errors.Join(err, e, h.Stop(ctx, client.OptionForce()), h.Start(ctx))
-		reloading = false
-		mu.Unlock()
-
-		if err != nil {
-			return errHealthdReloader.Wrap(err)
-		}
-
-		return nil
-	})
-
-	return nil
 }
 
 func healthdReload(c *client.Client, h *client.Instance) error {

@@ -24,6 +24,7 @@ default:
 cleanup:
     just purge-projects
     just purge-networks || true
+    sudo systemctl restart incus.service incus.socket
 
 # Run tests against nested Incus, includes direct incus tests.
 [env("INCUS_COMPOSE_IMAGE_CACHE", "incus-compose-tests-cache")]
