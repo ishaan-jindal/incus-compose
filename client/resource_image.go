@@ -333,15 +333,17 @@ func (r *Image) deleteCached(ctx context.Context, args Options) error {
 	}
 
 	if r.cache != nil {
-		cacheAlias, _, err := r.source.GetImageAlias(r.incusName)
-		if err == nil && sourceAlias.Target == cacheAlias.Target {
+		cacheAlias, _, err := r.cache.GetImageAlias(r.incusName)
+		if err == nil && sourceAlias.Target != cacheAlias.Target {
 			r.client.LogDebug("Deleting from cache", "resource", r)
 			op, err := r.cache.DeleteImage(cacheAlias.Target)
 
 			// On the cache the error is ignored.
 			if err = r.client.hookOperation(ctx, ActionDelete, r, args, op, err); err != nil {
-				r.client.LogDebug("deleting stale cache image for refresh", "error", err)
+				r.client.LogDebug("Deleting stale cache image for refresh", "error", err)
 			}
+		} else {
+			r.client.LogDebug("Image not found on the cache or it is recent", "resource", r)
 		}
 	}
 

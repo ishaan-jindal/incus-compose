@@ -30,8 +30,9 @@ cleanup:
 [env("INCUS_COMPOSE_IMAGE_CACHE", "incus-compose-tests-cache")]
 test folder="./..." *args:
     export DATE=`date +%Y%m%d-%H%M%S`; \
-      gotestsum --hide-summary=skipped --format dots-v2 --jsonfile=test/logs/${DATE}.json --packages={{ folder }} -- -parallel {{ v_test_procs }} -timeout 20m -covermode atomic -coverprofile test/logs/${DATE}-cover.out -v "${@:2}"; \
-
+      gotestsum --hide-summary=skipped --format dots-v2 --jsonfile=test/logs/${DATE}.json --packages={{ folder }} \
+        --post-run-command "bash -c 'echo; echo Slowest tests; gotestsum tool slowest --num 10 --jsonfile test/logs/${DATE}.json'" \
+        -- -parallel {{ v_test_procs }} -timeout 20m -covermode atomic -coverprofile test/logs/${DATE}-cover.out -v "${@:2}"; \
 # Run local unit-tests, incus-facing tests are skipped.
 [env("INCUS_COMPOSE_TEST_LOCAL", "1")]
 test-local folder="./..." *args:
