@@ -31,6 +31,10 @@ for correct semver ordering. Headings below preserve each release's announced fo
 - `install.sh`: fixed the checksum filename to match goreleaser's current
   release-artifact naming (`checksums.txt`), it was still using the old
   `${PROJECT_NAME}_${VERSION}_checksums.txt` pattern. (by @jochumdev)
+- `up --pull=always` and `pull`: the stale image was not always deleted from
+  cache and project before re-copying, so a floating tag could keep serving
+  the old image. Deleting the cache is now a distinct step that runs before
+  create/refresh, and the well-known-registry hook fires on it too. (by @jochumdev)
 
 ### Internal
 

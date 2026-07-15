@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -381,10 +382,10 @@ func TestImageProperties(t *testing.T) {
 
 	image, ok := r.(*Image)
 	require.True(t, ok)
-	require.Equal(t, "ghcr.io/lxc/incus-compose/ic-healthd:latest", image.Name())
-	require.Equal(t, "/", image.Cwd)
-	require.Equal(t, 65534, int(image.UID))
-	require.Equal(t, 65534, int(image.GID))
+	assert.Equal(t, "ghcr.io/lxc/incus-compose/ic-healthd:latest", image.Name())
+	assert.Equal(t, "/", image.Cwd)
+	assert.Equal(t, 65534, int(image.UID))
+	assert.Equal(t, 65534, int(image.GID))
 }
 
 func TestImageFromCache(t *testing.T) {
@@ -421,6 +422,29 @@ func TestImageNoCache(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+}
+
+func TestImagePullDeletes(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	c := newRandomTestClient(t.Context(), t, "image-pull-delete-")
+
+	r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+	require.NoError(t, err)
+
+	require.NoError(t, RunAction(t.Context(), r, ActionEnsure, OptionCreate()))
+
+	deletes := 0
+	c.AddHookAfter(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
+		if action == ActionDelete && r.Kind() == KindImage {
+			deletes++
+		}
+		return err
+	})
+
+	require.NoError(t, RunAction(t.Context(), r, ActionEnsure, OptionCreate(), OptionPull()))
+
+	assert.Equal(t, 1, deletes)
 }
 
 // ----------------------------------------------------------------------------
