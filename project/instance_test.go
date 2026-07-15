@@ -648,13 +648,13 @@ func TestInstanceNetworkDevices(t *testing.T) {
 func TestInstanceProxyDevices(t *testing.T) {
 	t.Parallel()
 
-	t.Run("published port with nat", func(t *testing.T) {
+	t.Run("published port with nat no static IP", func(t *testing.T) {
 		t.Parallel()
 		service := types.ServiceConfig{Name: "web", Ports: []types.ServicePortConfig{
 			{Published: "8080", Target: 80, Protocol: "tcp"},
 		}}
 
-		devices, err := instanceProxyDevices(true, service)
+		devices, err := instanceProxyDevices(true, "", service)
 		require.NoError(t, err)
 		require.Len(t, devices, 1)
 		assert.Equal(t, "proxy-8080", devices[0].Name)
@@ -666,13 +666,31 @@ func TestInstanceProxyDevices(t *testing.T) {
 		assert.True(t, proxy.Nat)
 	})
 
+	t.Run("published port with nat and static IP", func(t *testing.T) {
+		t.Parallel()
+		service := types.ServiceConfig{Name: "web", Ports: []types.ServicePortConfig{
+			{Published: "8080", Target: 80, Protocol: "tcp"},
+		}}
+
+		devices, err := instanceProxyDevices(true, "10.0.0.100", service)
+		require.NoError(t, err)
+		require.Len(t, devices, 1)
+		assert.Equal(t, "proxy-8080", devices[0].Name)
+		proxy := devices[0].Config.Proxy
+		assert.Equal(t, "0.0.0.0", proxy.ListenAddr)
+		assert.Equal(t, uint32(8080), proxy.ListenPort)
+		assert.Equal(t, "10.0.0.100", proxy.ConnectAddr)
+		assert.Equal(t, uint32(80), proxy.ConnectPort)
+		assert.True(t, proxy.Nat)
+	})
+
 	t.Run("published port without nat", func(t *testing.T) {
 		t.Parallel()
 		service := types.ServiceConfig{Name: "web", Ports: []types.ServicePortConfig{
 			{Published: "8080", Target: 80, Protocol: "tcp"},
 		}}
 
-		devices, err := instanceProxyDevices(false, service)
+		devices, err := instanceProxyDevices(false, "", service)
 		require.NoError(t, err)
 		require.Len(t, devices, 1)
 		assert.Equal(t, "proxy-8080", devices[0].Name)
@@ -689,14 +707,14 @@ func TestInstanceProxyDevices(t *testing.T) {
 		service := types.ServiceConfig{Name: "web", Ports: []types.ServicePortConfig{
 			{Published: "not-a-port", Target: 80},
 		}}
-		_, err := instanceProxyDevices(false, service)
+		_, err := instanceProxyDevices(false, "", service)
 		require.Error(t, err)
 	})
 
 	t.Run("no ports", func(t *testing.T) {
 		t.Parallel()
 		service := types.ServiceConfig{Name: "web"}
-		devices, err := instanceProxyDevices(false, service)
+		devices, err := instanceProxyDevices(false, "", service)
 		require.NoError(t, err)
 		assert.Empty(t, devices)
 	})

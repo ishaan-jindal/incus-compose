@@ -67,7 +67,27 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	resources = append(resources, networks...)
 
 	nat := c.Global().ServerVersionAtLeast(7, 0)
-	proxies, err := instanceProxyDevices(nat, service)
+
+	var connectAddr string
+	if nat {
+		for _, dev := range devices {
+			if dev.Config.DeviceType != client.InstanceDeviceTypeNic {
+				continue
+			}
+			if dev.Config.Ipv4Address != "" {
+				connectAddr, _, _ = strings.Cut(dev.Config.Ipv4Address, "/")
+				break
+			}
+			if dev.Config.Extensions != nil {
+				if addr, ok := dev.Config.Extensions["ipv4.address"]; ok {
+					connectAddr, _, _ = strings.Cut(addr, "/")
+					break
+				}
+			}
+		}
+	}
+
+	proxies, err := instanceProxyDevices(nat, connectAddr, service)
 	if err != nil {
 		errs = errors.Join(errs, err)
 	}
@@ -379,16 +399,19 @@ func serviceNetworkGateway(sNet *types.ServiceNetworkConfig) bool {
 }
 
 // instanceProxyDevices builds proxy devices for every published port.
-// When nat is true the device uses Incus 7.0+ NAT proxy with ARP/NDP-based
-// instance IP detection (connect 0.0.0.0). Otherwise it falls back to a
-// userspace proxy targeting the container loopback (connect 127.0.0.1).
-func instanceProxyDevices(nat bool, service types.ServiceConfig) ([]client.InstanceDevice, error) {
+// When nat is true and connectAddr is non-empty it is used directly; when
+// nat is true and connectAddr is empty the device uses Incus 7.0+ NAT proxy
+// with ARP/NDP-based instance IP detection (connect 0.0.0.0). When nat is
+// false it falls back to a userspace proxy targeting the container loopback
+// (connect 127.0.0.1).
+func instanceProxyDevices(nat bool, connectAddr string, service types.ServiceConfig) ([]client.InstanceDevice, error) {
 	var errs error
 	devices := []client.InstanceDevice{}
 
-	connectAddr := "0.0.0.0"
 	if !nat {
 		connectAddr = "127.0.0.1"
+	} else if connectAddr == "" {
+		connectAddr = "0.0.0.0"
 	}
 
 	for _, port := range service.Ports {
