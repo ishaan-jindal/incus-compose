@@ -78,11 +78,6 @@ func newHealthdRestartCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			if err := healthdRegisterReloader(c, h); err != nil {
-				c.LogError("Registering healthd reloader", "error", err)
-				return errLogged.Wrap(err)
-			}
-
 			return nil
 		},
 	}

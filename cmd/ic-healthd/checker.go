@@ -14,96 +14,74 @@ import (
 	"github.com/lxc/incus-compose/shared"
 )
 
-// Checker monitors a single instance and restarts it when unhealthy.
-type Checker struct {
-	conn         incus.InstanceServer
-	name         string
-	config       InstanceConfig
-	failures     int
-	status       string
-	restartDelay time.Duration
+// checker runs the health probe for a single instance, independent of the
+// runner except for statusCh/exitCh. It never restarts the instance it
+// watches or decides whether to - it only probes, reports its own status,
+// and exits once its retries are exhausted or its context is canceled. The
+// runner decides what happens next.
+type checker struct {
+	conn   incus.InstanceServer
+	name   string
+	params instanceConfig
+
+	failures int    // local to this run; never carried across a respawn
+	status   string // last status written, to skip redundant writes
+
+	statusCh chan<- string // every user.healthcheck.status write, mirrored here
+	exitCh   chan<- error  // exactly one send, then run has returned for good
 }
 
-// NewChecker creates a new checker for the named instance.
-func NewChecker(conn incus.InstanceServer, name string, cfg InstanceConfig) *Checker {
-	return &Checker{
-		conn:         conn.UseProject(cfg.Project),
-		name:         name,
-		config:       cfg,
-		restartDelay: cfg.RestartDelay,
+// newChecker starts a checker for name under ctx. inStart selects the
+// start-period checker; the checker is never told to restart anything - when
+// the runner wants the instance restarted first, it does so itself before
+// calling newChecker for the replacement.
+func newChecker(
+	conn incus.InstanceServer,
+	name string,
+	cfg instanceConfig,
+	statusCh chan<- string, exitCh chan<- error,
+) *checker {
+	return &checker{
+		conn:     conn,
+		name:     name,
+		params:   cfg,
+		statusCh: statusCh,
+		exitCh:   exitCh,
 	}
 }
 
-// phaseResult tells Run what to do after a checking phase ends.
+// phaseResult tells run what to do after a checking phase ends.
 type phaseResult int
 
 const (
-	phaseStop    phaseResult = iota // stop checking entirely
-	phaseNormal                     // continue with the normal-interval checker
-	phaseRestart                    // restart the instance and re-enter the start period
+	phaseStop   phaseResult = iota // retries exhausted: stop and report
+	phaseNormal                    // continue with the normal-interval checker
 )
 
-// Run drives the health check loop until ctx is canceled. It alternates
-// between the start-period checker (start interval, bounded by the start
-// period) and the normal checker, restarting the instance with exponential
-// backoff when it stays unhealthy. inStart selects the start-period checker;
-// startInstance restarts the instance before checking.
-func (c *Checker) Run(ctx context.Context, inStart bool, startInstance bool) {
-	ticker := time.NewTicker(checkInstanceRunningDelay)
-
+// run drives the health check loop until ctx is canceled or retries are
+// exhausted. It alternates between the start-period checker (start interval,
+// bounded by the start period) and the normal checker. It keeps the outer
+// checkInstanceRunningDelay poll as a safety net for the gap between an
+// instance-stopped/-shutdown event firing and the runner's kill landing.
+func (c *checker) run(ctx context.Context, inStart bool) {
 	for {
-		slog.Info("Loop starting checker",
-			"instance", c.name,
-			"status", c.status,
-			"inStart", inStart,
-			"startInstance", startInstance,
-			"config", c.config,
-		)
-
-		if c.config.StartPeriod < 1 {
+		if c.params.StartPeriod < 1 {
 			// Disable inStart if the period is smaller 1
 			inStart = false
 		}
 
-		if startInstance {
-			if err := c.restart(ctx); err != nil {
-				slog.Error("restart failed", "instance", c.name, "error", err)
-			}
-		}
-
-		inst, _, err := c.conn.GetInstance(c.name)
-		if err != nil ||
-			(inst != nil && inst.StatusCode != incusApi.Running) ||
-			(inst != nil && inst.Config[shared.HealthStoppedKey] == "true") {
-			slog.Debug("Loop not ready", "instance", c.name, "error", err)
-
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				continue
-			}
-		}
-
 		result := c.runPhase(ctx, inStart)
-		slog.Debug("Loop stopped checker",
-			"instance", c.name,
-			"status", c.status,
-			"inStart", inStart,
-			"result", result,
-		)
+		if ctx.Err() != nil {
+			c.exitCh <- nil
+			return
+		}
 
 		switch result {
 		case phaseStop:
-			slog.Debug("Loop stop",
-				"instance", c.name,
-				"status", c.status,
-			)
+			c.exitCh <- ErrRetriesExhausted.WithFailures(uint64(c.failures))
 			return
 		case phaseNormal:
-			inStart, startInstance = false, false
-		case phaseRestart:
-			inStart, startInstance = true, true
+			inStart = false
 		}
 	}
 }
@@ -111,25 +89,22 @@ func (c *Checker) Run(ctx context.Context, inStart bool, startInstance bool) {
 // runPhase runs a single checking phase until a transition is required. When
 // inStart is true it uses the start interval and is bounded by the start
 // period; otherwise it uses the normal interval and runs until ctx is
-// canceled. The returned phaseResult tells Run how to proceed.
-func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
-	interval := c.config.Interval
-	retries := c.config.Retries
+// canceled or retries are exhausted. The returned phaseResult tells run how
+// to proceed; the caller checks ctx.Err() first since phaseCtx.Done() also
+// unblocks this when the parent ctx is canceled.
+func (c *checker) runPhase(ctx context.Context, inStart bool) phaseResult {
+	interval := c.params.Interval
+	retries := c.params.Retries
 	phaseCtx, cancel := context.WithCancel(ctx)
 	if inStart {
-		interval = c.config.StartInterval
-		// retries = 1
-		// if c.config.StartInterval > 0 {
-		// 	retries = max(1, int(c.config.StartPeriod/c.config.StartInterval))
-		// }
-		phaseCtx, cancel = context.WithTimeout(ctx, c.config.StartPeriod)
+		interval = c.params.StartInterval
+		phaseCtx, cancel = context.WithTimeout(ctx, c.params.StartPeriod)
 	}
 	defer cancel()
 
 	if inStart && c.check(phaseCtx) == nil {
 		// First success during the start period: switch to the normal checker.
 		c.failures = 0
-		c.restartDelay = c.config.RestartDelay
 
 		if err := c.writeStatus(shared.HealthStatusHealthy); err != nil {
 			slog.Debug("updating healthcheck status", "instance", c.name, "error", err)
@@ -151,7 +126,6 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 			err := c.check(phaseCtx)
 			if err == nil {
 				c.failures = 0
-				c.restartDelay = c.config.RestartDelay
 				status = shared.HealthStatusHealthy
 
 				if inStart {
@@ -170,28 +144,7 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 				status = shared.HealthStatusUnhealthy
 
 				if c.failures >= retries {
-					switch {
-					case !c.config.Restart:
-						slog.Debug("stopping the check", "instance", c.name)
-						result, done = phaseStop, true
-					case c.config.UnlessStopped && c.isStopped():
-						c.failures = 0
-						status = shared.HealthStatusStopped
-						slog.Debug("unless-stopped: intentionally stopped, skipping restart", "instance", c.name)
-					default:
-						c.failures = 0
-						delay := c.restartDelay
-						c.restartDelay = min(c.restartDelay*2, maxRestartDelay)
-
-						slog.Info("restarting instance", "instance", c.name, "delay", delay)
-						select {
-						case <-time.After(delay):
-						case <-ctx.Done():
-							return phaseStop
-						}
-
-						result, done = phaseRestart, true
-					}
+					result, done = phaseStop, true
 				}
 			}
 
@@ -204,7 +157,7 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 			}
 		case <-phaseCtx.Done():
 			if inStart {
-				slog.Debug("checker restart (start -> real)", "instance", c.name)
+				slog.Debug("checker phase (start -> normal)", "instance", c.name)
 				// Start period elapsed: switch to the normal checker.
 				return phaseNormal
 			}
@@ -215,7 +168,7 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 }
 
 // check executes the healthcheck command and returns true if healthy.
-func (c *Checker) check(ctx context.Context) error {
+func (c *checker) check(ctx context.Context) error {
 	inst, _, err := c.conn.GetInstanceState(c.name)
 	if err != nil {
 		slog.Debug("fetching instance status error", "instance", c.name, "error", err)
@@ -227,25 +180,25 @@ func (c *Checker) check(ctx context.Context) error {
 	}
 
 	// Build command based on test format
-	if len(c.config.Test) == 0 {
+	if len(c.params.Test) == 0 {
 		return nil
 	}
 
 	var cmd []string
-	switch c.config.Test[0] {
+	switch c.params.Test[0] {
 	case "CMD":
-		cmd = c.config.Test[1:]
+		cmd = c.params.Test[1:]
 	case "CMD-SHELL":
-		cmd = []string{"/bin/sh", "-c", c.config.Test[1]}
+		cmd = []string{"/bin/sh", "-c", c.params.Test[1]}
 	case "NONE":
 		return nil
 	default:
 		// Assume it's a direct command
-		cmd = c.config.Test
+		cmd = c.params.Test
 	}
 
 	// Execute with timeout
-	execCtx, cancel := context.WithTimeout(ctx, c.config.Timeout)
+	execCtx, cancel := context.WithTimeout(ctx, c.params.Timeout)
 	defer cancel()
 
 	exitCode, stdout, stderr, err := c.exec(execCtx, cmd)
@@ -262,7 +215,7 @@ func (c *Checker) check(ctx context.Context) error {
 }
 
 // exec runs a command inside the instance and returns the exit code.
-func (c *Checker) exec(ctx context.Context, cmd []string) (int, string, string, error) {
+func (c *checker) exec(ctx context.Context, cmd []string) (int, string, string, error) {
 	req := incusApi.InstanceExecPost{
 		Command:     cmd,
 		WaitForWS:   true,
@@ -307,8 +260,12 @@ func (c *Checker) exec(ctx context.Context, cmd []string) (int, string, string, 
 	return -1, "", "", nil
 }
 
-// writeStatus persists c.status into the instance's user.healthcheck.status config key.
-func (c *Checker) writeStatus(status string) error {
+// writeStatus persists status into the instance's user.healthcheck.status
+// config key. Before actually calling UpdateInstance, it sends the new
+// status on statusCh - the runner uses this to recognize the resulting
+// instance-updated event as self-caused, and to reset restart backoff on a
+// healthy status.
+func (c *checker) writeStatus(status string) error {
 	if c.status == status {
 		// We already wrote that.
 		return nil
@@ -332,7 +289,15 @@ func (c *Checker) writeStatus(status string) error {
 		return nil
 	}
 
-	slog.Info("Status update", "instance", c.name, "current", status, "old", inst.Config[shared.HealthStatusKey])
+	select {
+	case c.statusCh <- status:
+	default:
+		// Runner isn't reading fast enough; don't block the checker on it -
+		// this is an efficiency measure only (see selfWrites), not required
+		// for correctness.
+	}
+
+	slog.Info("Status update", "instance", c.name, "old", inst.Config[shared.HealthStatusKey], "current", status)
 
 	wInst := inst.Writable()
 	wInst.Config[shared.HealthStatusKey] = status
@@ -347,53 +312,4 @@ func (c *Checker) writeStatus(status string) error {
 
 	c.status = status
 	return nil
-}
-
-// isStopped reports whether the instance has user.healthcheck.stopped=true, meaning it was
-// intentionally stopped. Returns true on API error (instance gone counts as stopped).
-func (c *Checker) isStopped() bool {
-	inst, _, err := c.conn.GetInstance(c.name)
-	if err != nil {
-		return true
-	}
-	return inst.Config[shared.HealthStoppedKey] == "true"
-}
-
-// restart brings the instance back to Running. If it's already stopped we
-// only start; otherwise we stop (force) and start. We avoid the "restart"
-// action because it errors on a stopped instance.
-func (c *Checker) restart(_ context.Context) error {
-	state, _, err := c.conn.GetInstanceState(c.name)
-	if err != nil {
-		return err
-	}
-
-	if state.StatusCode != incusApi.Stopped {
-		stopReq := incusApi.InstanceStatePut{
-			Action:  "stop",
-			Timeout: -1,
-			Force:   true,
-		}
-
-		op, err := c.conn.UpdateInstanceState(c.name, stopReq, "")
-		if err != nil {
-			return err
-		}
-
-		if err := op.Wait(); err != nil {
-			return err
-		}
-	}
-
-	startReq := incusApi.InstanceStatePut{
-		Action:  "start",
-		Timeout: -1,
-	}
-
-	op, err := c.conn.UpdateInstanceState(c.name, startReq, "")
-	if err != nil {
-		return err
-	}
-
-	return op.Wait()
 }

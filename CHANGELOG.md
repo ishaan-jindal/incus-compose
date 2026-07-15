@@ -26,6 +26,16 @@ for correct semver ordering. Headings below preserve each release's announced fo
   on the service to be ready. Use `up --no-deps --no-healthd <service>` if you
   want the old behaviour. (by @jochumdev)
 
+### Changed
+
+- `ic-healthd` is now event-driven instead of poll/SIGHUP-based: it discovers
+  instances once, then reacts to the Incus lifecycle event stream (start,
+  stop, shutdown, delete) to keep its tracked set in sync, spawning or
+  killing checkers for exactly the delta. A checker only probes and reports
+  its own status; the runner alone decides whether to restart an instance.
+  `incus-compose healthd restart` no longer needs to register a client-side
+  reloader hook, since healthd resyncs itself from events. (by @jochumdev)
+
 ### Fixed
 
 - `install.sh`: fixed the checksum filename to match goreleaser's current
