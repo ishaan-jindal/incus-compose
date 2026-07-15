@@ -13,16 +13,16 @@ for correct semver ordering. Headings below preserve each release's announced fo
 
 ### Changed
 
-- Published ports (`ports:`) now use an Incus NAT proxy with ARP/NDP-based
-  instance IP detection, available since Incus 7.0. The old userspace proxy
-  and the `x-incus-compose.nat-proxy` extension are replaced transparently
-  by this single universal proxy.
+- Published ports (`ports:`) create a proxy device. On Incus 7.0+ the
+  device uses NAT mode (`nat=true`) with ARP/NDP-based instance IP
+  detection; on older servers it falls back to a userspace proxy
+  targeting the container loopback (`nat=false`, connect `127.0.0.1`).
 
 ### Removed
 
-- `x-incus-compose.nat-proxy` extension: no longer functional, preserved
-  for YAML compatibility only. Post-start device attachment machinery
-  removed.
+- `x-incus-compose.nat-proxy` extension and all associated post-start
+  device attachment machinery. Ports are now handled entirely through
+  the standard `ports:` field.
 
 ### Added
 

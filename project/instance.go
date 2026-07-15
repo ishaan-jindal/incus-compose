@@ -66,12 +66,8 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	}
 	resources = append(resources, networks...)
 
-	// NAT proxy requires Incus 7.0+ for ARP/NDP-based instance IP detection.
-	if len(service.Ports) > 0 && !c.Global().ServerVersionAtLeast(7, 0) {
-		return nil, nil, fmt.Errorf("port publishing requires Incus 7.0 or later (NAT proxy with ARP/NDP detection)")
-	}
-
-	proxies, err := instanceProxyDevices(service)
+	nat := c.Global().ServerVersionAtLeast(7, 0)
+	proxies, err := instanceProxyDevices(nat, service)
 	if err != nil {
 		errs = errors.Join(errs, err)
 	}
@@ -382,12 +378,18 @@ func serviceNetworkGateway(sNet *types.ServiceNetworkConfig) bool {
 	return ext.Gateway
 }
 
-// instanceProxyDevices builds NAT proxy devices for every published port.
-// Each device uses Incus proxy NAT mode (nat=true) with a wildcard connect
-// address — on Incus 7.0+ the server auto-detects the instance IP via ARP/NDP.
-func instanceProxyDevices(service types.ServiceConfig) ([]client.InstanceDevice, error) {
+// instanceProxyDevices builds proxy devices for every published port.
+// When nat is true the device uses Incus 7.0+ NAT proxy with ARP/NDP-based
+// instance IP detection (connect 0.0.0.0). Otherwise it falls back to a
+// userspace proxy targeting the container loopback (connect 127.0.0.1).
+func instanceProxyDevices(nat bool, service types.ServiceConfig) ([]client.InstanceDevice, error) {
 	var errs error
 	devices := []client.InstanceDevice{}
+
+	connectAddr := "0.0.0.0"
+	if !nat {
+		connectAddr = "127.0.0.1"
+	}
 
 	for _, port := range service.Ports {
 		lPort, err := strconv.ParseUint(port.Published, 10, 32)
@@ -415,9 +417,9 @@ func instanceProxyDevices(service types.ServiceConfig) ([]client.InstanceDevice,
 					ListenAddr:  listenIP,
 					ListenPort:  uint32(lPort),
 					ConnectType: proto,
-					ConnectAddr: "0.0.0.0",
+					ConnectAddr: connectAddr,
 					ConnectPort: port.Target,
-					Nat:         true,
+					Nat:         nat,
 				},
 			},
 		})
@@ -977,19 +979,6 @@ func serviceXIncusExtensions(service types.ServiceConfig) map[string]string {
 	}
 
 	return result
-}
-
-// serviceXIncusComposeExtensions extracts the x-incus-compose extension map from
-// a compose service definition. This is for compose-specific features and
-// transformations handled by incus-compose (not raw Incus options).
-func serviceXIncusComposeExtensions(service types.ServiceConfig) map[string]any {
-	var raw map[string]any
-	ok, err := service.Extensions.Get("x-incus-compose", &raw)
-	if !ok || err != nil || len(raw) == 0 {
-		return nil
-	}
-
-	return raw
 }
 
 // serviceExtraDevices extracts raw Incus devices from the x-incus-compose.devices

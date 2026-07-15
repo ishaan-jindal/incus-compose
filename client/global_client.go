@@ -9,9 +9,9 @@ import (
 	"net/url"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 
+	"github.com/blang/semver/v4"
 	incusClient "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/lxc/incus/v7/shared/cliconfig"
@@ -849,26 +849,15 @@ func (c *GlobalClient) ServerVersionAtLeast(major, minor int) bool {
 		return false
 	}
 
-	v := server.Environment.ServerVersion
-	parts := strings.Split(v, ".")
-	if len(parts) < 2 {
-		return false
-	}
-
-	majorVer, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return false
-	}
-	minorVer, err := strconv.Atoi(parts[1])
+	version, err := semver.ParseTolerant(server.Environment.ServerVersion)
 	if err != nil {
 		return false
 	}
 
-	if majorVer > major {
-		return true
+	required := semver.Version{
+		Major: uint64(major),
+		Minor: uint64(minor),
 	}
-	if majorVer == major && minorVer >= minor {
-		return true
-	}
-	return false
+
+	return version.GTE(required)
 }

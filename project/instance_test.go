@@ -122,18 +122,6 @@ func TestServiceXIncusExtensionsExtractsXIncus(t *testing.T) {
 	assert.Nil(t, serviceXIncusExtensions(types.ServiceConfig{}))
 }
 
-func TestServiceXIncusComposeExtensionsExtractsXIncusCompose(t *testing.T) {
-	t.Parallel()
-
-	proj, err := New().Load(context.Background(), LoadWorkingDir(fixturePath("with-nat-proxy")))
-	require.NoError(t, err)
-
-	extensions := serviceXIncusComposeExtensions(proj.Services["web"])
-	require.Contains(t, extensions, "nat-proxy")
-	assert.Len(t, extensions["nat-proxy"], 2)
-	assert.Nil(t, serviceXIncusComposeExtensions(types.ServiceConfig{}))
-}
-
 func TestInstanceName(t *testing.T) {
 	t.Parallel()
 
@@ -477,7 +465,7 @@ func TestServiceToInstanceUser(t *testing.T) {
 func TestServiceToInstancePorts(t *testing.T) {
 	t.Parallel()
 
-	t.Run("pre-7.0 server errors with ports", func(t *testing.T) {
+	t.Run("pre-7.0 server uses userspace proxy", func(t *testing.T) {
 		t.Parallel()
 		c := client.NewOfflineClient(context.Background(), "test")
 		service := types.ServiceConfig{
@@ -486,9 +474,11 @@ func TestServiceToInstancePorts(t *testing.T) {
 			Ports: []types.ServicePortConfig{{Published: "8080", Target: 80}},
 		}
 		p := &types.Project{Services: types.Services{"web": service}}
-		_, _, err := serviceToInstance(c, p, "web", &ResourcesOptions{}, 1, 1)
-		require.Error(t, err)
-		assert.ErrorContains(t, err, "Incus 7.0 or later")
+		inst, _, err := serviceToInstance(c, p, "web", &ResourcesOptions{}, 1, 1)
+		require.NoError(t, err)
+		require.Len(t, inst.Config.Devices, 1)
+		assert.False(t, inst.Config.Devices[0].Config.Proxy.Nat)
+		assert.Equal(t, "127.0.0.1", inst.Config.Devices[0].Config.Proxy.ConnectAddr)
 	})
 
 	t.Run("no ports succeeds on pre-7.0 server", func(t *testing.T) {
@@ -658,13 +648,13 @@ func TestInstanceNetworkDevices(t *testing.T) {
 func TestInstanceProxyDevices(t *testing.T) {
 	t.Parallel()
 
-	t.Run("published port", func(t *testing.T) {
+	t.Run("published port with nat", func(t *testing.T) {
 		t.Parallel()
 		service := types.ServiceConfig{Name: "web", Ports: []types.ServicePortConfig{
 			{Published: "8080", Target: 80, Protocol: "tcp"},
 		}}
 
-		devices, err := instanceProxyDevices(service)
+		devices, err := instanceProxyDevices(true, service)
 		require.NoError(t, err)
 		require.Len(t, devices, 1)
 		assert.Equal(t, "proxy-8080", devices[0].Name)
@@ -676,19 +666,37 @@ func TestInstanceProxyDevices(t *testing.T) {
 		assert.True(t, proxy.Nat)
 	})
 
+	t.Run("published port without nat", func(t *testing.T) {
+		t.Parallel()
+		service := types.ServiceConfig{Name: "web", Ports: []types.ServicePortConfig{
+			{Published: "8080", Target: 80, Protocol: "tcp"},
+		}}
+
+		devices, err := instanceProxyDevices(false, service)
+		require.NoError(t, err)
+		require.Len(t, devices, 1)
+		assert.Equal(t, "proxy-8080", devices[0].Name)
+		proxy := devices[0].Config.Proxy
+		assert.Equal(t, "0.0.0.0", proxy.ListenAddr)
+		assert.Equal(t, uint32(8080), proxy.ListenPort)
+		assert.Equal(t, "127.0.0.1", proxy.ConnectAddr)
+		assert.Equal(t, uint32(80), proxy.ConnectPort)
+		assert.False(t, proxy.Nat)
+	})
+
 	t.Run("bad published port", func(t *testing.T) {
 		t.Parallel()
 		service := types.ServiceConfig{Name: "web", Ports: []types.ServicePortConfig{
 			{Published: "not-a-port", Target: 80},
 		}}
-		_, err := instanceProxyDevices(service)
+		_, err := instanceProxyDevices(false, service)
 		require.Error(t, err)
 	})
 
 	t.Run("no ports", func(t *testing.T) {
 		t.Parallel()
 		service := types.ServiceConfig{Name: "web"}
-		devices, err := instanceProxyDevices(service)
+		devices, err := instanceProxyDevices(false, service)
 		require.NoError(t, err)
 		assert.Empty(t, devices)
 	})
