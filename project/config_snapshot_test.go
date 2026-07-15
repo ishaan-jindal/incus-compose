@@ -189,10 +189,6 @@ func TestConfigSnapshots(t *testing.T) {
 			Fixture: "with-network-ranges/compose.yaml",
 		},
 		{
-			Name:    "with-nat-proxy_yaml",
-			Fixture: "with-nat-proxy/compose.yaml",
-		},
-		{
 			Name:    "with-build_yaml",
 			Fixture: "with-build/compose.yaml",
 		},

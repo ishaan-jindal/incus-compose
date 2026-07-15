@@ -66,7 +66,8 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	}
 	resources = append(resources, networks...)
 
-	proxies, postStartDevices, err := instanceProxyDevices(c, service, devices)
+	nat := c.Global().ServerVersionAtLeast(7, 0)
+	proxies, err := instanceProxyDevices(nat, service)
 	if err != nil {
 		errs = errors.Join(errs, err)
 	}
@@ -129,7 +130,6 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		Resources:        slices.Clone(resources),
 		Extensions:       config,
 		Devices:          devices,
-		PostStartDevices: postStartDevices,
 		Files:            files,
 		Dependencies:     instanceDependencyWaits(p, service, options),
 		AppendEntrypoint: formatCommand(service.Command),
@@ -378,102 +378,23 @@ func serviceNetworkGateway(sNet *types.ServiceNetworkConfig) bool {
 	return ext.Gateway
 }
 
-// instanceProxyDevices builds proxy devices for published ports and nat-proxy
-// entries. Userspace proxy devices are returned for immediate attachment;
-// NAT proxy devices are returned separately as post-start devices because their
-// connect address is resolved once the instance is running. nicDevices is used
-// to resolve bridge listen addresses and to verify a managed NIC exists.
-func instanceProxyDevices(c *client.Client, service types.ServiceConfig, nicDevices []client.InstanceDevice) ([]client.InstanceDevice, []client.InstanceDevice, error) {
+// instanceProxyDevices builds proxy devices for every published port.
+// When nat is true the device uses Incus 7.0+ NAT proxy with ARP/NDP-based
+// instance IP detection (connect 0.0.0.0). Otherwise it falls back to a
+// userspace proxy targeting the container loopback (connect 127.0.0.1).
+func instanceProxyDevices(nat bool, service types.ServiceConfig) ([]client.InstanceDevice, error) {
 	var errs error
 	devices := []client.InstanceDevice{}
-	postStartDevices := []client.InstanceDevice{}
 
-	// natProxyEntries maps listen-port -> {listen IPs, connect port}.
-	type natProxyEntry struct {
-		listen  []string
-		connect uint32
-	}
-	natProxyEntries := map[uint32]natProxyEntry{}
-
-	// Extract nat-proxy configuration from x-incus-compose extension
-	if xIncusCompose := serviceXIncusComposeExtensions(service); xIncusCompose != nil {
-		if rawList, ok := xIncusCompose["nat-proxy"].([]any); ok {
-			for _, item := range rawList {
-				entry, ok := item.(map[string]any)
-				if !ok {
-					continue
-				}
-				var lPort uint64
-				switch v := entry["port"].(type) {
-				case int:
-					lPort = uint64(v)
-				case float64:
-					lPort = uint64(v)
-				case string:
-					var portErr error
-					lPort, portErr = strconv.ParseUint(v, 10, 32)
-					if portErr != nil {
-						errs = errors.Join(errs, fmt.Errorf("nat-proxy port %q is not a number: %w", v, portErr))
-						continue
-					}
-				}
-				var connectPort uint32
-				switch v := entry["connect"].(type) {
-				case int:
-					connectPort = uint32(v)
-				case float64:
-					connectPort = uint32(v)
-				}
-				var listenIPs []string
-				if rawListen, ok := entry["listen"].([]any); ok {
-					for _, ip := range rawListen {
-						if s, ok := ip.(string); ok {
-							listenIPs = append(listenIPs, s)
-						}
-					}
-				}
-				natProxyEntries[uint32(lPort)] = natProxyEntry{listen: listenIPs, connect: connectPort}
-			}
-		}
-	}
-
-	// Resolve empty listen lists from the project's bridge network addresses.
-	// Collect NIC-referenced network names once, reuse for all unspecified entries.
-	var bridgeAddrs []string
-	for lPort, entry := range natProxyEntries {
-		if len(entry.listen) > 0 {
-			continue
-		}
-		if bridgeAddrs == nil {
-			for _, dev := range nicDevices {
-				if dev.Config.DeviceType != client.InstanceDeviceTypeNic || dev.Config.Network == nil {
-					continue
-				}
-				v4, v6, err := c.Global().NetworkBridgeIPs(dev.Config.Network.IncusName())
-				if err != nil {
-					c.LogWarn("nat-proxy: could not get bridge IPs", "network", dev.Config.Network.IncusName(), "err", err)
-					continue
-				}
-				bridgeAddrs = append(bridgeAddrs, v4...)
-				bridgeAddrs = append(bridgeAddrs, v6...)
-			}
-			if len(bridgeAddrs) == 0 {
-				bridgeAddrs = []string{"0.0.0.0"}
-			}
-		}
-		entry.listen = bridgeAddrs
-		natProxyEntries[lPort] = entry
+	connectAddr := "0.0.0.0"
+	if !nat {
+		connectAddr = "127.0.0.1"
 	}
 
 	for _, port := range service.Ports {
 		lPort, err := strconv.ParseUint(port.Published, 10, 32)
 		if err != nil {
 			errs = errors.Join(errs, fmt.Errorf("bad publishing port %q must be a number: %w", port.Published, err))
-			continue
-		}
-
-		// A nat-proxy entry for this listen port takes over -- skip the userspace proxy.
-		if _, covered := natProxyEntries[uint32(lPort)]; covered {
 			continue
 		}
 
@@ -496,48 +417,15 @@ func instanceProxyDevices(c *client.Client, service types.ServiceConfig, nicDevi
 					ListenAddr:  listenIP,
 					ListenPort:  uint32(lPort),
 					ConnectType: proto,
-					ConnectAddr: "127.0.0.1",
+					ConnectAddr: connectAddr,
 					ConnectPort: port.Target,
+					Nat:         nat,
 				},
 			},
 		})
 	}
 
-	// Create NAT proxy devices -- one per listen IP per nat-proxy entry.
-	// connect.addr is left empty and resolved in attachPostStartDevices once the instance is running.
-	hasNic := false
-	for _, dev := range nicDevices {
-		if dev.Config.DeviceType == client.InstanceDeviceTypeNic {
-			hasNic = true
-			break
-		}
-	}
-
-	for lPort, entry := range natProxyEntries {
-		if !hasNic {
-			c.LogWarn("nat-proxy requested but no managed NIC found, skipping", "service", service.Name, "port", lPort)
-			continue
-		}
-		for idx, listenIP := range entry.listen {
-			postStartDevices = append(postStartDevices, client.InstanceDevice{
-				Name: fmt.Sprintf("proxy-%d-%d", lPort, idx),
-				Config: client.InstanceDeviceConfig{
-					DeviceType: client.InstanceDeviceTypeProxy,
-					Proxy: client.InstanceDeviceProxyConfig{
-						ListenType:  "tcp",
-						ListenAddr:  listenIP,
-						ListenPort:  lPort,
-						ConnectType: "tcp",
-						ConnectAddr: "", // resolved in attachPostStartDevices
-						ConnectPort: entry.connect,
-						Nat:         true,
-					},
-				},
-			})
-		}
-	}
-
-	return devices, postStartDevices, errs
+	return devices, errs
 }
 
 // instanceVolumeDevices builds disk, bind, and tmpfs devices for a service's
@@ -1091,19 +979,6 @@ func serviceXIncusExtensions(service types.ServiceConfig) map[string]string {
 	}
 
 	return result
-}
-
-// serviceXIncusComposeExtensions extracts the x-incus-compose extension map from
-// a compose service definition. This is for compose-specific features and
-// transformations handled by incus-compose (not raw Incus options).
-func serviceXIncusComposeExtensions(service types.ServiceConfig) map[string]any {
-	var raw map[string]any
-	ok, err := service.Extensions.Get("x-incus-compose", &raw)
-	if !ok || err != nil || len(raw) == 0 {
-		return nil
-	}
-
-	return raw
 }
 
 // serviceExtraDevices extracts raw Incus devices from the x-incus-compose.devices

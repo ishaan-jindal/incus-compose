@@ -959,3 +959,46 @@ func TestE2EUpDownWithVolume(t *testing.T) {
 
 	runE2ETests(ctx, t, pn, tests)
 }
+
+// TestE2ENatProxy verifies that published ports create NAT proxy devices
+// with the correct configuration (nat=true, wildcard connect address).
+func TestE2ENatProxy(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/with-ports/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []e2eTest{
+		{
+			name: "up",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name:     "list",
+			args:     []string{"-f", compose, "list", "--format", "json"},
+			snapshot: true,
+		},
+	}
+
+	runE2ETests(ctx, t, pn, tests)
+
+	c := projectClient(ctx, t, pn)
+	conn, err := c.Connection()
+	require.NoError(t, err)
+	inst, _, err := conn.GetInstance("web-1")
+	require.NoError(t, err)
+
+	proxyDev, ok := inst.Devices["proxy-8080"]
+	require.True(t, ok, "proxy-8080 device should exist")
+	assert.Equal(t, "proxy", proxyDev["type"])
+	assert.Equal(t, "true", proxyDev["nat"])
+	assert.Equal(t, "tcp:0.0.0.0:8080", proxyDev["listen"])
+	assert.Equal(t, "tcp:0.0.0.0:80", proxyDev["connect"])
+}

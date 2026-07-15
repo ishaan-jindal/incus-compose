@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/fs"
 	"maps"
-	"net"
 	"os"
 	"path"
 	"strconv"
@@ -71,10 +70,6 @@ type InstanceConfig struct {
 
 	// Devices are devices attached before instance creation (networks, proxies).
 	Devices []InstanceDevice
-
-	// PostStartDevices are devices attached after the instance is started.
-	// Use for devices that require a running instance, e.g. NAT proxy (needs container IP).
-	PostStartDevices []InstanceDevice
 
 	// Files are files pushed into the instance after creation.
 	// Map key is the target path in the instance.
@@ -511,71 +506,6 @@ func (r *Instance) buildDevices() (map[string]map[string]string, error) {
 	return devices, nil
 }
 
-func (r *Instance) attachPostStartDevices(ctx context.Context) error {
-	// Resolve container IPs once - instance is running so this should be fast.
-	ips, err := r.WaitIPs(ctx, dnsIPWaitTimeout)
-	if err != nil {
-		r.client.LogWarn("could not resolve IPs for post-start devices", "instance", r.incusName, "err", err)
-	}
-
-	network := ips[0].Network
-	iPv4s := ips[0].IPv4s
-	iPv6s := ips[0].IPv6s
-
-	var bridgeV4Addrs, bridgeV6Addrs []string
-	bridgeV4Addrs, bridgeV6Addrs, err = r.client.Global().NetworkBridgeIPs(network)
-	if err != nil {
-		return fmt.Errorf("nat-proxy: could not get bridge IPs for network %s: %w", network, err)
-	}
-
-	if len(bridgeV4Addrs) == 0 && len(bridgeV6Addrs) == 0 {
-		return fmt.Errorf("nat-proxy: didn't get an IP for network %s", network)
-	}
-
-	devices := map[string]map[string]string{}
-	for _, dev := range r.Config.PostStartDevices {
-		if dev.Config.DeviceType == InstanceDeviceTypeProxy && dev.Config.Proxy.Nat {
-			if dev.Config.Proxy.ListenAddr == "" {
-				dev.Config.Proxy.ListenAddr = bridgeV4Addrs[0]
-			}
-
-			if ip := net.ParseIP(dev.Config.Proxy.ListenAddr).To4(); ip == nil {
-				if len(iPv6s) < 1 {
-					return fmt.Errorf("no IPv6 address for NAT proxy, instance %s", r.Name())
-				}
-				dev.Config.Proxy.ConnectAddr = iPv6s[0]
-			} else {
-				if len(iPv4s) < 1 {
-					return fmt.Errorf("no IPv4 address for NAT proxy, instance %s", r.Name())
-				}
-				dev.Config.Proxy.ConnectAddr = iPv4s[0]
-			}
-		}
-
-		devName, devConfig, err := dev.ToIncusDevice()
-		if err != nil {
-			return err
-		}
-
-		devices[devName] = devConfig
-	}
-
-	w := r.IncusInstance.Writable()
-	w.Devices = devices
-
-	op, err := r.conn.UpdateInstance(r.IncusName(), w, "")
-	if err != nil {
-		return err
-	}
-
-	err = op.WaitContext(ctx)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // Start starts the instance.
 func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 	options := NewOptions(opts...)
@@ -856,13 +786,6 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 
 	if !r.Running() {
 		return ErrNotRunning.WithText("after a start")
-	}
-
-	if r.created && len(r.Config.PostStartDevices) > 0 {
-		err := r.attachPostStartDevices(ctx)
-		if err != nil {
-			return ErrCreate.WithText("post start").Wrap(err)
-		}
 	}
 
 	return nil

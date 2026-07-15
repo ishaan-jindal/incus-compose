@@ -1,0 +1,24 @@
+[
+  {
+    "kind": "network",
+    "name": "default",
+    "description": "",
+    "incus_name": "ic-aeshuqcrag",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "instance",
+    "name": "web",
+    "description": "incus-compose: teste2enatproxy:web-1",
+    "incus_name": "web-1",
+    "image": "docker.io/nginx:alpine",
+    "status": "Running",
+    "health": "Unknown",
+    "addresses": [
+      "-stripped-"
+    ]
+  }
+]

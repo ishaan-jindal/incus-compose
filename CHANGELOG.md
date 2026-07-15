@@ -11,6 +11,19 @@ for correct semver ordering. Headings below preserve each release's announced fo
 
 ## [1.1.0] - unreleased
 
+### Changed
+
+- Published ports (`ports:`) create a proxy device. On Incus 7.0+ the
+  device uses NAT mode (`nat=true`) with ARP/NDP-based instance IP
+  detection; on older servers it falls back to a userspace proxy
+  targeting the container loopback (`nat=false`, connect `127.0.0.1`).
+
+### Removed
+
+- `x-incus-compose.nat-proxy` extension and all associated post-start
+  device attachment machinery. Ports are now handled entirely through
+  the standard `ports:` field.
+
 ### Added
 
 - `services.{name}.configs` / top-level `configs:`: mount config files into
