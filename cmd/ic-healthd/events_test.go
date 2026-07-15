@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,17 @@ import (
 	"github.com/lxc/incus-compose/client"
 	"github.com/lxc/incus-compose/shared"
 )
+
+func writeTempFiles(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for name, content := range files {
+		path := filepath.Join(dir, name)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	}
+	return dir
+}
 
 // trackedCopy returns a shallow copy of r.tracked, safe to inspect from a
 // test goroutine without racing the runner's own goroutines.
@@ -324,10 +336,11 @@ func TestE2ECrashedInstanceRestarts(t *testing.T) {
 // interval, so the checker never gets a chance to report healthy and reset
 // the backoff in between (see evaluateBackoff/handleCheckerStatus).
 //
-// Uses backend1's default interval(5s)*retries(1)=5s baseline as-is rather
-// than editing it live: spawn() only computes restartDelay fresh for a
-// brand-new trackedInstance, not on a respawn of an already-tracked one, so
-// a live edit wouldn't actually change the backoff baseline used below.
+// Uses a compose file with backend1's retries pinned to 1 (rather than the
+// fixture's default of 3) so the interval(5s)*retries(1)=5s baseline below is
+// known upfront: spawn() only computes restartDelay fresh for a brand-new
+// trackedInstance, not on a respawn of an already-tracked one, so a live
+// edit after the instance is tracked wouldn't change the backoff baseline.
 func TestE2ERepeatedCrashesBackoff(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
@@ -335,7 +348,55 @@ func TestE2ERepeatedCrashesBackoff(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	projectName := strings.ToLower(t.Name())
-	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+
+	dir := writeTempFiles(t, map[string]string{
+		"compose.yaml": `services:
+  nginx:
+    image: docker.io/nginxinc/nginx-unprivileged:alpine
+    restart: unless-stopped
+    environment:
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    x-incus:
+      limits.cpu: 1
+    depends_on:
+      backend1:
+        condition: service_healthy
+      backend2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+
+  backend1:
+    image: docker.io/nginxinc/nginx-unprivileged:alpine
+    restart: unless-stopped
+    environment:
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    x-incus:
+      limits.cpu: 1
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
+      interval: 5s
+      timeout: 5s
+      retries: 1
+
+  backend2:
+    image: docker.io/nginxinc/nginx-unprivileged:alpine
+    restart: unless-stopped
+    environment:
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    x-incus:
+      limits.cpu: 1
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+`,
+	})
+	compose := filepath.Join(dir, "compose.yaml")
 
 	c, p := loadProject(ctx, t, compose, projectName)
 	err := c.Open()
@@ -354,6 +415,10 @@ func TestE2ERepeatedCrashesBackoff(t *testing.T) {
 		_, _, _ = runIncusCommand(ctx, t, projectName, "-f", compose, "down", "--project")
 		hCleanup()
 		cancel()
+
+		if dir != "" {
+			_ = os.RemoveAll(dir)
+		}
 	})
 
 	c.IgnoreError(client.ActionEnsure, client.ErrNotFound)
