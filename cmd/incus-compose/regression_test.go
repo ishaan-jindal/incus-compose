@@ -15,12 +15,12 @@ func TestNoDanglingNetworksAfterDown(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
@@ -50,11 +50,11 @@ func TestE2EStartStopIdempotent(t *testing.T) {
 
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -93,11 +93,11 @@ func TestE2ENoImageCache(t *testing.T) {
 
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach", "--image-cache", "")

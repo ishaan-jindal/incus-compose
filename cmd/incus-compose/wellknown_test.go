@@ -12,7 +12,7 @@ func TestWellKnownRegistryQuayIO(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 
 	dir := writeTempFiles(t, map[string]string{
@@ -24,7 +24,7 @@ func TestWellKnownRegistryQuayIO(t *testing.T) {
 	compose := filepath.Join(dir, "compose.yaml")
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	_, err := runCommand(ctx, t, pn, "-f", compose, "pull", "--no-healthd", "hello")
@@ -35,7 +35,7 @@ func TestWellKnownRegistryMCR(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 
 	dir := writeTempFiles(t, map[string]string{
@@ -47,7 +47,7 @@ func TestWellKnownRegistryMCR(t *testing.T) {
 	compose := filepath.Join(dir, "compose.yaml")
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	_, err := runCommand(ctx, t, pn, "-f", compose, "pull", "--no-healthd", "hello")

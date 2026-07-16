@@ -51,7 +51,7 @@ func TestParseHealthdNetwork(t *testing.T) {
 		},
 	}
 
-	c := client.NewOfflineClient(context.Background(), "default")
+	c := client.NewOfflineClient(t.Context(), "default")
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -79,7 +79,7 @@ func TestParseHealthdNetwork(t *testing.T) {
 // 	compose := "../../test/fixtures/healthd-debug/compose.yaml"
 
 // 	t.Cleanup(func() {
-// 		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+// 		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 // 	})
 
 // 	tests := []struct {
@@ -127,12 +127,12 @@ func TestNoHealthdSkipsHealthdInstance(t *testing.T) {
 	skipE2E(t)
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	compose := "../../test/fixtures/with-restart/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach", "--no-healthd")
@@ -154,12 +154,12 @@ func TestNoHealthdWhenNotNeeded(t *testing.T) {
 	skipE2E(t)
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")

@@ -50,12 +50,12 @@ func TestE2EPull(t *testing.T) {
 	skipLocal(t)
 	skipE2E(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []struct {
@@ -95,12 +95,12 @@ func TestE2EPullWithDeps(t *testing.T) {
 	skipLocal(t)
 	skipE2E(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	compose := "../../test/fixtures/postgres-redis/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	// Pulling just "api" copies its own image, not its dependencies.
@@ -129,7 +129,7 @@ func TestE2EPullInvalidImage(t *testing.T) {
 	skipLocal(t)
 	skipE2E(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	dir := writeTempFiles(t, map[string]string{
 		"compose.yaml": `services:
@@ -140,7 +140,7 @@ func TestE2EPullInvalidImage(t *testing.T) {
 	compose := filepath.Join(dir, "compose.yaml")
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	_, err := runCommand(ctx, t, pn, "-f", compose, "pull")
@@ -154,12 +154,12 @@ func TestE2EPullIgnoreBuildable(t *testing.T) {
 	skipLocal(t)
 	skipE2E(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	compose := "../../test/fixtures/with-build/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	// --ignore-buildable skips images with a build config, leaving nothing to pull.

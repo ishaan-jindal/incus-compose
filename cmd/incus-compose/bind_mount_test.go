@@ -18,7 +18,7 @@ func TestBindMounts(t *testing.T) {
 
 	pn := t.Name()
 	compose := "../../test/fixtures/with-bind-mounts/compose.yaml"
-	ctx := context.Background()
+	ctx := t.Context()
 
 	gc, err := client.NewTestClient(ctx)
 	if err != nil {
@@ -28,7 +28,7 @@ func TestBindMounts(t *testing.T) {
 	skipNotSameHost(t, gc)
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
@@ -53,7 +53,7 @@ func TestBindMountErrorsOnRemote(t *testing.T) {
 
 	pn := t.Name()
 	compose := "../../test/fixtures/with-bind-mounts/compose.yaml"
-	ctx := context.Background()
+	ctx := t.Context()
 
 	gc, err := client.NewTestClient(ctx)
 	if err != nil {
@@ -74,14 +74,14 @@ func TestSeededBindMounts(t *testing.T) {
 
 	pn := t.Name()
 	compose := "../../test/fixtures/with-seeded-bind-mounts/compose.yaml"
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if _, err := client.NewTestClient(ctx); err != nil {
 		t.Skip(err.Error())
 	}
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
@@ -106,7 +106,7 @@ func TestBindMountNoShift(t *testing.T) {
 
 	pn := t.Name()
 	compose := "../../test/fixtures/with-bind-mount-no-shift/compose.yaml"
-	ctx := context.Background()
+	ctx := t.Context()
 
 	gc, err := client.NewTestClient(ctx)
 	if err != nil {
@@ -116,7 +116,7 @@ func TestBindMountNoShift(t *testing.T) {
 	skipNotSameHost(t, gc)
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach")

@@ -1,7 +1,6 @@
 package project
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -97,7 +96,7 @@ func TestFormatCommand(t *testing.T) {
 func TestNetworkExtensionsExtractsXIncus(t *testing.T) {
 	t.Parallel()
 
-	proj, err := New().Load(context.Background(), LoadWorkingDir(fixturePath("with-network-ranges")))
+	proj, err := New().Load(t.Context(), LoadWorkingDir(fixturePath("with-network-ranges")))
 	require.NoError(t, err)
 
 	assert.Equal(t, map[string]string{
@@ -111,7 +110,7 @@ func TestNetworkExtensionsExtractsXIncus(t *testing.T) {
 func TestServiceXIncusExtensionsExtractsXIncus(t *testing.T) {
 	t.Parallel()
 
-	proj, err := New().Load(context.Background(), LoadWorkingDir(fixturePath("with-incus-options")))
+	proj, err := New().Load(t.Context(), LoadWorkingDir(fixturePath("with-incus-options")))
 	require.NoError(t, err)
 
 	assert.Equal(t, map[string]string{
@@ -203,7 +202,7 @@ func TestInstanceConfigMinimal(t *testing.T) {
 func TestInstanceConfigXIncusOverrides(t *testing.T) {
 	t.Parallel()
 
-	proj, err := New().Load(context.Background(), LoadWorkingDir(fixturePath("with-incus-options")))
+	proj, err := New().Load(t.Context(), LoadWorkingDir(fixturePath("with-incus-options")))
 	require.NoError(t, err)
 
 	config, err := instanceConfig(proj.Services["web"], "")
@@ -413,7 +412,7 @@ func TestServiceToInstanceUser(t *testing.T) {
 	// A fresh client per call: c.Resource deduplicates by name, so a shared
 	// client would hand every subtest the same cached "web-1" instance.
 	build := func(user string) (*client.Instance, error) {
-		c := client.NewOfflineClient(context.Background(), "test")
+		c := client.NewOfflineClient(t.Context(), "test")
 		service := types.ServiceConfig{Name: "web", Image: "docker.io/nginx:alpine", User: user}
 		p := &types.Project{Services: types.Services{"web": service}}
 		inst, _, err := serviceToInstance(c, p, "web", opts, 1, 1)
@@ -467,7 +466,7 @@ func TestServiceToInstancePorts(t *testing.T) {
 
 	t.Run("pre-7.0 server uses userspace proxy", func(t *testing.T) {
 		t.Parallel()
-		c := client.NewOfflineClient(context.Background(), "test")
+		c := client.NewOfflineClient(t.Context(), "test")
 		service := types.ServiceConfig{
 			Name:  "web",
 			Image: "docker.io/nginx:alpine",
@@ -483,7 +482,7 @@ func TestServiceToInstancePorts(t *testing.T) {
 
 	t.Run("no ports succeeds on pre-7.0 server", func(t *testing.T) {
 		t.Parallel()
-		c := client.NewOfflineClient(context.Background(), "test")
+		c := client.NewOfflineClient(t.Context(), "test")
 		service := types.ServiceConfig{Name: "web", Image: "docker.io/nginx:alpine"}
 		p := &types.Project{Services: types.Services{"web": service}}
 		_, _, err := serviceToInstance(c, p, "web", &ResourcesOptions{}, 1, 1)
@@ -549,7 +548,7 @@ func TestServiceExtraDevices(t *testing.T) {
 func TestInstanceImage(t *testing.T) {
 	t.Parallel()
 
-	c := client.NewOfflineClient(context.Background(), "test")
+	c := client.NewOfflineClient(t.Context(), "test")
 
 	t.Run("pull", func(t *testing.T) {
 		t.Parallel()
@@ -584,7 +583,7 @@ func TestInstanceImage(t *testing.T) {
 func TestInstanceNetworkDevices(t *testing.T) {
 	t.Parallel()
 
-	c := client.NewOfflineClient(context.Background(), "test")
+	c := client.NewOfflineClient(t.Context(), "test")
 
 	t.Run("with static ip", func(t *testing.T) {
 		t.Parallel()
@@ -723,7 +722,7 @@ func TestInstanceProxyDevices(t *testing.T) {
 func TestInstanceVolumeDevices(t *testing.T) {
 	t.Parallel()
 
-	c := client.NewOfflineClient(context.Background(), "test")
+	c := client.NewOfflineClient(t.Context(), "test")
 
 	t.Run("named volume", func(t *testing.T) {
 		t.Parallel()

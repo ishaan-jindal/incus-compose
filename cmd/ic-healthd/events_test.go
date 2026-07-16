@@ -51,7 +51,7 @@ func TestE2EEventDrivenDiscovery(t *testing.T) {
 	skipLocal(t)
 	skipE2E(t)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	projectName := strings.ToLower(t.Name())
 	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
 
@@ -69,7 +69,7 @@ func TestE2EEventDrivenDiscovery(t *testing.T) {
 	t.Cleanup(func() {
 		_ = c.Done()
 
-		_, _, _ = runIncusCommand(ctx, t, projectName, "-f", compose, "down", "--project")
+		_, _, _ = runIncusCommand(context.Background(), t, projectName, "-f", compose, "down", "--project")
 		hCleanup()
 		cancel()
 	})
@@ -168,7 +168,7 @@ func TestE2EIgnoredInstanceIsNeverTracked(t *testing.T) {
 	skipLocal(t)
 	skipE2E(t)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	projectName := strings.ToLower(t.Name())
 	compose := "../../test/fixtures/with-restart/compose.yaml"
 
@@ -186,7 +186,7 @@ func TestE2EIgnoredInstanceIsNeverTracked(t *testing.T) {
 	t.Cleanup(func() {
 		_ = c.Done()
 
-		_, _, _ = runIncusCommand(ctx, t, projectName, "-f", compose, "down", "--project")
+		_, _, _ = runIncusCommand(context.Background(), t, projectName, "-f", compose, "down", "--project")
 		hCleanup()
 		cancel()
 	})
@@ -251,7 +251,7 @@ func TestE2ECrashedInstanceRestarts(t *testing.T) {
 	skipLocal(t)
 	skipE2E(t)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	projectName := strings.ToLower(t.Name())
 	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
 
@@ -269,7 +269,7 @@ func TestE2ECrashedInstanceRestarts(t *testing.T) {
 	t.Cleanup(func() {
 		_ = c.Done()
 
-		_, _, _ = runIncusCommand(ctx, t, projectName, "-f", compose, "down", "--project")
+		_, _, _ = runIncusCommand(context.Background(), t, projectName, "-f", compose, "down", "--project")
 		hCleanup()
 		cancel()
 	})
@@ -346,7 +346,7 @@ func TestE2ERepeatedCrashesBackoff(t *testing.T) {
 	skipLocal(t)
 	skipE2E(t)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	projectName := strings.ToLower(t.Name())
 
 	dir := writeTempFiles(t, map[string]string{
@@ -412,7 +412,7 @@ func TestE2ERepeatedCrashesBackoff(t *testing.T) {
 	t.Cleanup(func() {
 		_ = c.Done()
 
-		_, _, _ = runIncusCommand(ctx, t, projectName, "-f", compose, "down", "--project")
+		_, _, _ = runIncusCommand(context.Background(), t, projectName, "-f", compose, "down", "--project")
 		hCleanup()
 		cancel()
 

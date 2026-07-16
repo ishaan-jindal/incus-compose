@@ -2,7 +2,6 @@ package project_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -67,7 +66,7 @@ func runConfigTest(t *testing.T, tc ConfigTestCase) {
 			loadOpts = append(loadOpts, project.LoadEnvFiles(absEnvFiles))
 		}
 
-		proj, err := project.New().Load(context.Background(), loadOpts...)
+		proj, err := project.New().Load(t.Context(), loadOpts...)
 		require.NoError(t, err)
 
 		// Filter services if specified.

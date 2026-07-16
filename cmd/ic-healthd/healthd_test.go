@@ -242,7 +242,7 @@ func TestE2EHDNginx(t *testing.T) {
 	skipLocal(t)
 	skipE2E(t)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	projectName := strings.ToLower(t.Name())
 	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
 
@@ -264,7 +264,7 @@ func TestE2EHDNginx(t *testing.T) {
 	t.Cleanup(func() {
 		_ = c.Done()
 
-		_, _, _ = runIncusCommand(ctx, t, projectName, "-f", compose, "down", "--project")
+		_, _, _ = runIncusCommand(context.Background(), t, projectName, "-f", compose, "down", "--project")
 		hCleanup()
 		cancel()
 	})

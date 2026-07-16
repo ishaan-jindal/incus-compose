@@ -105,9 +105,9 @@ func TestExample(t *testing.T) {
 		t.Run(example.name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx := context.Background()
+			ctx := t.Context()
 			t.Cleanup(func() {
-				_, _ = runCommand(ctx, t, t.Name(), "--project-directory", example.dir, "down", "--project")
+				_, _ = runCommand(context.Background(), t, t.Name(), "--project-directory", example.dir, "down", "--project")
 			})
 
 			args := []string{"--project-directory", example.dir, "up", "--detach"}
