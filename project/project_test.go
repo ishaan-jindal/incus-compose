@@ -678,25 +678,20 @@ func TestServiceGraphSkipsMissingDependency(t *testing.T) {
 func TestProjectConfigExtractsXIncus(t *testing.T) {
 	t.Parallel()
 
-	proj, err := project.New().Load(context.Background(), project.LoadWorkingDir(fixturePath("with-project-options")))
+	proj, err := project.New().Load(context.Background(),
+		project.LoadWorkingDir(fixturePath("with-project-options")),
+	)
 	require.NoError(t, err)
+
+	config := proj.ClientConfig
 
 	assert.Equal(t, map[string]string{
 		"limits.cpu":              "5",
 		"limits.memory":           "2149MB",
 		"limits.virtual-machines": "0",
-	}, proj.ProjectConfig())
-}
+	}, config.XIncus)
 
-func TestProjectConfigReturnsNilWithoutExtensions(t *testing.T) {
-	t.Parallel()
-
-	assert.Nil(t, (*project.Project)(nil).ProjectConfig())
-	assert.Nil(t, (&project.Project{}).ProjectConfig())
-
-	proj, err := project.New().Load(context.Background(), project.LoadWorkingDir(fixturePath("simple-nginx")))
-	require.NoError(t, err)
-	assert.Nil(t, proj.ProjectConfig())
+	assert.True(t, config.Healthd.External)
 }
 
 func TestHealthdConfigExtractsXIncusCompose(t *testing.T) {
@@ -705,9 +700,9 @@ func TestHealthdConfigExtractsXIncusCompose(t *testing.T) {
 	proj, err := project.New().Load(context.Background(), project.LoadWorkingDir(fixturePath("with-healthd-config")))
 	require.NoError(t, err)
 
-	incusURL, network := proj.HealthdConfig()
-	assert.Equal(t, "https://10.0.0.1:8443", incusURL)
-	assert.Equal(t, "healthd:default", network)
+	config := proj.ClientConfig.Healthd
+	assert.Equal(t, "https://10.0.0.1:8443", config.Incus)
+	assert.Equal(t, "healthd:default", config.Network)
 }
 
 func TestHealthdConfigEmptyWithoutExtension(t *testing.T) {
@@ -716,7 +711,8 @@ func TestHealthdConfigEmptyWithoutExtension(t *testing.T) {
 	proj, err := project.New().Load(context.Background(), project.LoadWorkingDir(fixturePath("simple-nginx")))
 	require.NoError(t, err)
 
-	incusURL, network := proj.HealthdConfig()
-	assert.Empty(t, incusURL)
-	assert.Empty(t, network)
+	config := proj.ClientConfig.Healthd
+	assert.Empty(t, config.Incus)
+	assert.Empty(t, config.Network)
+	assert.False(t, config.External)
 }

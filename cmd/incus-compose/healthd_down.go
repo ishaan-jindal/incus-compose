@@ -51,16 +51,16 @@ func newHealthdDownCommand() *cli.Command {
 				projectName: p.Name,
 			}
 
-			c, err := globalClient.EnsureProject(p.Name)
+			c, err := globalClient.EnsureProject(
+				p.Name,
+				client.EnsureProjectWithCreate(),
+				client.EnsureProjectWithConfig(p.ClientConfig.XIncus),
+			)
 			if err != nil {
 				globalClient.LogError("Getting the incus project", "error", err)
 				return errLogged.Wrap(err)
 			}
-			if err := c.Open(); err != nil {
-				globalClient.LogError("Opening the project client", "error", err)
-				return errLogged.Wrap(err)
-			}
-			defer func() { _ = c.Done() }()
+			defer c.WarnError(c.Done, "Failure during Client.Done()")
 
 			stdout := cmd.Root().Writer
 			stderr := cmd.Root().ErrWriter

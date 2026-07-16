@@ -1,3 +1,7 @@
+x-incus-compose:
+  healthd:
+    external: true
+
 x-incus:
   # https://linuxcontainers.org/incus/docs/main/reference/instance_options/#instance-options-limits-cpu-container
   limits.cpu: "5" # +1 for healthd
@@ -14,3 +18,4 @@ services:
     x-incus:
       limits.cpu: "1"
       limits.memory: 512MB
+    restart: unless-stopped

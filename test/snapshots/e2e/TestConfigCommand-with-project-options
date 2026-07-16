@@ -9,6 +9,7 @@ project:
       image: docker.io/nginx:alpine
       networks:
         default: null
+      restart: unless-stopped
       x-incus:
         limits.cpu: "1"
         limits.memory: 512MB
@@ -19,3 +20,6 @@ project:
     limits.cpu: "5"
     limits.memory: 2149MB
     limits.virtual-machines: 0
+  x-incus-compose:
+    healthd:
+      external: true

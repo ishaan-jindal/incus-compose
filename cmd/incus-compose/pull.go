@@ -70,15 +70,13 @@ func newPullCommand() *cli.Command {
 			c, err := globalClient.EnsureProject(
 				p.Name,
 				client.EnsureProjectWithCreate(),
-				client.EnsureProjectWithConfig(p.ProjectConfig()),
+				client.EnsureProjectWithConfig(p.ClientConfig.XIncus),
 			)
 			if err != nil {
 				globalClient.LogError("Getting the incus project", "error", err)
-				return errLogged
+				return errLogged.Wrap(err)
 			}
-			defer func() {
-				_ = c.Done()
-			}()
+			defer c.WarnError(c.Done, "Failure during Client.Done()")
 
 			err = c.Open()
 			if err != nil {

@@ -189,6 +189,18 @@ func TestConfigSnapshots(t *testing.T) {
 			Fixture: "with-network-ranges/compose.yaml",
 		},
 		{
+			Name:    "with-ports_yaml",
+			Fixture: "with-ports/compose.yaml",
+		},
+		{
+			Name:    "with-profiles_yaml",
+			Fixture: "with-profiles/compose.yaml",
+		},
+		{
+			Name:    "with-project-options",
+			Fixture: "with-project-options/compose.yaml",
+		},
+		{
 			Name:    "with-build_yaml",
 			Fixture: "with-build/compose.yaml",
 		},

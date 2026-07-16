@@ -130,23 +130,22 @@ func LoadModel(ctx context.Context, opts ...LoadOption) (map[string]any, error) 
 type Project struct {
 	*types.Project
 
-	// xic caches the decoded top-level x-incus-compose extension. It is filled
-	// lazily on first access. The config phase is single-threaded, so no
-	// synchronization is needed.
-	xic *xICProject
+	ClientConfig XICProject `json:"-" yaml:"-"`
 }
 
-// xICProject is the typed view of the top-level x-incus-compose extension.
-type xICProject struct {
+// XICProject is the typed view of the top-level x-incus-compose extension.
+type XICProject struct {
 	Healthd struct {
-		Incus   string `mapstructure:"incus"`
-		Network string `mapstructure:"network"`
-	} `mapstructure:"healthd"`
+		Incus    string
+		Network  string
+		External bool
+	}
+	XIncus map[string]string
 }
 
 // New creates a new Project.
 func New() *Project {
-	return &Project{}
+	return &Project{ClientConfig: XICProject{XIncus: map[string]string{}}}
 }
 
 // Load loads a compose project with full interpolation and validation.
@@ -170,13 +169,29 @@ func (p *Project) Load(ctx context.Context, opts ...LoadOption) (*Project, error
 	p.Project = cp
 
 	if p.Extensions != nil {
-		var ext xICProject
+		var ext struct {
+			Healthd struct {
+				Incus    string `mapstructure:"incus"`
+				Network  string `mapstructure:"network"`
+				External bool   `mapstructure:"external"`
+			} `mapstructure:"healthd"`
+		}
 		ok, err := p.Extensions.Get("x-incus-compose", &ext)
 		if err != nil {
 			return nil, err
 		}
 		if ok {
-			p.xic = &ext
+			p.ClientConfig.Healthd.Incus = ext.Healthd.Incus
+			p.ClientConfig.Healthd.Network = ext.Healthd.Network
+			p.ClientConfig.Healthd.External = ext.Healthd.External
+		}
+
+		var raw map[string]any
+		ok, err = p.Extensions.Get("x-incus", &raw)
+		if ok || err == nil {
+			for k, v := range raw {
+				p.ClientConfig.XIncus[k] = fmt.Sprint(v)
+			}
 		}
 	}
 
@@ -203,36 +218,6 @@ func (p *Project) InstanceNames() []string {
 	}
 
 	return names
-}
-
-// HealthdConfig reads the top-level x-incus-compose.healthd extension.
-// Returns empty strings when the key is absent.
-func (p *Project) HealthdConfig() (incusURL, network string) {
-	if p.xic == nil {
-		return "", ""
-	}
-
-	return p.xic.Healthd.Incus, p.xic.Healthd.Network
-}
-
-// ProjectConfig reads `x-incus` extensions from the project and returns that.
-func (p *Project) ProjectConfig() map[string]string {
-	if p == nil || p.Project == nil || p.Extensions == nil {
-		return nil
-	}
-
-	var raw map[string]any
-	ok, err := p.Extensions.Get("x-incus", &raw)
-	if !ok || err != nil || len(raw) == 0 {
-		return nil
-	}
-
-	result := make(map[string]string, len(raw))
-	for k, v := range raw {
-		result[k] = fmt.Sprint(v)
-	}
-
-	return result
 }
 
 // ResourcesOptions configures how services are converted to stack operations.

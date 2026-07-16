@@ -109,7 +109,7 @@ func loadProject(ctx context.Context, t *testing.T, compose string, projectName 
 
 	c := projectClient(ctx, t, projectName,
 		client.EnsureProjectWithCreate(),
-		client.EnsureProjectWithConfig(p.ProjectConfig()),
+		client.EnsureProjectWithConfig(p.ClientConfig.XIncus),
 	)
 
 	return c, p
