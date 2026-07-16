@@ -53,13 +53,13 @@ func newBuildCommand() *cli.Command {
 			c, err := globalClient.EnsureProject(
 				p.Name,
 				client.EnsureProjectWithCreate(),
-				client.EnsureProjectWithConfig(p.ProjectConfig()),
+				client.EnsureProjectWithConfig(p.ClientConfig.XIncus),
 			)
 			if err != nil {
 				globalClient.LogError("Getting the incus project", "error", err)
 				return errLogged.Wrap(err)
 			}
-			defer func() { c.WarnError(c.Done, "Failure during Client.Done()") }()
+			defer c.WarnError(c.Done, "Failure during Client.Done()")
 
 			if err := c.Open(); err != nil {
 				globalClient.LogError("Opening the project client", "error", err)

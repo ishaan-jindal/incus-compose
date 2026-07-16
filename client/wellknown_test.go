@@ -1,7 +1,6 @@
 package client
 
 import (
-	"context"
 	"testing"
 
 	"github.com/lxc/incus/v7/shared/cliconfig"
@@ -9,7 +8,7 @@ import (
 )
 
 func TestAddWellKnownRegistriesHook(t *testing.T) {
-	gc := New(context.Background())
+	gc := New(t.Context())
 
 	delete(gc.CliConfig().Remotes, "ghcr.io")
 
@@ -20,7 +19,7 @@ func TestAddWellKnownRegistriesHook(t *testing.T) {
 		image:        "lxc/incus-compose/ic-healthd:latest",
 	}
 
-	err := gc.hookBefore(context.Background(), ActionEnsure, img, Options{}, nil)
+	err := gc.hookBefore(t.Context(), ActionEnsure, img, Options{}, nil)
 	require.NoError(t, err)
 
 	remote, ok := gc.CliConfig().Remotes["ghcr.io"]
@@ -32,7 +31,7 @@ func TestAddWellKnownRegistriesHook(t *testing.T) {
 }
 
 func TestWellKnownHookSkipsUnknownRegistries(t *testing.T) {
-	gc := New(context.Background())
+	gc := New(t.Context())
 
 	img := &Image{
 		BaseResource: NewBaseResource(KindImage, "unknown.registry.example.com/image:tag", PriorityImage),
@@ -41,7 +40,7 @@ func TestWellKnownHookSkipsUnknownRegistries(t *testing.T) {
 		image:        "image:tag",
 	}
 
-	err := gc.hookBefore(context.Background(), ActionEnsure, img, Options{}, nil)
+	err := gc.hookBefore(t.Context(), ActionEnsure, img, Options{}, nil)
 	require.NoError(t, err)
 
 	_, ok := gc.CliConfig().Remotes["unknown.registry.example.com"]
@@ -49,7 +48,7 @@ func TestWellKnownHookSkipsUnknownRegistries(t *testing.T) {
 }
 
 func TestWellKnownHookSkipsExistingRemotes(t *testing.T) {
-	gc := New(context.Background())
+	gc := New(t.Context())
 
 	gc.CliConfig().Remotes["ghcr.io"] = cliconfig.Remote{
 		Addrs:    []string{"https://custom.example.com"},
@@ -64,7 +63,7 @@ func TestWellKnownHookSkipsExistingRemotes(t *testing.T) {
 		image:        "something:latest",
 	}
 
-	err := gc.hookBefore(context.Background(), ActionEnsure, img, Options{}, nil)
+	err := gc.hookBefore(t.Context(), ActionEnsure, img, Options{}, nil)
 	require.NoError(t, err)
 
 	require.Equal(t, "https://custom.example.com", gc.CliConfig().Remotes["ghcr.io"].Addrs[0],

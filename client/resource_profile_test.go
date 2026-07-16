@@ -13,7 +13,7 @@ import (
 
 func TestProfileResource_ReturnsSameInstance(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "profile-test")
+	c := NewOfflineClient(t.Context(), "profile-test")
 
 	r1, err := c.Resource(KindProfile, "test-same", &ProfileConfig{})
 	require.NoError(t, err)
@@ -26,7 +26,7 @@ func TestProfileResource_ReturnsSameInstance(t *testing.T) {
 
 func TestProfileResource_DifferentNamesAreDifferent(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "profile-test")
+	c := NewOfflineClient(t.Context(), "profile-test")
 
 	r1, err := c.Resource(KindProfile, "profile-a", &ProfileConfig{})
 	require.NoError(t, err)
@@ -39,7 +39,7 @@ func TestProfileResource_DifferentNamesAreDifferent(t *testing.T) {
 
 func TestProfileIncusName_Sanitized(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "profile-test")
+	c := NewOfflineClient(t.Context(), "profile-test")
 
 	r, err := c.Resource(KindProfile, "Test_Profile", &ProfileConfig{})
 	require.NoError(t, err)
@@ -57,7 +57,7 @@ func TestProfileIncusName_Sanitized(t *testing.T) {
 func TestProfileEnsure(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name     string
@@ -130,7 +130,7 @@ func TestProfileEnsure(t *testing.T) {
 func TestProfileEnsure_Idempotent(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "profile-idempotent-")
 
 	r, err := c.Resource(KindProfile, "test-idempotent", &ProfileConfig{})
@@ -146,7 +146,7 @@ func TestProfileEnsure_Idempotent(t *testing.T) {
 func TestProfileEnsure_WithoutCreate_ThenWithCreate(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "profile-retry-")
 
 	r, err := c.Resource(KindProfile, "test-retry", &ProfileConfig{})
@@ -164,7 +164,7 @@ func TestProfileEnsure_WithoutCreate_ThenWithCreate(t *testing.T) {
 func TestProfileEnsure_ExistsOnNewClient(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "profile-persist-")
 
 	r, err := c.Resource(KindProfile, "test-persist", &ProfileConfig{})
@@ -188,7 +188,7 @@ func TestProfileEnsure_ExistsOnNewClient(t *testing.T) {
 func TestProfileDelete(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name   string
@@ -229,7 +229,7 @@ func TestProfileDelete(t *testing.T) {
 func TestProfileHooks(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name string

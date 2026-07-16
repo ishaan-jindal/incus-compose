@@ -24,7 +24,7 @@ func TestNewVersionCommand(t *testing.T) {
 
 	cmd := newRootCommand()
 
-	err := cmd.Run(context.Background(), []string{"ic-healthd", "version"})
+	err := cmd.Run(t.Context(), []string{"ic-healthd", "version"})
 	require.NoError(t, err)
 }
 
@@ -39,7 +39,7 @@ func TestE2ERunActionViaCLI(t *testing.T) {
 	skipLocal(t)
 	skipE2E(t)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	projectName := strings.ToLower(t.Name())
 	compose := "../../test/fixtures/with-restart/compose.yaml"
 
@@ -61,7 +61,7 @@ func TestE2ERunActionViaCLI(t *testing.T) {
 	t.Cleanup(func() {
 		_ = c.Done()
 
-		_, _, _ = runIncusCommand(ctx, t, projectName, "-f", compose, "down", "--project")
+		_, _, _ = runIncusCommand(context.Background(), t, projectName, "-f", compose, "down", "--project")
 		_ = revokeCert(c)
 		_ = os.RemoveAll(secretsDir)
 		_ = os.RemoveAll(dataDir)

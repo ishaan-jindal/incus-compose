@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"strings"
 	"testing"
 
@@ -194,7 +193,7 @@ func TestStopFlushesPartialLogLine(t *testing.T) {
 	_, err := w.Write([]byte("trailing"))
 	require.NoError(t, err)
 
-	c := client.NewOfflineClient(context.Background(), "progress")
+	c := client.NewOfflineClient(t.Context(), "progress")
 	renderer.Stop(c)
 	assert.Contains(t, buf.String(), "trailing\n")
 }

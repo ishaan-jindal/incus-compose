@@ -46,12 +46,12 @@ func TestBuildCommandWithBuildFixture(t *testing.T) {
 	skipIfNoBuilder(t)
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	fixture := "../../test/fixtures/with-build/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", fixture, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", fixture, "down", "--project")
 	})
 
 	_, err := runCommand(ctx, t, pn, "-f", fixture, "build")
@@ -74,12 +74,12 @@ func TestBuildCommandWithServiceFilter(t *testing.T) {
 	skipIfNoBuilder(t)
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	fixture := "../../test/fixtures/with-build/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", fixture, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", fixture, "down", "--project")
 	})
 
 	_, err := runCommand(ctx, t, pn, "-f", fixture, "build", "app")
@@ -99,12 +99,12 @@ func TestBuildCommandWithNoBuildServices(t *testing.T) {
 	skipLocal(t)
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	fixture := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", fixture, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", fixture, "down", "--project")
 	})
 
 	_, err := runCommand(ctx, t, pn, "-f", fixture, "build")
@@ -115,12 +115,12 @@ func TestBuildCommandWithNoMatchingBuildServices(t *testing.T) {
 	skipLocal(t)
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	fixture := "../../test/fixtures/with-build/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", fixture, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", fixture, "down", "--project")
 	})
 
 	_, err := runCommand(ctx, t, pn, "-f", fixture, "build", "missing")
@@ -131,7 +131,7 @@ func TestBuildCommandWithNonBuildServiceFilter(t *testing.T) {
 	skipLocal(t)
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	dir := writeTempFiles(t, map[string]string{
 		"compose.yaml": `services:
@@ -144,7 +144,7 @@ func TestBuildCommandWithNonBuildServiceFilter(t *testing.T) {
 	})
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
 	})
 
 	_, err := runCommand(ctx, t, pn, "-f", filepath.Join(dir, "compose.yaml"), "build", "sidecar")
@@ -155,7 +155,7 @@ func TestBuildCommandRejectsMultiplePlatforms(t *testing.T) {
 	skipLocal(t)
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	dir := writeTempFiles(t, map[string]string{
 		"compose.yaml": `services:
@@ -170,7 +170,7 @@ func TestBuildCommandRejectsMultiplePlatforms(t *testing.T) {
 	})
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
 	})
 
 	_, err := runCommand(ctx, t, pn, "-f", filepath.Join(dir, "compose.yaml"), "build")
@@ -182,7 +182,7 @@ func TestBuildCommandRejectsUnsupportedPlatform(t *testing.T) {
 	skipLocal(t)
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	dir := writeTempFiles(t, map[string]string{
 		"compose.yaml": `services:
@@ -196,7 +196,7 @@ func TestBuildCommandRejectsUnsupportedPlatform(t *testing.T) {
 	})
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
 	})
 
 	_, err := runCommand(ctx, t, pn, "-f", filepath.Join(dir, "compose.yaml"), "build")
@@ -207,7 +207,7 @@ func TestBuildCommandRejectsUnsupportedPlatform(t *testing.T) {
 func TestBuildCommandReportsMissingBuilder(t *testing.T) {
 	skipLocal(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	dir := writeTempFiles(t, map[string]string{
 		"compose.yaml": `services:
@@ -218,7 +218,7 @@ func TestBuildCommandReportsMissingBuilder(t *testing.T) {
 	})
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
 	})
 
 	_, err := runCommand(

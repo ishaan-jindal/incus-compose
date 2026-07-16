@@ -1,8 +1,10 @@
 services:
   wiki:
-    image: ghcr.io/perber/leafwiki:v0.11.3
+    image: ghcr.io/perber/leafwiki:v0.11.4
     container_name: wiki
     user: "1000:1000"
+    ports:
+      - "8080:8080"
     environment:
       TZ: "${TIMEZONE}"
       LEAFWIKI_JWT_SECRET: "${JWT_SECRET}"
@@ -18,10 +20,18 @@ services:
       LEAFWIKI_GIT_BACKUP_INTERVAL: "${GIT_BACKUP_INTERVAL}"
       LEAFWIKI_INJECT_CODE_IN_HEADER: "${INJECT_CODE_IN_HEADER}"
     volumes:
-      - ./ssh.key:/app/ssh.key:ro
-      - /etc/timezone:/etc/timezone:ro
       - data:/app/data
+    configs:
+      - source: ssh-key
+        target: /app/ssh.key
+        uid: "1000"
+        gid: "1000"
+        mode: 400
     restart: unless-stopped
 
 volumes:
   data:
+
+configs:
+  ssh-key:
+    file: ./ssh.key

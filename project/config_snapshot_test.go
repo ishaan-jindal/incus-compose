@@ -2,7 +2,6 @@ package project_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -67,7 +66,7 @@ func runConfigTest(t *testing.T, tc ConfigTestCase) {
 			loadOpts = append(loadOpts, project.LoadEnvFiles(absEnvFiles))
 		}
 
-		proj, err := project.New().Load(context.Background(), loadOpts...)
+		proj, err := project.New().Load(t.Context(), loadOpts...)
 		require.NoError(t, err)
 
 		// Filter services if specified.
@@ -187,6 +186,18 @@ func TestConfigSnapshots(t *testing.T) {
 		{
 			Name:    "with-network-ranges_yaml",
 			Fixture: "with-network-ranges/compose.yaml",
+		},
+		{
+			Name:    "with-ports_yaml",
+			Fixture: "with-ports/compose.yaml",
+		},
+		{
+			Name:    "with-profiles_yaml",
+			Fixture: "with-profiles/compose.yaml",
+		},
+		{
+			Name:    "with-project-options",
+			Fixture: "with-project-options/compose.yaml",
 		},
 		{
 			Name:    "with-build_yaml",

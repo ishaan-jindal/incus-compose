@@ -18,12 +18,12 @@ func TestExecSelectsCorrectInstance(t *testing.T) {
 	skipLocal(t)
 	skipE2E(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
@@ -57,12 +57,12 @@ func TestE2EExecRunsAsInstanceUser(t *testing.T) {
 	skipLocal(t)
 	skipE2E(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	compose := "../../test/fixtures/with-user/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project", "--volumes")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project", "--volumes")
 	})
 
 	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")

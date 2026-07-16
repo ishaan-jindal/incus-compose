@@ -17,10 +17,9 @@ services:
       database:
         condition: service_healthy
         restart: true # restart wiki after database - not supported
-    volumes:
-      - /etc/timezone:/etc/timezone:ro
     init: true # this is not yet implemented by incus-compose.
     environment:
+      TZ: ${TZ}
       DB_TYPE: postgres
       DB_HOST: database
       DB_PORT: 5432

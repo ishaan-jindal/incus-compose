@@ -71,12 +71,20 @@ func newDownCommand() *cli.Command {
 			}
 
 			// Get the per Project client early, gives early errors if the project does not exists
-			c, err := globalClient.EnsureProject(p.Name)
-			if err != nil {
-				globalClient.LogWarn("Getting the incus project", "project", p.Name, "error", err)
-				return nil
+			if cmd.Bool("external-healthd") {
+				p.ClientConfig.Healthd.External = true
 			}
-			defer func() { _ = c.Done() }()
+
+			c, err := globalClient.EnsureProject(
+				p.Name,
+				client.EnsureProjectWithCreate(),
+				client.EnsureProjectWithConfig(p.ClientConfig.XIncus),
+			)
+			if err != nil {
+				globalClient.LogError("Getting the incus project", "error", err)
+				return errLogged.Wrap(err)
+			}
+			defer c.WarnError(c.Done, "Failure during Client.Done()")
 
 			if err := c.Open(); err != nil {
 				globalClient.LogError("Opening the project client", "project", p.Name, "error", err)
@@ -162,7 +170,7 @@ func newDownCommand() *cli.Command {
 				client.OptionTimeout(cmd.Duration("timeout")),
 			}
 
-			if cmd.Bool("external-healthd") {
+			if p.ClientConfig.Healthd.External {
 				runOpts = append(runOpts, client.OptionExternalHealthd())
 			}
 

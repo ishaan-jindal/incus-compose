@@ -1,7 +1,6 @@
 package project_test
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 
@@ -22,7 +21,7 @@ func TestLoadBasicProject(t *testing.T) {
 	t.Parallel()
 
 	proj, err := project.New().Load(
-		context.Background(), project.LoadWorkingDir(fixturePath("simple-nginx")),
+		t.Context(), project.LoadWorkingDir(fixturePath("simple-nginx")),
 	)
 
 	require.NoError(t, err)
@@ -41,7 +40,7 @@ func TestLoadWordPressStack(t *testing.T) {
 	t.Parallel()
 
 	proj, err := project.New().Load(
-		context.Background(), project.LoadWorkingDir(fixturePath("wordpress")),
+		t.Context(), project.LoadWorkingDir(fixturePath("wordpress")),
 	)
 
 	require.NoError(t, err)
@@ -72,7 +71,7 @@ func TestLoadPostgresRedisWithEnv(t *testing.T) {
 	t.Parallel()
 
 	proj, err := project.New().Load(
-		context.Background(), project.LoadWorkingDir(fixturePath("postgres-redis")),
+		t.Context(), project.LoadWorkingDir(fixturePath("postgres-redis")),
 	)
 
 	require.NoError(t, err)
@@ -103,7 +102,7 @@ func TestLoadNginxProxyMultiNetwork(t *testing.T) {
 	t.Parallel()
 
 	proj, err := project.New().Load(
-		context.Background(), project.LoadWorkingDir(fixturePath("nginx-proxy")),
+		t.Context(), project.LoadWorkingDir(fixturePath("nginx-proxy")),
 	)
 
 	require.NoError(t, err)
@@ -120,7 +119,7 @@ func TestLoadMicroservices(t *testing.T) {
 	t.Parallel()
 
 	proj, err := project.New().Load(
-		context.Background(), project.LoadWorkingDir(fixturePath("microservices")),
+		t.Context(), project.LoadWorkingDir(fixturePath("microservices")),
 	)
 
 	require.NoError(t, err)
@@ -149,7 +148,7 @@ func TestLoadWithCustomProjectName(t *testing.T) {
 	t.Parallel()
 
 	proj, err := project.New().Load(
-		context.Background(), project.LoadWorkingDir(fixturePath("simple-nginx")),
+		t.Context(), project.LoadWorkingDir(fixturePath("simple-nginx")),
 		project.LoadName("my-custom-project"),
 	)
 
@@ -164,7 +163,7 @@ func TestLoadWithCustomFiles(t *testing.T) {
 	composePath := filepath.Join(fixturePath("wordpress"), "compose.yaml")
 
 	proj, err := project.New().Load(
-		context.Background(), project.LoadFiles([]string{composePath}),
+		t.Context(), project.LoadFiles([]string{composePath}),
 	)
 
 	require.NoError(t, err)
@@ -177,7 +176,7 @@ func TestLoadWithDefaultEnvFile(t *testing.T) {
 	t.Parallel()
 
 	proj, err := project.New().Load(
-		context.Background(), project.LoadWorkingDir(fixturePath("with-env")),
+		t.Context(), project.LoadWorkingDir(fixturePath("with-env")),
 	)
 
 	require.NoError(t, err)
@@ -201,7 +200,7 @@ func TestLoadWithCustomEnvFile(t *testing.T) {
 	prodEnvPath := filepath.Join(fixturePath("with-env"), "production.env")
 
 	proj, err := project.New().Load(
-		context.Background(), project.LoadWorkingDir(fixturePath("with-env")),
+		t.Context(), project.LoadWorkingDir(fixturePath("with-env")),
 		project.LoadEnvFiles([]string{prodEnvPath}),
 	)
 
@@ -228,7 +227,7 @@ func TestLoadWithMultipleEnvFiles(t *testing.T) {
 	stagingEnv := filepath.Join(basePath, "staging.env")
 
 	proj, err := project.New().Load(
-		context.Background(),
+		t.Context(),
 		project.LoadWorkingDir(basePath),
 		project.LoadEnvFiles([]string{prodEnv, stagingEnv}),
 	)
@@ -242,7 +241,7 @@ func TestLoadWithoutProfiles(t *testing.T) {
 	t.Parallel()
 
 	proj, err := project.New().Load(
-		context.Background(),
+		t.Context(),
 		project.LoadWorkingDir(fixturePath("with-profiles")),
 	)
 
@@ -260,7 +259,7 @@ func TestLoadWithSingleProfile(t *testing.T) {
 	t.Parallel()
 
 	proj, err := project.New().Load(
-		context.Background(),
+		t.Context(),
 		project.LoadWorkingDir(fixturePath("with-profiles")),
 		project.LoadProfiles([]string{"dev"}),
 	)
@@ -286,7 +285,7 @@ func TestLoadWithMultipleProfiles(t *testing.T) {
 	t.Parallel()
 
 	proj, err := project.New().Load(
-		context.Background(),
+		t.Context(),
 		project.LoadWorkingDir(fixturePath("with-profiles")),
 		project.LoadProfiles([]string{"dev", "monitoring"}),
 	)
@@ -319,7 +318,7 @@ func TestLoadDevEnvironment(t *testing.T) {
 	t.Parallel()
 
 	proj, err := project.New().Load(
-		context.Background(),
+		t.Context(),
 		project.LoadWorkingDir(fixturePath("dev-environment")),
 	)
 
@@ -335,7 +334,7 @@ func TestLoadDevEnvironmentWithDebugProfile(t *testing.T) {
 	t.Parallel()
 
 	proj, err := project.New().Load(
-		context.Background(),
+		t.Context(),
 		project.LoadWorkingDir(fixturePath("dev-environment")),
 		project.LoadProfiles([]string{"debug"}),
 	)
@@ -368,7 +367,7 @@ func TestLoadMultipleComposeFiles(t *testing.T) {
 	overrideFile := filepath.Join(basePath, "compose.override.yaml")
 
 	proj, err := project.New().Load(
-		context.Background(),
+		t.Context(),
 		project.LoadFiles([]string{baseFile, overrideFile}),
 	)
 
@@ -396,7 +395,7 @@ func TestLoadMultipleComposeFilesCustomOrder(t *testing.T) {
 	testFile := filepath.Join(basePath, "compose.test.yaml")
 
 	proj, err := project.New().Load(
-		context.Background(),
+		t.Context(),
 		project.LoadFiles([]string{baseFile, testFile}),
 	)
 
@@ -413,7 +412,7 @@ func TestLoadWithResourceLimits(t *testing.T) {
 	t.Parallel()
 
 	proj, err := project.New().Load(
-		context.Background(), project.LoadWorkingDir(fixturePath("with-resources")),
+		t.Context(), project.LoadWorkingDir(fixturePath("with-resources")),
 	)
 	require.NoError(t, err)
 	require.NotNil(t, proj)
@@ -437,7 +436,7 @@ func TestLoadInvalidComposeFile(t *testing.T) {
 	t.Parallel()
 
 	_, err := project.New().Load(
-		context.Background(),
+		t.Context(),
 		project.LoadWorkingDir(fixturePath("invalid")),
 	)
 
@@ -450,7 +449,7 @@ func TestLoadMissingComposeFile(t *testing.T) {
 	t.Parallel()
 
 	_, err := project.New().Load(
-		context.Background(),
+		t.Context(),
 		project.LoadWorkingDir(fixturePath("nonexistent")),
 	)
 
@@ -466,7 +465,7 @@ func TestLoadWithAllOptions(t *testing.T) {
 	envPath := filepath.Join(basePath, ".env")
 
 	proj, err := project.New().Load(
-		context.Background(),
+		t.Context(),
 		project.LoadName("my-combined-project"),
 		project.LoadFiles([]string{composePath}),
 		project.LoadWorkingDir(basePath),
@@ -484,7 +483,7 @@ func TestLoadWithSecrets(t *testing.T) {
 	t.Parallel()
 
 	proj, err := project.New().Load(
-		context.Background(), project.LoadWorkingDir(fixturePath("with-secrets")),
+		t.Context(), project.LoadWorkingDir(fixturePath("with-secrets")),
 	)
 
 	require.NoError(t, err)
@@ -525,7 +524,7 @@ func TestLoadWithConfigs(t *testing.T) {
 	t.Parallel()
 
 	proj, err := project.New().Load(
-		context.Background(), project.LoadWorkingDir(fixturePath("with-configs")),
+		t.Context(), project.LoadWorkingDir(fixturePath("with-configs")),
 	)
 
 	require.NoError(t, err)
@@ -567,7 +566,7 @@ func TestLoadWithRestartPolicies(t *testing.T) {
 	t.Parallel()
 
 	proj, err := project.New().Load(
-		context.Background(), project.LoadWorkingDir(fixturePath("with-restart")),
+		t.Context(), project.LoadWorkingDir(fixturePath("with-restart")),
 	)
 
 	require.NoError(t, err)
@@ -597,7 +596,7 @@ func TestLoadWithXIncusOptions(t *testing.T) {
 	t.Parallel()
 
 	proj, err := project.New().Load(
-		context.Background(), project.LoadWorkingDir(fixturePath("with-incus-options")),
+		t.Context(), project.LoadWorkingDir(fixturePath("with-incus-options")),
 	)
 
 	require.NoError(t, err)
@@ -678,45 +677,41 @@ func TestServiceGraphSkipsMissingDependency(t *testing.T) {
 func TestProjectConfigExtractsXIncus(t *testing.T) {
 	t.Parallel()
 
-	proj, err := project.New().Load(context.Background(), project.LoadWorkingDir(fixturePath("with-project-options")))
+	proj, err := project.New().Load(t.Context(),
+		project.LoadWorkingDir(fixturePath("with-project-options")),
+	)
 	require.NoError(t, err)
+
+	config := proj.ClientConfig
 
 	assert.Equal(t, map[string]string{
 		"limits.cpu":              "5",
 		"limits.memory":           "2149MB",
 		"limits.virtual-machines": "0",
-	}, proj.ProjectConfig())
-}
+	}, config.XIncus)
 
-func TestProjectConfigReturnsNilWithoutExtensions(t *testing.T) {
-	t.Parallel()
-
-	assert.Nil(t, (*project.Project)(nil).ProjectConfig())
-	assert.Nil(t, (&project.Project{}).ProjectConfig())
-
-	proj, err := project.New().Load(context.Background(), project.LoadWorkingDir(fixturePath("simple-nginx")))
-	require.NoError(t, err)
-	assert.Nil(t, proj.ProjectConfig())
+	assert.True(t, config.Healthd.External)
 }
 
 func TestHealthdConfigExtractsXIncusCompose(t *testing.T) {
 	t.Parallel()
 
-	proj, err := project.New().Load(context.Background(), project.LoadWorkingDir(fixturePath("with-healthd-config")))
+	proj, err := project.New().Load(t.Context(), project.LoadWorkingDir(fixturePath("with-healthd-config")))
 	require.NoError(t, err)
 
-	incusURL, network := proj.HealthdConfig()
-	assert.Equal(t, "https://10.0.0.1:8443", incusURL)
-	assert.Equal(t, "healthd:default", network)
+	config := proj.ClientConfig.Healthd
+	assert.Equal(t, "https://10.0.0.1:8443", config.Incus)
+	assert.Equal(t, "healthd:default", config.Network)
 }
 
 func TestHealthdConfigEmptyWithoutExtension(t *testing.T) {
 	t.Parallel()
 
-	proj, err := project.New().Load(context.Background(), project.LoadWorkingDir(fixturePath("simple-nginx")))
+	proj, err := project.New().Load(t.Context(), project.LoadWorkingDir(fixturePath("simple-nginx")))
 	require.NoError(t, err)
 
-	incusURL, network := proj.HealthdConfig()
-	assert.Empty(t, incusURL)
-	assert.Empty(t, network)
+	config := proj.ClientConfig.Healthd
+	assert.Empty(t, config.Incus)
+	assert.Empty(t, config.Network)
+	assert.False(t, config.External)
 }

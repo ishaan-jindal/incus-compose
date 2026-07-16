@@ -73,7 +73,8 @@ func newHealthdUpCommand() *cli.Command {
 				return errLogged.Wrap(errors.New("no service"))
 			}
 
-			healthdIncus, healthdNetwork := p.HealthdConfig()
+			healthdIncus := p.ClientConfig.Healthd.Incus
+			healthdNetwork := p.ClientConfig.Healthd.Network
 			if cmd.String("incus") != "" {
 				healthdIncus = cmd.String("incus")
 			}
@@ -103,17 +104,14 @@ func newHealthdUpCommand() *cli.Command {
 
 			c, err := globalClient.EnsureProject(
 				p.Name,
-				client.EnsureProjectWithConfig(p.ProjectConfig()),
+				client.EnsureProjectWithCreate(),
+				client.EnsureProjectWithConfig(p.ClientConfig.XIncus),
 			)
 			if err != nil {
 				globalClient.LogError("Getting the incus project", "error", err)
 				return errLogged.Wrap(err)
 			}
-			if err := c.Open(); err != nil {
-				globalClient.LogError("Opening the project client", "error", err)
-				return errLogged.Wrap(err)
-			}
-			defer func() { _ = c.Done() }()
+			defer c.WarnError(c.Done, "Failure during Client.Done()")
 
 			stdout := cmd.Root().Writer
 

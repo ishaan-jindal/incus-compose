@@ -232,7 +232,7 @@ func TestConfigCommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			stdout, err := runCommand(context.Background(), t, "test-local-config", tt.args...)
+			stdout, err := runCommand(t.Context(), t, "test-local-config", tt.args...)
 
 			if tt.wantErr {
 				require.Error(t, err, "Stdout: %s", stdout.String())
@@ -287,7 +287,7 @@ func TestConfigFilterByService(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			stdout, err := runCommand(context.Background(), t, "test-local-config-filter", tt.args...)
+			stdout, err := runCommand(t.Context(), t, "test-local-config-filter", tt.args...)
 			require.NoError(t, err)
 
 			if tt.fixture != "" {
@@ -303,12 +303,12 @@ func TestUpDownUpSimpleNginx(t *testing.T) {
 	skipLocal(t)
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -348,12 +348,12 @@ func TestNormalLifecycle(t *testing.T) {
 	skipLocal(t)
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	compose := "../../test/fixtures/two-services/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	tests := []e2eTest{
@@ -399,7 +399,7 @@ func TestUpDownscaleRemovesInstancesAndDNS(t *testing.T) {
 	skipLocal(t)
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	compose := "../../test/fixtures/nginx-downscale/compose.yaml"
 
@@ -407,7 +407,7 @@ func TestUpDownscaleRemovesInstancesAndDNS(t *testing.T) {
 	require.NotEmpty(t, networks)
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
@@ -448,12 +448,12 @@ func TestUpReconcilesToReplicas(t *testing.T) {
 	skipLocal(t)
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pn := t.Name()
 	compose := "../../test/fixtures/nginx-downscale/compose.yaml"
 
 	t.Cleanup(func() {
-		_, _ = runCommand(ctx, t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	// Baseline: deploy.replicas=3.

@@ -77,7 +77,7 @@ func TestImageParsing(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			c := NewOfflineClient(context.Background(), "test")
+			c := NewOfflineClient(t.Context(), "test")
 			img, err := newImage(c, tt.imageName, &ImageConfig{})
 			if tt.wantErr {
 				require.Error(t, err)
@@ -93,7 +93,7 @@ func TestImageParsing(t *testing.T) {
 
 func TestImageResource_SameIncusNameReturnsSameObject(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "test")
+	c := NewOfflineClient(t.Context(), "test")
 
 	r1, err := c.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
 	require.NoError(t, err)
@@ -106,7 +106,7 @@ func TestImageResource_SameIncusNameReturnsSameObject(t *testing.T) {
 
 func TestImageResource_NormalizedFormReturnsSameObject(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "test")
+	c := NewOfflineClient(t.Context(), "test")
 
 	r1, err := c.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
 	require.NoError(t, err)
@@ -119,7 +119,7 @@ func TestImageResource_NormalizedFormReturnsSameObject(t *testing.T) {
 
 func TestImageResource_ReturnsSameInstance(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "test")
+	c := NewOfflineClient(t.Context(), "test")
 
 	r1, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
 	require.NoError(t, err)
@@ -132,7 +132,7 @@ func TestImageResource_ReturnsSameInstance(t *testing.T) {
 
 func TestImageResource_DifferentNamesAreDifferent(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "test")
+	c := NewOfflineClient(t.Context(), "test")
 
 	r1, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
 	require.NoError(t, err)
@@ -145,7 +145,7 @@ func TestImageResource_DifferentNamesAreDifferent(t *testing.T) {
 
 func TestImageIncusName_MatchesInput(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "test")
+	c := NewOfflineClient(t.Context(), "test")
 
 	r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
 	require.NoError(t, err)
@@ -158,7 +158,7 @@ func TestImageIncusName_MatchesInput(t *testing.T) {
 
 func TestImageConfig_RemoteAndImageParsed(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "test")
+	c := NewOfflineClient(t.Context(), "test")
 
 	r, err := c.Resource(KindImage, "docker.io/library/alpine:3.18", &ImageConfig{})
 	require.NoError(t, err)
@@ -176,7 +176,7 @@ func TestImageConfig_RemoteAndImageParsed(t *testing.T) {
 func TestImageEnsure(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name    string
@@ -235,7 +235,7 @@ func TestImageEnsure(t *testing.T) {
 func TestImageEnsure_Idempotent(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "image-idempotent-")
 
 	r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
@@ -251,7 +251,7 @@ func TestImageEnsure_Idempotent(t *testing.T) {
 func TestImageEnsure_WithoutCreate_ThenWithCreate(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "image-retry-")
 
 	r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
@@ -269,7 +269,7 @@ func TestImageEnsure_WithoutCreate_ThenWithCreate(t *testing.T) {
 func TestImageEnsure_ExistingImage_NewResource(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "image-existing-")
 
 	r1, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
@@ -291,7 +291,7 @@ func TestImageEnsure_ExistingImage_NewResource(t *testing.T) {
 func TestImageEnsure_ExistsOnNewClient(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "image-persist-")
 
 	r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
@@ -315,7 +315,7 @@ func TestImageEnsure_ExistsOnNewClient(t *testing.T) {
 func TestImageDelete(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name   string
@@ -356,7 +356,7 @@ func TestImageDelete(t *testing.T) {
 func TestImageDelete_NotEnsured_NoError(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "image-delne-")
 
 	r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
@@ -372,7 +372,7 @@ func TestImageDelete_NotEnsured_NoError(t *testing.T) {
 func TestImageProperties(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "image-props-")
 
 	r, err := c.Resource(KindImage, "ghcr.io/lxc/incus-compose/ic-healthd:latest", &ImageConfig{})
@@ -391,7 +391,7 @@ func TestImageProperties(t *testing.T) {
 func TestImageFromCache(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "image-from-cache-")
 
 	r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
@@ -414,7 +414,7 @@ func TestImageFromCache(t *testing.T) {
 func TestImageNoCache(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "image-no-cache-")
 	c.imageCache = nil
 
@@ -454,7 +454,7 @@ func TestImagePullDeletes(t *testing.T) {
 func TestImageHooks(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name string

@@ -13,7 +13,7 @@ import (
 
 func TestStorageVolumeResource_ReturnsSameInstance(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "volume-test")
+	c := NewOfflineClient(t.Context(), "volume-test")
 
 	r1, err := c.Resource(KindStorageVolume, "test-same", &StorageVolumeConfig{})
 	require.NoError(t, err)
@@ -26,7 +26,7 @@ func TestStorageVolumeResource_ReturnsSameInstance(t *testing.T) {
 
 func TestStorageVolumeResource_DifferentNamesAreDifferent(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "volume-test")
+	c := NewOfflineClient(t.Context(), "volume-test")
 
 	r1, err := c.Resource(KindStorageVolume, "volume-a", &StorageVolumeConfig{})
 	require.NoError(t, err)
@@ -39,7 +39,7 @@ func TestStorageVolumeResource_DifferentNamesAreDifferent(t *testing.T) {
 
 func TestStorageVolumeIncusName_PrefixedWithProject(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "volume-test")
+	c := NewOfflineClient(t.Context(), "volume-test")
 
 	r, err := c.Resource(KindStorageVolume, "mydata", &StorageVolumeConfig{})
 	require.NoError(t, err)
@@ -52,7 +52,7 @@ func TestStorageVolumeIncusName_PrefixedWithProject(t *testing.T) {
 
 func TestStorageVolumeConfig_DefaultPool(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "volume-test")
+	c := NewOfflineClient(t.Context(), "volume-test")
 
 	r, err := c.Resource(KindStorageVolume, "default-pool", &StorageVolumeConfig{})
 	require.NoError(t, err)
@@ -64,7 +64,7 @@ func TestStorageVolumeConfig_DefaultPool(t *testing.T) {
 
 func TestStorageVolumeConfig_CustomPool(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "volume-test")
+	c := NewOfflineClient(t.Context(), "volume-test")
 
 	r, err := c.Resource(KindStorageVolume, "custom-pool", &StorageVolumeConfig{Pool: "mypool"})
 	require.NoError(t, err)
@@ -81,7 +81,7 @@ func TestStorageVolumeConfig_CustomPool(t *testing.T) {
 func TestStorageVolumeEnsure(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name     string
@@ -162,7 +162,7 @@ func TestStorageVolumeEnsure(t *testing.T) {
 func TestStorageVolumeEnsure_Idempotent(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "volume-idempotent-")
 
 	r, err := c.Resource(KindStorageVolume, "test-idempotent", &StorageVolumeConfig{})
@@ -178,7 +178,7 @@ func TestStorageVolumeEnsure_Idempotent(t *testing.T) {
 func TestStorageVolumeEnsure_WithoutCreate_ThenWithCreate(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "volume-retry-")
 
 	r, err := c.Resource(KindStorageVolume, "test-retry", &StorageVolumeConfig{})
@@ -196,7 +196,7 @@ func TestStorageVolumeEnsure_WithoutCreate_ThenWithCreate(t *testing.T) {
 func TestStorageVolumeEnsure_ShiftedVolume_Start(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "volume-shifted-")
 
 	r, err := c.Resource(KindStorageVolume, "test-shifted", &StorageVolumeConfig{
@@ -213,7 +213,7 @@ func TestStorageVolumeEnsure_ShiftedVolume_Start(t *testing.T) {
 func TestStorageVolumeEnsure_HealthdShiftedVolume(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "volume-healthd-")
 
 	ir, err := c.Resource(KindImage, "ghcr.io/lxc/incus-compose/ic-healthd:latest", &ImageConfig{})
@@ -239,7 +239,7 @@ func TestStorageVolumeEnsure_HealthdShiftedVolume(t *testing.T) {
 func TestStorageVolumeEnsure_ExistsOnNewClient(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "volume-persist-")
 
 	r, err := c.Resource(KindStorageVolume, "test-persist", &StorageVolumeConfig{})
@@ -263,7 +263,7 @@ func TestStorageVolumeEnsure_ExistsOnNewClient(t *testing.T) {
 func TestStorageVolumeDelete(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name   string
@@ -304,7 +304,7 @@ func TestStorageVolumeDelete(t *testing.T) {
 func TestStorageVolumeHooks(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name string

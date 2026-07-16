@@ -178,7 +178,7 @@ func TestDNSmasqRecords(t *testing.T) {
 
 func TestCandidateNames_WithOverride(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "myproject")
+	c := NewOfflineClient(t.Context(), "myproject")
 	r, err := c.Resource(KindNetwork, "shared", &NetworkConfig{
 		External:     true,
 		OverrideName: "my-production-net",
@@ -197,7 +197,7 @@ func TestCandidateNames_WithOverride(t *testing.T) {
 
 func TestCandidateNames_WithoutOverride(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "myproject")
+	c := NewOfflineClient(t.Context(), "myproject")
 	r, err := c.Resource(KindNetwork, "shared", &NetworkConfig{External: true})
 	require.NoError(t, err)
 	net, ok := r.(*Network)
@@ -211,7 +211,7 @@ func TestCandidateNames_WithoutOverride(t *testing.T) {
 
 func TestCandidateNames_DeduplicatesShortName(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "")
+	c := NewOfflineClient(t.Context(), "")
 	r, err := c.Resource(KindNetwork, "mynet", &NetworkConfig{External: true})
 	require.NoError(t, err)
 	net, ok := r.(*Network)
@@ -228,7 +228,7 @@ func TestCandidateNames_DeduplicatesShortName(t *testing.T) {
 
 func TestNetworkResource_ReturnsSameInstance(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "network-test")
+	c := NewOfflineClient(t.Context(), "network-test")
 
 	r1, err := c.Resource(KindNetwork, "test-same", &NetworkConfig{})
 	require.NoError(t, err)
@@ -241,7 +241,7 @@ func TestNetworkResource_ReturnsSameInstance(t *testing.T) {
 
 func TestNetworkResource_DifferentNamesAreDifferent(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "network-test")
+	c := NewOfflineClient(t.Context(), "network-test")
 
 	r1, err := c.Resource(KindNetwork, "network-a", &NetworkConfig{})
 	require.NoError(t, err)
@@ -254,7 +254,7 @@ func TestNetworkResource_DifferentNamesAreDifferent(t *testing.T) {
 
 func TestNetworkIncusName_ShortName(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "network-test")
+	c := NewOfflineClient(t.Context(), "network-test")
 
 	r, err := c.Resource(KindNetwork, "web", &NetworkConfig{})
 	require.NoError(t, err)
@@ -266,7 +266,7 @@ func TestNetworkIncusName_ShortName(t *testing.T) {
 
 func TestNetworkIncusName_LongNameHashed(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "network-test")
+	c := NewOfflineClient(t.Context(), "network-test")
 
 	r, err := c.Resource(KindNetwork, "very-long-network-name", &NetworkConfig{})
 	require.NoError(t, err)
@@ -279,7 +279,7 @@ func TestNetworkIncusName_LongNameHashed(t *testing.T) {
 
 func TestNetworkIncusName_Deterministic(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "network-test")
+	c := NewOfflineClient(t.Context(), "network-test")
 
 	r1, err := c.Resource(KindNetwork, "det-test", &NetworkConfig{})
 	require.NoError(t, err)
@@ -296,7 +296,7 @@ func TestNetworkIncusName_Deterministic(t *testing.T) {
 
 func TestNetworkExternal_InitialIncusNameIsRaw(t *testing.T) {
 	t.Parallel()
-	c := NewOfflineClient(context.Background(), "network-test")
+	c := NewOfflineClient(t.Context(), "network-test")
 
 	r, err := c.Resource(KindNetwork, "incusbr0", &NetworkConfig{External: true})
 	require.NoError(t, err)
@@ -313,7 +313,7 @@ func TestNetworkExternal_InitialIncusNameIsRaw(t *testing.T) {
 func TestNetworkEnsure(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name     string
@@ -392,7 +392,7 @@ func TestNetworkEnsure(t *testing.T) {
 func TestNetworkEnsure_Idempotent(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "network-idempotent-")
 
 	r, err := c.Resource(KindNetwork, "test-idempotent", &NetworkConfig{})
@@ -408,7 +408,7 @@ func TestNetworkEnsure_Idempotent(t *testing.T) {
 func TestNetworkEnsure_WithoutCreate_ThenWithCreate(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "network-retry-")
 
 	r, err := c.Resource(KindNetwork, "test-retry", &NetworkConfig{})
@@ -426,7 +426,7 @@ func TestNetworkEnsure_WithoutCreate_ThenWithCreate(t *testing.T) {
 func TestNetworkEnsure_ExistsOnNewClient(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "network-persist-")
 
 	r, err := c.Resource(KindNetwork, "test-persist", &NetworkConfig{})
@@ -446,7 +446,7 @@ func TestNetworkEnsure_ExistsOnNewClient(t *testing.T) {
 func TestNetworkProjectDeletesNetwork(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "network-projdel-")
 
 	r, err := c.Resource(KindNetwork, "test-project-net", &NetworkConfig{})
@@ -474,7 +474,7 @@ func TestNetworkProjectDeletesNetwork(t *testing.T) {
 func TestNetworkDelete(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name    string
@@ -522,7 +522,7 @@ func TestNetworkDelete(t *testing.T) {
 func TestNetworkHooks(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name string
@@ -647,7 +647,7 @@ func TestNetworkHooks(t *testing.T) {
 func TestNetworkExternal_EnsureFailsIfNotExists(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "network-ext-")
 
 	r, err := c.Resource(KindNetwork, "non-existent-external", &NetworkConfig{External: true})
@@ -662,7 +662,7 @@ func TestNetworkExternal_EnsureFailsIfNotExists(t *testing.T) {
 func TestNetworkExternal_DeleteIsNoOp(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "network-extdel-")
 
 	r, err := c.Resource(KindNetwork, "test-ext-del", &NetworkConfig{})

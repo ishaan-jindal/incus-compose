@@ -1,0 +1,19 @@
+name: with-profiles
+services:
+  web:
+    environment:
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
+    image: docker.io/library/nginx:alpine
+    networks:
+      default: null
+    volumes:
+      - type: bind
+        source: $FIXTURE_PATH/html
+        target: /usr/share/nginx/html
+        read_only: true
+        bind: {}
+    x-incus:
+      limits.cpu: 1
+networks:
+  default:
+    name: with-profiles_default

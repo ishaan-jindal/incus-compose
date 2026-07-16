@@ -18,6 +18,13 @@ for correct semver ordering. Headings below preserve each release's announced fo
   detection; on older servers it falls back to a userspace proxy
   targeting the container loopback (`nat=false`, connect `127.0.0.1`).
   (by @ishaan-jindal)
+- `ic-healthd` is now event-driven instead of poll/SIGHUP-based: it discovers
+  instances once, then reacts to the Incus lifecycle event stream (start,
+  stop, shutdown, delete) to keep its tracked set in sync, spawning or
+  killing checkers for exactly the delta. A checker only probes and reports
+  its own status; the runner alone decides whether to restart an instance.
+  `incus-compose healthd restart` no longer needs to register a client-side
+  reloader hook, since healthd resyncs itself from events. (by @jochumdev)
 
 ### Removed
 
@@ -39,16 +46,11 @@ for correct semver ordering. Headings below preserve each release's announced fo
 - Do not ignore healthd in `up --no-deps <service>` it allows script to wait
   on the service to be ready. Use `up --no-deps --no-healthd <service>` if you
   want the old behaviour. (by @jochumdev)
-
-### Changed
-
-- `ic-healthd` is now event-driven instead of poll/SIGHUP-based: it discovers
-  instances once, then reacts to the Incus lifecycle event stream (start,
-  stop, shutdown, delete) to keep its tracked set in sync, spawning or
-  killing checkers for exactly the delta. A checker only probes and reports
-  its own status; the runner alone decides whether to restart an instance.
-  `incus-compose healthd restart` no longer needs to register a client-side
-  reloader hook, since healthd resyncs itself from events. (by @jochumdev)
+- `x-incus-compose.healthd.external: true`: the compose-file equivalent of
+  `up --external-healthd` / `down --external-healthd`, so a project can pin
+  "bring your own healthd" permanently instead of passing the flag on every
+  invocation. Combines with the flag by OR: either is enough to turn it on.
+  (by @jochumdev)
 
 ### Fixed
 

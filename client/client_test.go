@@ -65,7 +65,7 @@ func createProjectClient(gc *GlobalClient, name string) (*Client, error) {
 
 func TestClientDescriptionFormat(t *testing.T) {
 	t.Parallel()
-	client := NewOfflineClient(context.Background(), "my_project")
+	client := NewOfflineClient(t.Context(), "my_project")
 
 	require.Equal(t, "incus-compose: %s", client.globalClient.config.DescriptionFormat)
 	require.Equal(t, "incus-compose: my_project:%s", client.Config().DescriptionFormat)
@@ -74,7 +74,7 @@ func TestClientDescriptionFormat(t *testing.T) {
 
 func TestClientCustomDescriptionFormat(t *testing.T) {
 	t.Parallel()
-	gc := New(context.Background(), ClientDescriptionFormat("managed-by-test: %s"))
+	gc := New(t.Context(), ClientDescriptionFormat("managed-by-test: %s"))
 
 	config := gc.config
 	config.DescriptionFormat = fmt.Sprintf(config.DescriptionFormat, "demo") + ":%s"
@@ -137,7 +137,7 @@ func TestSanitizeProjectName(t *testing.T) {
 func TestClientConnection_IsConnected(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	gc, err := NewTestClient(ctx)
 	require.NoError(t, err)
 	require.True(t, gc.IsConnected())
@@ -146,7 +146,7 @@ func TestClientConnection_IsConnected(t *testing.T) {
 func TestClientProject_GlobalClientKeepsDefaultProfile(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	gc, err := NewTestClient(ctx)
 	require.NoError(t, err)
 
@@ -172,7 +172,7 @@ func TestClientProject_GlobalClientKeepsDefaultProfile(t *testing.T) {
 func TestClientProject_ImageCacheIsInCacheProfile(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	gc, err := NewTestClient(ctx)
 	require.NoError(t, err)
 
@@ -188,7 +188,7 @@ func TestClientProject_ImageCacheIsInCacheProfile(t *testing.T) {
 func TestClientProject_EnsureWithCreate(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	gc, err := NewTestClient(ctx)
 	require.NoError(t, err)
 	name := "client-ensure-" + strings.ToLower(RandString(8))
@@ -202,7 +202,7 @@ func TestClientProject_EnsureWithCreate(t *testing.T) {
 func TestClientProject_EnsureWithoutCreate_Fails(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	gc, err := NewTestClient(ctx)
 	require.NoError(t, err)
 
@@ -214,7 +214,7 @@ func TestClientProject_EnsureWithoutCreate_Fails(t *testing.T) {
 func TestClientProject_NameIsPreserved(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	gc, err := NewTestClient(ctx)
 	require.NoError(t, err)
 	name := "client-name-" + strings.ToLower(RandString(8))
@@ -228,7 +228,7 @@ func TestClientProject_NameIsPreserved(t *testing.T) {
 func TestClientProject_NameIsSanitized(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	gc, err := NewTestClient(ctx)
 	require.NoError(t, err)
 
@@ -244,7 +244,7 @@ func TestClientProject_NameIsSanitized(t *testing.T) {
 func TestClientProject_EnsureIdempotent(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	gc, err := NewTestClient(ctx)
 	require.NoError(t, err)
 	name := "client-idem-" + strings.ToLower(RandString(8))
@@ -260,7 +260,7 @@ func TestClientProject_EnsureIdempotent(t *testing.T) {
 func TestClientProject_DeleteSucceeds(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	gc, err := NewTestClient(ctx)
 	require.NoError(t, err)
 	name := "client-del-" + strings.ToLower(RandString(8))
@@ -274,7 +274,7 @@ func TestClientProject_DeleteSucceeds(t *testing.T) {
 func TestClientProject_DeleteNonExistent_NoError(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	gc, err := NewTestClient(ctx)
 	require.NoError(t, err)
 

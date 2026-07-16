@@ -130,18 +130,20 @@ func newUpCommand() *cli.Command {
 				}
 			}
 
+			if cmd.Bool("external-healthd") {
+				p.ClientConfig.Healthd.External = true
+			}
+
 			c, err := globalClient.EnsureProject(
 				p.Name,
 				client.EnsureProjectWithCreate(),
-				client.EnsureProjectWithConfig(p.ProjectConfig()),
+				client.EnsureProjectWithConfig(p.ClientConfig.XIncus),
 			)
 			if err != nil {
 				globalClient.LogError("Getting the incus project", "error", err)
 				return errLogged.Wrap(err)
 			}
-			defer func() {
-				_ = c.Done()
-			}()
+			defer c.WarnError(c.Done, "Failure during Client.Done()")
 
 			err = c.Open()
 			if err != nil {
@@ -187,11 +189,11 @@ func newUpCommand() *cli.Command {
 			}
 
 			runOptions := []client.Option{client.OptionTimeout(cmd.Duration("timeout"))}
-			if !cmd.Bool("external-healthd") && !usesHealthd {
+			if !p.ClientConfig.Healthd.External && !usesHealthd {
 				runOptions = append(runOptions, client.OptionNoHealthd())
 			}
 
-			if cmd.Bool("external-healthd") {
+			if p.ClientConfig.Healthd.External {
 				runOptions = append(runOptions, client.OptionExternalHealthd())
 			}
 
@@ -299,7 +301,8 @@ func newUpCommand() *cli.Command {
 			stack.AddOrdered(order, myResources)
 
 			if usesHealthd && !cmd.Bool("external-healthd") {
-				healthdIncus, healthdNetwork := p.HealthdConfig()
+				healthdIncus := p.ClientConfig.Healthd.Incus
+				healthdNetwork := p.ClientConfig.Healthd.Network
 				if cmd.String("healthd-incus") != "" {
 					healthdIncus = cmd.String("healthd-incus")
 				}
