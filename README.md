@@ -4,12 +4,14 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/lxc/incus-compose.svg)](https://pkg.go.dev/github.com/lxc/incus-compose)
 [![Coverage 60%](https://img.shields.io/badge/coverage-60%25-orange)](https://github.com/lxc/incus-compose/actions/workflows/test-e2e.yml)
 
-Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` implements the Compose specification for the Incus ecosystem, allowing you to define and run multi-container applications using the same `docker-compose.yml` files you already know.
+Bring the familiar Docker Compose workflow to Incus. `incus-compose` implements the Compose specification for the Incus ecosystem, allowing you to define and run multi-container applications using the `compose.yaml` files you already know.
 
 ## Demos
 
-- [Beta 21 - many-dependencies 30 workers](https://asciinema.org/a/1260145)
-- [Beta 19 - Immich](https://asciinema.org/a/1259458)
+Recorded during the beta - the workflow is unchanged in current releases:
+
+- [30-service dependency graph, 30 parallel workers](https://asciinema.org/a/1260145)
+- [Immich - a full photo-management stack](https://asciinema.org/a/1259458)
 
 ## Why incus-compose?
 
@@ -21,25 +23,50 @@ Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` 
 - Manage complex multi-container applications with familiar commands
 - Benefit from Incus's resource efficiency and security model
 
+New to Incus? See [Why Incus?](https://docs.incus-compose.org/why-incus) for what the platform brings over
+a classic OCI engine setup.
+
 ## Features
 
 Status: **Stable**.
 
+**The workflow you know:**
+
 - Familiar commands: `up`, `down`, `start`, `stop`, `restart`, `list` (and `ps`), `logs`, `exec`, `config`, plus `build`, `healthd`, `incus` (pass-through), and `self-update`
+- Compose project parsing via compose-go: `.env` interpolation, profiles, `depends_on`, secrets, and configs
+- Automatic `compose.incus.yaml` override file - keep the upstream compose file untouched and put Incus tuning next to it [doc](https://docs.incus-compose.org/compose-compatibility#incus-override-file)
 - Windows and macOS clients: No Docker Desktop, no WSL, no local Linux VM. `incus-compose` and the `incus` client are portable Go binaries — from a Windows or macOS desktop you drive a remote Incus host over HTTPS and manage OCI containers, LXC system containers, and VMs directly. See [Installing on Windows](https://docs.incus-compose.org/getting-started/windows).
-- Compose project parsing via compose-go, with automatic `compose.incus.yaml` overrides and `x-incus` / `x-incus-compose` extensions for raw Incus options
+- Configuration via `INCUS_COMPOSE_*` environment variables for every flag, with a configurable parallel worker count [doc](https://docs.incus-compose.org/environment-variables)
+
+**Images:**
+
 - OCI image pulling from docker.io, ghcr.io, and other registries
 - Two-stage image cache in a dedicated Incus project (survives `down`/`up`, avoids registry rate limits)
 - Local image building via Podman/Docker [doc](https://docs.incus-compose.org/builds)
-- Bridge networks with automatic name sanitization
+
+**Networking:**
+
+- Bridge networks with automatic name sanitization; external pre-existing networks
 - Static IPv4/IPv6 addresses with automatic DHCP ranges [doc](https://docs.incus-compose.org/compose-compatibility#automatic-dhcp-ranges)
 - Port forwarding via proxy devices or kernel NAT mode [doc](https://docs.incus-compose.org/compose-compatibility#port-publishing)
+
+**Storage:**
+
 - Storage volumes with UID/GID shifting; bind mounts (pass-through by default, optional seeding) [doc](https://docs.incus-compose.org/compose-compatibility#volume-permissions)
+- Per-volume storage pool placement - pin a database volume to your fast SSD pool [doc](https://docs.incus-compose.org/compose-compatibility#x-incus-compose-volume-pool)
+
+**Operations:**
+
 - Health checks, restart policies, and `depends_on: service_healthy` ordering via the `ic-healthd` sidecar [doc](https://docs.incus-compose.org/healthd)
 - Service scaling with `up --scale` and orphan pruning
 - Incus project isolation
 - Resource limits and other advanced compose features (`shm_size`, `container_name`, etc.)
-- Configuration via `INCUS_COMPOSE_*` environment variables for every flag, with a configurable parallel worker count [doc](https://docs.incus-compose.org/environment-variables)
+
+**Beyond any OCI engine:**
+
+- Project-wide resource limits - cap CPU and memory for the entire stack, enforced by Incus [doc](https://docs.incus-compose.org/compose-compatibility#projects)
+- GPU, USB, and raw disk passthrough per service via `x-incus-compose.devices` [doc](https://docs.incus-compose.org/compose-compatibility#x-incus-compose-devices)
+- The full Incus API as an escape hatch: any instance, network, or volume option passes straight through via `x-incus` [doc](https://docs.incus-compose.org/compose-compatibility)
 
 ## Quick Start
 
@@ -48,19 +75,20 @@ See [Getting Started](https://docs.incus-compose.org/getting-started) for the fu
 
 Install the latest release:
 
-Arch users: an [incus-compose-bin](https://aur.archlinux.org/packages/incus-compose-bin) and [incus-compose-git](https://aur.archlinux.org/packages/incus-compose-git) (maintained by @neitsab and @jochumdev) are available.
-
 ```bash
 curl -sSfL https://raw.githubusercontent.com/lxc/incus-compose/main/install.sh | sh -s -- -b ~/.local/bin
 ```
 
 Or grab a prebuilt archive from the [Releases Page](https://github.com/lxc/incus-compose/releases).
+On Arch Linux, install [incus-compose-bin](https://aur.archlinux.org/packages/incus-compose-bin)
+(or [incus-compose-git](https://aur.archlinux.org/packages/incus-compose-git) for builds from `main`)
+from the AUR - maintained by @neitsab and @jochumdev.
 
 Then point it at your existing `compose.yaml`:
 
 ```bash
 # Start services
-incus-compose up
+incus-compose up -d
 
 # View logs
 incus-compose logs -f
@@ -79,10 +107,9 @@ All docs: [docs.incus-compose.org](https://docs.incus-compose.org)
 - **[Getting Started](https://docs.incus-compose.org/getting-started)** - Install and run your first compose project
 - **[CLI Reference](https://docs.incus-compose.org/cli-reference)** - Commands and options
 - **[Compose Compatibility](https://docs.incus-compose.org/compose-compatibility)** - What works and what doesn't
-- **[Architecture](https://docs.incus-compose.org/architecture)** - How it works under the hood
+- **[Architecture](https://docs.incus-compose.org/architecture)** - the resource-first design behind incus-compose
 - **[Why Incus?](https://docs.incus-compose.org/why-incus)** - Benefits over Docker
-- **[Contributing](CONTRIBUTING.md)** - Contributing to incus-compose
-- **[Changelog](CHANGELOG.md)** - Changelog since 0.0.1-beta1
+- **[Changelog](CHANGELOG.md)** - what changed since 0.0.1-beta1
 
 ### Examples
 
@@ -90,7 +117,7 @@ Descriptions are in our [docs](https://docs.incus-compose.org/examples) while th
 
 ## Support and community
 
-The following channels are available for you to interact with the Incus community.
+The following channels are available for questions and discussion around incus-compose.
 
 ### Bug reports
 
