@@ -84,6 +84,10 @@ func TestExample(t *testing.T) {
 			dir:  "./hugo/",
 		},
 		{
+			name: "leafwiki",
+			dir:  "./leafwiki/",
+		},
+		{
 			name: "immich",
 			dir:  "./immich/",
 		},

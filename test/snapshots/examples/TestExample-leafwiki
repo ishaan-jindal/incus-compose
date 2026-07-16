@@ -1,0 +1,46 @@
+[
+  {
+    "kind": "network",
+    "name": "default",
+    "description": "",
+    "incus_name": "ic-5xhk5y7yoz",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "storage-volume",
+    "name": "data",
+    "description": "",
+    "incus_name": "vol-data",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "instance",
+    "name": "",
+    "description": "incus-compose: testexample-leafwiki:testexample-leafwiki-ic-healthd",
+    "incus_name": "testexample-leafwiki-ic-healthd",
+    "image": "ghcr.io/lxc/incus-compose/ic-healthd:latest",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      "-stripped-"
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "wiki",
+    "description": "incus-compose: testexample-leafwiki:wiki",
+    "incus_name": "wiki",
+    "image": "ghcr.io/perber/leafwiki:v0.11.4",
+    "status": "Running",
+    "health": "Unknown",
+    "addresses": [
+      "-stripped-"
+    ]
+  }
+]
