@@ -187,12 +187,12 @@ func prepareHealthd(t *testing.T, c *client.Client) (func(), *Runner) {
 	t.Helper()
 
 	cmd := newRootCommand()
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-	cmd.Writer = stdout
-	cmd.ErrWriter = stderr
-	// cmd.Writer = os.Stdout
-	// cmd.ErrWriter = os.Stderr
+	// stdout := &bytes.Buffer{}
+	// stderr := &bytes.Buffer{}
+	// cmd.Writer = stdout
+	// cmd.ErrWriter = stderr
+	cmd.Writer = os.Stdout
+	cmd.ErrWriter = os.Stderr
 
 	incusURL, err := incusURL(c)
 	require.NoError(t, err)
@@ -237,7 +237,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func TestE2EHDNginx(t *testing.T) {
+func TestE2EHealthdNginx(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipE2E(t)

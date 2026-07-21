@@ -3,7 +3,7 @@
     "kind": "network",
     "name": "default",
     "description": "",
-    "incus_name": "ic-q7dekzhq5s",
+    "incus_name": "ic-mvox4m64tf",
     "image": "",
     "status": "Exists",
     "health": "",
@@ -12,7 +12,7 @@
   {
     "kind": "instance",
     "name": "backend1",
-    "description": "incus-compose: teste2ehdnginx:backend1-1",
+    "description": "incus-compose: teste2ehealthdnginx:backend1-1",
     "incus_name": "backend1-1",
     "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
     "status": "Running",
@@ -24,7 +24,7 @@
   {
     "kind": "instance",
     "name": "backend2",
-    "description": "incus-compose: teste2ehdnginx:backend2-1",
+    "description": "incus-compose: teste2ehealthdnginx:backend2-1",
     "incus_name": "backend2-1",
     "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
     "status": "Running",
@@ -36,7 +36,7 @@
   {
     "kind": "instance",
     "name": "nginx",
-    "description": "incus-compose: teste2ehdnginx:nginx-1",
+    "description": "incus-compose: teste2ehealthdnginx:nginx-1",
     "incus_name": "nginx-1",
     "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
     "status": "Running",

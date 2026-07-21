@@ -110,6 +110,18 @@ func (r *Runner) handleUpdated(ctx context.Context, name string) {
 		return
 	}
 
+	// When not running just update the tracked instance.
+	if !cfg.Running {
+		r.mu.Lock()
+		ti, ok := r.tracked[name]
+		if ok {
+			ti.serverParams = cfg
+		}
+		r.mu.Unlock()
+
+		return
+	}
+
 	r.mu.Lock()
 	ti, ok := r.tracked[name]
 	if !ok {
@@ -121,8 +133,9 @@ func (r *Runner) handleUpdated(ctx context.Context, name string) {
 	}
 
 	ti.serverParams = cfg
-	r.debounce(ctx, name, ti)
 	r.mu.Unlock()
+
+	r.debounce(ctx, name, ti)
 }
 
 // handleDeleted marks the instance for removal through the same debounced
@@ -130,14 +143,16 @@ func (r *Runner) handleUpdated(ctx context.Context, name string) {
 // config update, then kills and drops the tracked instance.
 func (r *Runner) handleDeleted(ctx context.Context, name string) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	ti, ok := r.tracked[name]
 	if !ok {
+		r.mu.Unlock()
 		return
 	}
 
 	ti.pendingDelete = true
+	r.mu.Unlock()
+
 	r.debounce(ctx, name, ti)
 }
 
@@ -161,54 +176,65 @@ func (r *Runner) handleStopped(ctx context.Context, name string) {
 // pending state when it fires, so a second event inside the window doesn't
 // need to reschedule it. Must be called with r.mu held.
 func (r *Runner) debounce(ctx context.Context, name string, ti *trackedInstance) {
+	r.mu.Lock()
+
 	now := time.Now()
 	if ti.debounce == nil && now.Sub(ti.lastNotify) > debounceWindow {
 		ti.lastNotify = now
-		r.settleLocked(ctx, name, ti)
-		return
-	}
 
-	if ti.debounce != nil {
+		if ti.pendingDelete {
+			ti.cancel()
+			delete(r.tracked, name)
+
+			r.mu.Unlock()
+			return
+		}
+
+		if ti.serverParams.equal(ti.knownParams) {
+			r.mu.Unlock()
+			return
+		}
+
+		ti.cancel()
+		cfg := ti.serverParams
+		r.mu.Unlock()
+
+		r.spawn(ctx, name, cfg, false, false)
 		return
 	}
 
 	ti.debounce = time.AfterFunc(debounceWindow, func() {
 		r.mu.Lock()
-		defer r.mu.Unlock()
 
 		cur, ok := r.tracked[name]
 		if !ok {
+			r.mu.Unlock()
 			return
 		}
 		cur.debounce = nil
 		cur.lastNotify = time.Now()
-		r.settleLocked(ctx, name, cur)
+
+		if cur.pendingDelete {
+			cur.cancel()
+			delete(r.tracked, name)
+
+			r.mu.Unlock()
+			return
+		}
+
+		if cur.serverParams.equal(cur.knownParams) {
+			r.mu.Unlock()
+			return
+		}
+
+		cur.cancel()
+		cfg := cur.serverParams
+		r.mu.Unlock()
+
+		r.spawn(ctx, name, cfg, false, false)
 	})
-}
 
-// settleLocked acts on the pending state for name: a pending delete wins
-// outright and drops the tracked instance immediately; otherwise a param
-// diff kills the running checker and spawns its replacement right away.
-// Canceling a context doesn't guarantee the old checker's goroutine has
-// already returned by the time the replacement starts probing - both hold
-// an independent incus connection, so a brief overlap is harmless, and the
-// old one exits on its own as soon as it next checks its (canceled) ctx.
-// Must be called with r.mu held; the respawn itself runs on its own
-// goroutine so it never re-enters this lock synchronously.
-func (r *Runner) settleLocked(ctx context.Context, name string, ti *trackedInstance) {
-	if ti.pendingDelete {
-		ti.cancel()
-		delete(r.tracked, name)
-		return
-	}
-
-	if ti.serverParams.equal(ti.knownParams) {
-		return
-	}
-
-	ti.cancel()
-	cfg := ti.serverParams
-	go r.spawn(ctx, name, cfg, false, false)
+	r.mu.Unlock()
 }
 
 // watch owns the receiving end of one checker generation's statusCh/exitCh,
