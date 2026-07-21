@@ -12,11 +12,6 @@ import (
 	"github.com/lxc/incus-compose/client"
 )
 
-// fixturePath returns the path to a test fixture.
-func fixturePath(name string) string {
-	return filepath.Join("..", "test", "fixtures", name)
-}
-
 func TestFormatMemoryLimit(t *testing.T) {
 	t.Parallel()
 
@@ -646,14 +641,29 @@ func TestInstanceNetworkDevices(t *testing.T) {
 
 func TestInstanceProxyDevices(t *testing.T) {
 	t.Parallel()
+	skipLocal(t)
+
+	gc, err := client.NewTestClient(t.Context())
+	require.NoError(t, err)
+	c, err := gc.EnsureProject("default")
+	require.NoError(t, err)
+
+	if !c.Global().HasExtension(incus72Extension) {
+		t.Skip("Nat tests require at least incus 7.2 or 7.0.1 LTS")
+	}
 
 	t.Run("published port with nat no static IP", func(t *testing.T) {
 		t.Parallel()
 		service := types.ServiceConfig{Name: "web", Ports: []types.ServicePortConfig{
-			{Published: "8080", Target: 80, Protocol: "tcp"},
+			{
+				Published:  "8080",
+				Target:     80,
+				Protocol:   "tcp",
+				Extensions: types.Extensions{"x-incus-compose": struct{ Nat bool }{Nat: true}},
+			},
 		}}
 
-		devices, err := instanceProxyDevices(true, "", service)
+		devices, err := instanceProxyDevices(c, []client.InstanceDevice{}, service)
 		require.NoError(t, err)
 		require.Len(t, devices, 1)
 		assert.Equal(t, "proxy-8080", devices[0].Name)
@@ -667,15 +677,34 @@ func TestInstanceProxyDevices(t *testing.T) {
 
 	t.Run("published port with nat and static IP", func(t *testing.T) {
 		t.Parallel()
+		if !c.Global().HasExtension(incus73Extension) {
+			t.Skip("nat tests with static ip require at least incus 7.3 or 7.0.2 LTS")
+		}
+
 		service := types.ServiceConfig{Name: "web", Ports: []types.ServicePortConfig{
-			{Published: "8080", Target: 80, Protocol: "tcp"},
+			{
+				Published:  "8080",
+				Target:     80,
+				Protocol:   "tcp",
+				Extensions: types.Extensions{"x-incus-compose": struct{ Nat bool }{Nat: true}},
+			},
 		}}
 
-		devices, err := instanceProxyDevices(true, "10.0.0.100", service)
+		devices := []client.InstanceDevice{
+			{
+				Name: "eth0",
+				Config: client.InstanceDeviceConfig{
+					DeviceType:  client.InstanceDeviceTypeNic,
+					Ipv4Address: "10.0.0.100/24",
+				},
+			},
+		}
+
+		devices, err := instanceProxyDevices(c, devices, service)
 		require.NoError(t, err)
-		require.Len(t, devices, 1)
-		assert.Equal(t, "proxy-8080", devices[0].Name)
-		proxy := devices[0].Config.Proxy
+		require.Len(t, devices, 2)
+		assert.Equal(t, "proxy-8080", devices[1].Name)
+		proxy := devices[1].Config.Proxy
 		assert.Equal(t, "0.0.0.0", proxy.ListenAddr)
 		assert.Equal(t, uint32(8080), proxy.ListenPort)
 		assert.Equal(t, "10.0.0.100", proxy.ConnectAddr)
@@ -689,7 +718,7 @@ func TestInstanceProxyDevices(t *testing.T) {
 			{Published: "8080", Target: 80, Protocol: "tcp"},
 		}}
 
-		devices, err := instanceProxyDevices(false, "", service)
+		devices, err := instanceProxyDevices(c, []client.InstanceDevice{}, service)
 		require.NoError(t, err)
 		require.Len(t, devices, 1)
 		assert.Equal(t, "proxy-8080", devices[0].Name)
@@ -706,14 +735,14 @@ func TestInstanceProxyDevices(t *testing.T) {
 		service := types.ServiceConfig{Name: "web", Ports: []types.ServicePortConfig{
 			{Published: "not-a-port", Target: 80},
 		}}
-		_, err := instanceProxyDevices(false, "", service)
+		_, err := instanceProxyDevices(c, []client.InstanceDevice{}, service)
 		require.Error(t, err)
 	})
 
 	t.Run("no ports", func(t *testing.T) {
 		t.Parallel()
 		service := types.ServiceConfig{Name: "web"}
-		devices, err := instanceProxyDevices(false, "", service)
+		devices, err := instanceProxyDevices(c, []client.InstanceDevice{}, service)
 		require.NoError(t, err)
 		assert.Empty(t, devices)
 	})

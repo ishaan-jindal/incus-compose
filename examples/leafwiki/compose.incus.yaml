@@ -1,0 +1,15 @@
+services:
+  wiki:
+    ports: !reset []
+    networks:
+      default:
+        x-incus:
+          ipv4.address: "${IPV4_ADDRESS}/${IPV4_NETMASK}"
+          ipv4.gateway: "${IPV4_GATEWAY}"
+
+networks:
+  default:
+    x-incus:
+      ipv4.address: "${IPV4_GATEWAY}/${IPV4_NETMASK}"
+    x-incus-compose:
+      network: ${NETWORK}

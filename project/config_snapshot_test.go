@@ -1,4 +1,4 @@
-package project_test
+package project
 
 import (
 	"bytes"
@@ -11,8 +11,6 @@ import (
 	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v4"
-
-	"github.com/lxc/incus-compose/project"
 )
 
 // ConfigTestCase represents a single config snapshot test case.
@@ -38,8 +36,8 @@ func runConfigTest(t *testing.T, tc ConfigTestCase) {
 
 		fixture := fixturePath(tc.Fixture)
 
-		loadOpts := []project.LoadOption{
-			project.LoadWorkingDir(filepath.Dir(fixture)),
+		loadOpts := []LoadOption{
+			LoadWorkingDir(filepath.Dir(fixture)),
 		}
 
 		files := []string{fixture}
@@ -52,10 +50,10 @@ func runConfigTest(t *testing.T, tc ConfigTestCase) {
 				files = append(files, incusCFile)
 			}
 		}
-		loadOpts = append(loadOpts, project.LoadFiles(files))
+		loadOpts = append(loadOpts, LoadFiles(files))
 
 		if len(tc.Profiles) > 0 {
-			loadOpts = append(loadOpts, project.LoadProfiles(tc.Profiles))
+			loadOpts = append(loadOpts, LoadProfiles(tc.Profiles))
 		}
 
 		if len(tc.EnvFiles) > 0 {
@@ -63,10 +61,10 @@ func runConfigTest(t *testing.T, tc ConfigTestCase) {
 			for i, f := range tc.EnvFiles {
 				absEnvFiles[i] = filepath.Join(filepath.Dir(fixture), f)
 			}
-			loadOpts = append(loadOpts, project.LoadEnvFiles(absEnvFiles))
+			loadOpts = append(loadOpts, LoadEnvFiles(absEnvFiles))
 		}
 
-		proj, err := project.New().Load(t.Context(), loadOpts...)
+		proj, err := New().Load(t.Context(), loadOpts...)
 		require.NoError(t, err)
 
 		// Filter services if specified.

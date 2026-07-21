@@ -14,12 +14,11 @@ import (
 	"github.com/lxc/incus-compose/client"
 )
 
+const incus72Extension = "oci_network_config"
+const incus73Extension = "instance_port_forward"
+
 // labelIncusComposePrefix is the instance config prefix for incus-compose labels.
 const labelIncusComposePrefix = "user.label.incus-compose."
-
-type xICInstanceVolume struct {
-	Seed bool `mapstructure:"seed"`
-}
 
 func buildPlatform(service types.ServiceConfig) (string, error) {
 	if service.Build == nil {
@@ -66,32 +65,10 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	}
 	resources = append(resources, networks...)
 
-	nat := c.Global().ServerVersionAtLeast(7, 0)
-
-	var connectAddr string
-	if nat {
-		for _, dev := range devices {
-			if dev.Config.DeviceType != client.InstanceDeviceTypeNic {
-				continue
-			}
-			if dev.Config.Ipv4Address != "" {
-				connectAddr, _, _ = strings.Cut(dev.Config.Ipv4Address, "/")
-				break
-			}
-			if dev.Config.Extensions != nil {
-				if addr, ok := dev.Config.Extensions["ipv4.address"]; ok {
-					connectAddr, _, _ = strings.Cut(addr, "/")
-					break
-				}
-			}
-		}
-	}
-
-	proxies, err := instanceProxyDevices(nat, connectAddr, service)
+	devices, err = instanceProxyDevices(c, devices, service)
 	if err != nil {
 		errs = errors.Join(errs, err)
 	}
-	devices = append(devices, proxies...)
 
 	var (
 		uid uint64
@@ -399,22 +376,63 @@ func serviceNetworkGateway(sNet *types.ServiceNetworkConfig) bool {
 }
 
 // instanceProxyDevices builds proxy devices for every published port.
-// When nat is true and connectAddr is non-empty it is used directly; when
-// nat is true and connectAddr is empty the device uses Incus 7.0+ NAT proxy
-// with ARP/NDP-based instance IP detection (connect 0.0.0.0). When nat is
-// false it falls back to a userspace proxy targeting the container loopback
-// (connect 127.0.0.1).
-func instanceProxyDevices(nat bool, connectAddr string, service types.ServiceConfig) ([]client.InstanceDevice, error) {
+func instanceProxyDevices(c *client.Client, devices []client.InstanceDevice, service types.ServiceConfig) ([]client.InstanceDevice, error) {
 	var errs error
-	devices := []client.InstanceDevice{}
 
-	if !nat {
-		connectAddr = "127.0.0.1"
-	} else if connectAddr == "" {
-		connectAddr = "0.0.0.0"
+	var connectAddr string
+	for _, dev := range devices {
+		if dev.Config.DeviceType != client.InstanceDeviceTypeNic {
+			continue
+		}
+		if dev.Config.Ipv4Address != "" {
+			connectAddr, _, _ = strings.Cut(dev.Config.Ipv4Address, "/")
+			break
+		}
+		if dev.Config.Extensions != nil {
+			if addr, ok := dev.Config.Extensions["ipv4.address"]; ok {
+				connectAddr, _, _ = strings.Cut(addr, "/")
+				break
+			}
+		}
 	}
 
 	for _, port := range service.Ports {
+		nat := false
+		if port.Extensions != nil {
+			var ext struct {
+				Nat bool `mapstructure:"nat"`
+			}
+			ok, err := port.Extensions.Get("x-incus-compose", &ext)
+			if ok && err == nil && ext.Nat {
+				nat = true
+			}
+		}
+
+		if nat && connectAddr == "" {
+			if !c.Global().HasExtension(incus72Extension) {
+				errs = errors.Join(
+					errs,
+					fmt.Errorf("for nat on port %q you need at least incus 7.2 or 7.0.1 LTS",
+						port.Published,
+					),
+				)
+				continue
+			}
+			connectAddr = "0.0.0.0"
+		} else if nat {
+			if !c.Global().HasExtension(incus73Extension) {
+				errs = errors.Join(
+					errs,
+					fmt.Errorf("for nat with a static ip on port %q you need at least incus 7.3 or 7.0.2 LTS",
+						port.Published,
+					),
+				)
+				continue
+			}
+		} else {
+			connectAddr = "127.0.0.1"
+		}
+
 		lPort, err := strconv.ParseUint(port.Published, 10, 32)
 		if err != nil {
 			errs = errors.Join(errs, fmt.Errorf("bad publishing port %q must be a number: %w", port.Published, err))
@@ -463,7 +481,9 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 	for _, cVol := range service.Volumes {
 		seed := false
 		if cVol.Extensions != nil {
-			var ext xICInstanceVolume
+			var ext struct {
+				Seed bool `mapstructure:"seed"`
+			}
 			ok, err := cVol.Extensions.Get("x-incus-compose", &ext)
 			if err != nil {
 				return nil, nil, nil, err

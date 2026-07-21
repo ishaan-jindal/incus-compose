@@ -13,6 +13,21 @@ services:
         protocol: tcp
     x-incus:
       limits.cpu: 1
+  web-nat:
+    environment:
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
+    image: docker.io/nginx:alpine
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 80
+        published: "8081"
+        protocol: tcp
+        x-incus-compose:
+          nat: true
+    x-incus:
+      limits.cpu: 1
 networks:
   default:
     name: with-ports_default

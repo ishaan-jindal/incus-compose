@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/blang/semver/v4"
 	incusClient "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/lxc/incus/v7/shared/cliconfig"
@@ -837,9 +836,8 @@ func (c *GlobalClient) HTTPSAddress() (string, error) {
 	return "", NewError("core.https_address is not set on the server")
 }
 
-// ServerVersionAtLeast reports whether the Incus server is at least the
-// given major.minor version. Returns false on older or disconnected servers.
-func (c *GlobalClient) ServerVersionAtLeast(major, minor int) bool {
+// HasExtension returns whether the server has the given extension.
+func (c *GlobalClient) HasExtension(ext string) bool {
 	if !c.connected {
 		return false
 	}
@@ -849,15 +847,5 @@ func (c *GlobalClient) ServerVersionAtLeast(major, minor int) bool {
 		return false
 	}
 
-	version, err := semver.ParseTolerant(server.Environment.ServerVersion)
-	if err != nil {
-		return false
-	}
-
-	required := semver.Version{
-		Major: uint64(major),
-		Minor: uint64(minor),
-	}
-
-	return version.GTE(required)
+	return slices.Contains(server.APIExtensions, ext)
 }
