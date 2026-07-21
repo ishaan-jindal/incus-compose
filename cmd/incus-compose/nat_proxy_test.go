@@ -9,6 +9,49 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestE2ENatProxy verifies that published ports create NAT proxy devices
+// with the correct configuration (nat=true, wildcard connect address).
+func TestE2ENATProxy(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := t.Context()
+	pn := t.Name()
+	compose := "../../test/fixtures/with-ports/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []e2eTest{
+		{
+			name: "up",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name:     "list",
+			args:     []string{"-f", compose, "list", "--format", "json"},
+			snapshot: true,
+		},
+	}
+
+	runE2ETests(ctx, t, pn, tests)
+
+	c := projectClient(ctx, t, pn)
+	conn, err := c.Connection()
+	require.NoError(t, err)
+	inst, _, err := conn.GetInstance("web-nat-1")
+	require.NoError(t, err)
+
+	proxyDev, ok := inst.Devices["proxy-8081"]
+	require.True(t, ok, "proxy-8081 device should exist")
+	assert.Equal(t, "proxy", proxyDev["type"])
+	assert.Equal(t, "true", proxyDev["nat"])
+	assert.Equal(t, "tcp:0.0.0.0:8081", proxyDev["listen"])
+	assert.Equal(t, "tcp:0.0.0.0:80", proxyDev["connect"])
+}
+
 func TestE2ENATProxyWithPort(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
@@ -22,7 +65,10 @@ func TestE2ENATProxyWithPort(t *testing.T) {
   web:
     image: docker.io/nginx:alpine
     ports:
-      - "8080:80"
+      - published: "8080"
+        target: "80"
+        x-incus-compose:
+          nat: true
 `,
 	})
 	compose := filepath.Join(dir, "compose.yaml")
@@ -60,10 +106,13 @@ func TestE2ENATProxyWithPortAndStaticIP(t *testing.T) {
   web:
     image: docker.io/nginx:alpine
     ports:
-      - "8080:80"
+      - published: "8080"
+        target: "80"
+        x-incus-compose:
+          nat: true
     networks:
       frontend:
-        ipv4_address: 10.131.245.2
+        ipv4_address: 10.131.245.2/24
 
 networks:
   frontend:

@@ -441,12 +441,13 @@ func TestUpDownscaleRemovesInstancesAndDNS(t *testing.T) {
 	require.Less(t, len(after), len(before), "DNS must shed records for removed instances")
 }
 
-// TestUpReconcilesToReplicas verifies docker-parity scaling: a plain `up`
+// TestE2EUpReconcilesToReplicas verifies docker-parity scaling: a plain `up`
 // reconciles a service to deploy.replicas in both directions. A manual --scale
 // applies only to that invocation; the next plain `up` restores replicas.
-func TestUpReconcilesToReplicas(t *testing.T) {
-	skipLocal(t)
+func TestE2EUpReconcilesToReplicas(t *testing.T) {
 	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
 
 	ctx := t.Context()
 	pn := t.Name()

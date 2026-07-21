@@ -20,5 +20,17 @@
     "addresses": [
       "-stripped-"
     ]
+  },
+  {
+    "kind": "instance",
+    "name": "web-nat",
+    "description": "incus-compose: teste2enatproxy:web-nat-1",
+    "incus_name": "web-nat-1",
+    "image": "docker.io/nginx:alpine",
+    "status": "Running",
+    "health": "Unknown",
+    "addresses": [
+      "-stripped-"
+    ]
   }
 ]
