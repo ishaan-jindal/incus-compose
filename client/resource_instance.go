@@ -678,8 +678,6 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 	logTicker := time.NewTicker(2 * time.Second)
 	defer logTicker.Stop()
 
-	startTimeout := time.After(timeout / 3)
-
 	for depName, requiredStatus := range r.Config.Dependencies {
 		r.client.LogDebug("Waiting for dependency", "instance", r.incusName, "dep", depName, "status", requiredStatus)
 		// Report the wait on the instance's start line so it shows a spinner
@@ -697,11 +695,6 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 			}
 
 			select {
-			case <-startTimeout:
-				if err == nil && inst.StatusCode != incusApi.Running {
-					cancel()
-					return fmt.Errorf("dependency '%v' not running after %s", depName, timeout/3)
-				}
 			case <-ticker.C:
 				select {
 				case <-logTicker.C:
