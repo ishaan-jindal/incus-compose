@@ -10,7 +10,7 @@ services:
       start_period: 5m
     networks:
       default:
-        ipv4_address: 10.131.32.17
+        ipv4_address: ${SERVER_IPV4}/${IPV4_NETMASK}
 
   microservices:
     healthcheck:
@@ -50,9 +50,9 @@ services:
 networks:
   default:
     x-incus:
-      ipv4.address: 10.131.32.1/24
+      ipv4.address: ${GATEWAY_IPV4}/${IPV4_NETMASK}
     x-incus-compose:
-      network: immich0
+      network: ${NETWORK}
 
 volumes:
   library:

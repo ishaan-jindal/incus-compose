@@ -2,9 +2,7 @@ services:
   dnscrypt-proxy:
     networks:
       default:
-        x-incus:
-          ipv4.address: "${DNSCRYPT_IPV4_ADDRESS}/${IPV4_NETMASK}"
-          ipv4.gateway: "${IPV4_GATEWAY}"
+        ipv4_address: "${DNSCRYPT_IPV4_ADDRESS}/${IPV4_NETMASK}"
 
   knot:
     volumes: !reset
@@ -18,12 +16,10 @@ services:
           initial.gid: "53"
     networks:
       default:
-        x-incus:
-          ipv4.address: "${KNOT_IPV4_ADDRESS}/${IPV4_NETMASK}"
-          ipv4.gateway: "${IPV4_GATEWAY}"
+        ipv4_address: "${KNOT_IPV4_ADDRESS}/${IPV4_NETMASK}"
 
 networks:
   default:
     external: true
     x-incus-compose:
-      network: incusbr0
+      network: ${EXTERNAL_NETWORK}

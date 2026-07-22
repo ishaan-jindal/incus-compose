@@ -272,21 +272,15 @@ volumes:
 
 networks:
   public:
-    driver: bridge
   internal:
-    driver: bridge
+    internal: true
   auth-net:
-    driver: bridge
     internal: true
   users-net:
-    driver: bridge
     internal: true
   products-net:
-    driver: bridge
     internal: true
   orders-net:
-    driver: bridge
     internal: true
   search-net:
-    driver: bridge
     internal: true

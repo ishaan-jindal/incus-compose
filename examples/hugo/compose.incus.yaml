@@ -17,7 +17,7 @@ services:
       start_interval: 1s
     networks:
       default:
-        ipv4_address: 10.134.32.17
+        ipv4_address: 10.134.32.17/24
 
 networks:
   default:

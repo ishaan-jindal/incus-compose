@@ -2,22 +2,22 @@ services:
   docker-registry:
     networks:
       default:
-        ipv4_address: 10.132.32.17
+        ipv4_address: ${DOCKERIO_IPV4}/${IPV4_NETMASK}
 
   ghcr-registry:
     networks:
       default:
-        ipv4_address: 10.132.32.18
+        ipv4_address: ${GHCRIO_IPV4}/${IPV4_NETMASK}
 
   gitlab-registry:
     networks:
       default:
-        ipv4_address: 10.132.32.19
+        ipv4_address: ${GITLAB_IPV4}/${IPV4_NETMASK}
 
 networks:
   default:
     x-incus:
-      ipv4.address: 10.132.32.1/24
+      ipv4.address: ${GATEWAY_IPV4}/${IPV4_NETMASK}
 
 volumes:
   docker:

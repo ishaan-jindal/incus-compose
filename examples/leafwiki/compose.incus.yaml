@@ -3,9 +3,7 @@ services:
     ports: !reset []
     networks:
       default:
-        x-incus:
-          ipv4.address: "${IPV4_ADDRESS}/${IPV4_NETMASK}"
-          ipv4.gateway: "${IPV4_GATEWAY}"
+        ipv4_address: "${IPV4_ADDRESS}/${IPV4_NETMASK}"
 
 networks:
   default:

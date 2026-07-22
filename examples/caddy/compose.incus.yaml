@@ -3,11 +3,11 @@ services:
     networks:
       default:
         x-incus:
-          ipv4.address: 10.179.215.4/24
-          ipv4.gateway: 10.179.215.1
+          ipv4.address: ${IPV4_CADDY}
+          ipv4.gateway: ${IPV4_GATEWAY}
 
 networks:
   default:
     external: true
     x-incus-compose:
-      network: incusbr0
+      network: ${EXTERNAL_NETWORK}

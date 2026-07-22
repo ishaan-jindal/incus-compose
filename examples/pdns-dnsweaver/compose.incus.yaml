@@ -3,24 +3,18 @@ services:
     ports: !reset []
     networks:
       default:
-        x-incus:
-          ipv4.address: "${PDNS_IPV4_ADDRESS}/${IPV4_NETMASK}"
-          ipv4.gateway: "${IPV4_GATEWAY}"
+        ipv4_address: "${PDNS_IPV4_ADDRESS}/${IPV4_NETMASK}"
 
   dnscrypt-proxy:
     networks:
       default:
-        x-incus:
-          ipv4.address: "${DNSCRYPT_IPV4_ADDRESS}/${IPV4_NETMASK}"
-          ipv4.gateway: "${IPV4_GATEWAY}"
+        ipv4_address: "${DNSCRYPT_IPV4_ADDRESS}/${IPV4_NETMASK}"
 
   pdns-admin:
     ports: !reset []
     networks:
       default:
-        x-incus:
-          ipv4.address: "${ADMIN_IPV4_ADDRESS}/${IPV4_NETMASK}"
-          ipv4.gateway: "${IPV4_GATEWAY}"
+        ipv4_address: "${ADMIN_IPV4_ADDRESS}/${IPV4_NETMASK}"
 
 networks:
   default:
