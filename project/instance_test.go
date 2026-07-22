@@ -578,13 +578,22 @@ func TestInstanceImage(t *testing.T) {
 func TestInstanceNetworkDevices(t *testing.T) {
 	t.Parallel()
 
-	c := client.NewOfflineClient(t.Context(), "test")
+	skipLocal(t)
+
+	gc, err := client.NewTestClient(t.Context())
+	require.NoError(t, err)
+	c, err := gc.EnsureProject("default")
+	require.NoError(t, err)
 
 	t.Run("with static ip", func(t *testing.T) {
 		t.Parallel()
+		skipNo73(t, c)
+
 		p := &types.Project{Networks: types.Networks{"frontend": {}}}
 		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"frontend": {Ipv4Address: "10.0.0.5"},
+			"frontend": {Ipv4Address: "10.0.0.5",
+				Extensions: types.Extensions{"x-incus": map[string]any{"ipv4.gateway": "10.0.0.1"}},
+			},
 		}}
 
 		devices, resources, err := instanceNetworkDevices(c, p, service)
@@ -592,7 +601,7 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		require.Len(t, devices, 1)
 		assert.Equal(t, "eth0", devices[0].Name)
 		assert.Equal(t, client.InstanceDeviceTypeNic, devices[0].Config.DeviceType)
-		assert.Equal(t, "10.0.0.5", devices[0].Config.Ipv4Address)
+		assert.Equal(t, "10.0.0.5", devices[0].Config.Extensions["ipv4.address"])
 		require.Len(t, resources, 1)
 		assert.Equal(t, client.KindNetwork, resources[0].Kind())
 	})
@@ -603,39 +612,6 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, devices)
 		assert.Empty(t, resources)
-	})
-
-	t.Run("gateway network placed last", func(t *testing.T) {
-		t.Parallel()
-		p := &types.Project{Networks: types.Networks{"aaa": {}, "bbb": {}}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"aaa": {Extensions: types.Extensions{"x-incus-compose": map[string]any{"gateway": true}}},
-			"bbb": {},
-		}}
-
-		devices, _, err := instanceNetworkDevices(c, p, service)
-		require.NoError(t, err)
-		require.Len(t, devices, 2)
-		// aaa is the gateway, so despite sorting before bbb it takes the last eth.
-		assert.Equal(t, "eth0", devices[0].Name)
-		assert.Equal(t, "bbb", devices[0].Config.Network.Name())
-		assert.Equal(t, "eth1", devices[1].Name)
-		assert.Equal(t, "aaa", devices[1].Config.Network.Name())
-	})
-
-	t.Run("no gateway sorts by name", func(t *testing.T) {
-		t.Parallel()
-		p := &types.Project{Networks: types.Networks{"aaa": {}, "bbb": {}}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"bbb": {},
-			"aaa": {},
-		}}
-
-		devices, _, err := instanceNetworkDevices(c, p, service)
-		require.NoError(t, err)
-		require.Len(t, devices, 2)
-		assert.Equal(t, "aaa", devices[0].Config.Network.Name())
-		assert.Equal(t, "bbb", devices[1].Config.Network.Name())
 	})
 }
 
@@ -677,9 +653,7 @@ func TestInstanceProxyDevices(t *testing.T) {
 
 	t.Run("published port with nat and static IP", func(t *testing.T) {
 		t.Parallel()
-		if !c.Global().HasExtension(incus73Extension) {
-			t.Skip("nat tests with static ip require at least incus 7.3 or 7.0.2 LTS")
-		}
+		skipNo73(t, c)
 
 		service := types.ServiceConfig{Name: "web", Ports: []types.ServicePortConfig{
 			{
@@ -694,8 +668,10 @@ func TestInstanceProxyDevices(t *testing.T) {
 			{
 				Name: "eth0",
 				Config: client.InstanceDeviceConfig{
-					DeviceType:  client.InstanceDeviceTypeNic,
-					Ipv4Address: "10.0.0.100/24",
+					DeviceType: client.InstanceDeviceTypeNic,
+					Extensions: map[string]string{
+						"ipv4.address": "10.0.0.100/24",
+					},
 				},
 			},
 		}

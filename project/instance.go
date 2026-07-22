@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"net"
 	"os"
 	"slices"
 	"strconv"
@@ -293,41 +295,88 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 	devices := []client.InstanceDevice{}
 	resources := []client.Resource{}
 
-	// service.Networks is a map, so order it deterministically and place any
-	// gateway-marked attachment (x-incus-compose.gateway: true) last, giving its
-	// NIC the highest eth index. Incus uses the last NIC's gateway as the
-	// instance's default route.
-	names := make([]string, 0, len(service.Networks))
-	for name := range service.Networks {
-		names = append(names, name)
-	}
-	slices.SortStableFunc(names, func(a, b string) int {
-		ga := serviceNetworkGateway(service.Networks[a])
-		gb := serviceNetworkGateway(service.Networks[b])
-		if ga != gb {
-			if ga {
-				return 1
-			}
-			return -1
-		}
-		return strings.Compare(a, b)
-	})
-
 	ethIdx := 0
-	for _, name := range names {
-		sNet := service.Networks[name]
-
+	for name, sNet := range service.Networks {
 		netConfig := &client.NetworkConfig{}
-		if networkDef, ok := p.Networks[name]; ok {
+
+		gateway4, gateway6 := "none", "none"
+
+		networkDef, defOk := p.Networks[name]
+		if defOk {
 			netConfig.External = bool(networkDef.External)
 			netConfig.Extensions = networkExtensions(networkDef)
 			netConfig.OverrideName = xICInstanceNetwork(networkDef)
+
+			if !networkDef.Internal {
+				v, ok := netConfig.Extensions["ipv4.address"]
+				if ok {
+					ip, _, err := net.ParseCIDR(v)
+					if err != nil {
+						errs = errors.Join(
+							errs,
+							fmt.Errorf("failed to parse the gateway IPv4 for network %q: %w", name, err),
+						)
+						continue
+					}
+					gateway4 = ip.String()
+				}
+				v, ok = netConfig.Extensions["ipv6.address"]
+				if ok {
+					ip, _, err := net.ParseCIDR(v)
+					if err != nil {
+						errs = errors.Join(
+							errs,
+							fmt.Errorf("failed to parse the gateway IPv6 for network %q: %w", name, err),
+						)
+						continue
+					}
+					gateway6 = ip.String()
+				}
+			}
 		}
 
 		extensions := map[string]string{}
+		userExtensions := map[string]string{}
 		if sNet != nil && sNet.Extensions != nil {
-			extensions = xIncusExtensions(sNet.Extensions)
+			userExtensions = xIncusExtensions(sNet.Extensions)
+
+			var ext struct {
+				Internal bool `mapstructure:"internal"`
+			}
+			ok, err := sNet.Extensions.Get("x-incus-compose", &ext)
+			if ok || err == nil && ext.Internal {
+				gateway4 = "none"
+				gateway6 = "none"
+			}
 		}
+
+		ipv4Address, ipv6Address := "", ""
+		if sNet != nil {
+			ipv4Address = sNet.Ipv4Address
+			ipv6Address = sNet.Ipv6Address
+		}
+
+		if ((ipv4Address != "" && gateway4 == "none") || (ipv6Address != "" && gateway6 == "none")) &&
+			!c.Global().HasExtension(incus73Extension) {
+			errs = errors.Join(
+				errs,
+				fmt.Errorf("for gateway=none on network %q you need at least incus 7.3 or 7.0.2 LTS", name),
+			)
+			continue
+		}
+
+		if ipv4Address != "" {
+			extensions["ipv4.address"] = ipv4Address
+			extensions["ipv4.gateway"] = gateway4
+		}
+
+		if ipv6Address != "" {
+			extensions["ipv6.address"] = ipv6Address
+			extensions["ipv6.gateway"] = gateway6
+		}
+
+		// Whatever we set before, `x-incus` overrides it.
+		maps.Copy(extensions, userExtensions)
 
 		network, err := c.Resource(client.KindNetwork, name, netConfig)
 		if err != nil {
@@ -339,11 +388,6 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 			DeviceType: client.InstanceDeviceTypeNic,
 			Network:    network,
 			Extensions: extensions,
-		}
-
-		if sNet != nil {
-			nicConfig.Ipv4Address = sNet.Ipv4Address
-			nicConfig.Ipv6Address = sNet.Ipv6Address
 		}
 
 		devices = append(devices, client.InstanceDevice{
@@ -358,23 +402,6 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 	return devices, resources, errs
 }
 
-// serviceNetworkGateway reports whether a service network attachment is marked as
-// the default-gateway interface via x-incus-compose.gateway: true. Such a NIC is
-// placed last so Incus uses its gateway as the instance's default route.
-func serviceNetworkGateway(sNet *types.ServiceNetworkConfig) bool {
-	if sNet == nil {
-		return false
-	}
-	var ext struct {
-		Gateway bool `mapstructure:"gateway"`
-	}
-	ok, err := sNet.Extensions.Get("x-incus-compose", &ext)
-	if !ok || err != nil {
-		return false
-	}
-	return ext.Gateway
-}
-
 // instanceProxyDevices builds proxy devices for every published port.
 func instanceProxyDevices(c *client.Client, devices []client.InstanceDevice, service types.ServiceConfig) ([]client.InstanceDevice, error) {
 	var errs error
@@ -383,10 +410,6 @@ func instanceProxyDevices(c *client.Client, devices []client.InstanceDevice, ser
 	for _, dev := range devices {
 		if dev.Config.DeviceType != client.InstanceDeviceTypeNic {
 			continue
-		}
-		if dev.Config.Ipv4Address != "" {
-			connectAddr, _, _ = strings.Cut(dev.Config.Ipv4Address, "/")
-			break
 		}
 		if dev.Config.Extensions != nil {
 			if addr, ok := dev.Config.Extensions["ipv4.address"]; ok {
@@ -980,7 +1003,7 @@ func xIncusExtensions(ext types.Extensions) map[string]string {
 	var raw map[string]any
 	ok, err := ext.Get("x-incus", &raw)
 	if !ok || err != nil || len(raw) == 0 {
-		return nil
+		return map[string]string{}
 	}
 
 	result := make(map[string]string, len(raw))

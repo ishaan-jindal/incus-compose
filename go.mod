@@ -4,7 +4,6 @@ go 1.26.5
 
 require (
 	github.com/avast/retry-go/v5 v5.0.0
-	github.com/blang/semver/v4 v4.0.0
 	github.com/bradleyjkemp/cupaloy/v2 v2.8.0
 	github.com/creativeprojects/go-selfupdate v1.5.2
 	github.com/distribution/reference v0.6.0
@@ -31,6 +30,7 @@ require (
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 // indirect
 	github.com/Masterminds/semver/v3 v3.5.0 // indirect
 	github.com/apex/log v1.9.0 // indirect
+	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/platforms v1.0.0-rc.4 // indirect

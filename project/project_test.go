@@ -8,6 +8,8 @@ import (
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/lxc/incus-compose/client"
 )
 
 // fixturePath returns the path to a test fixture.
@@ -19,6 +21,12 @@ func skipLocal(t *testing.T) {
 	_, ok := os.LookupEnv("INCUS_COMPOSE_TEST_LOCAL")
 	if ok {
 		t.Skip("Skipping: env INCUS_COMPOSE_TEST_LOCAL is set, run `just test` for this test")
+	}
+}
+
+func skipNo73(t *testing.T, c *client.Client) {
+	if !c.Global().HasExtension(incus73Extension) {
+		t.Skip("nat tests with static ip require at least incus 7.3 or 7.0.2 LTS")
 	}
 }
 
