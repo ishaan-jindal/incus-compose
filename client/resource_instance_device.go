@@ -78,12 +78,6 @@ type InstanceDeviceConfig struct {
 	// Only one of Network or NetworkName should be set.
 	NetworkName string
 
-	// Ipv4Address assigns a static IPv4 address to the NIC via the bridge DHCP server.
-	Ipv4Address string
-
-	// Ipv6Address assigns a static IPv6 address to the NIC via the bridge DHCP server.
-	Ipv6Address string
-
 	// Proxy contains proxy device configuration.
 	Proxy InstanceDeviceProxyConfig
 
@@ -155,14 +149,6 @@ func (d *InstanceDevice) toNicDevice() (map[string]string, error) {
 		"type":    "nic",
 		"name":    d.Name,
 		"network": networkName,
-	}
-
-	if d.Config.Ipv4Address != "" {
-		device["ipv4.address"] = d.Config.Ipv4Address
-	}
-
-	if d.Config.Ipv6Address != "" {
-		device["ipv6.address"] = d.Config.Ipv6Address
 	}
 
 	maps.Copy(device, d.Config.Extensions)

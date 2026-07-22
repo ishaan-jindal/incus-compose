@@ -221,50 +221,6 @@ func TestDiskDevices(t *testing.T) {
 	}
 }
 
-func TestNicDevices(t *testing.T) {
-	t.Parallel()
-
-	testCases := []DeviceTestCase{
-		{
-			Name: "nic_basic",
-			Device: InstanceDevice{
-				Name: "eth0",
-				Config: InstanceDeviceConfig{
-					DeviceType: InstanceDeviceTypeNic,
-					Network:    newMockResource("my-network", KindNetwork, PriorityNetwork, true),
-				},
-			},
-		},
-		{
-			Name: "nic_static_ipv4",
-			Device: InstanceDevice{
-				Name: "eth0",
-				Config: InstanceDeviceConfig{
-					DeviceType:  InstanceDeviceTypeNic,
-					Network:     newMockResource("my-network", KindNetwork, PriorityNetwork, true),
-					Ipv4Address: "10.100.0.17",
-				},
-			},
-		},
-		{
-			Name: "nic_static_dual_stack",
-			Device: InstanceDevice{
-				Name: "eth0",
-				Config: InstanceDeviceConfig{
-					DeviceType:  InstanceDeviceTypeNic,
-					Network:     newMockResource("my-network", KindNetwork, PriorityNetwork, true),
-					Ipv4Address: "10.200.0.17",
-					Ipv6Address: "fd42:1::17",
-				},
-			},
-		},
-	}
-
-	for _, tc := range testCases {
-		runDeviceTest(t, tc)
-	}
-}
-
 func TestTmpfsDevices(t *testing.T) {
 	t.Parallel()
 

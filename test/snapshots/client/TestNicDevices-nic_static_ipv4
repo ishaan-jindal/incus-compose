@@ -1,8 +1,0 @@
-{
-  "config": {
-    "name": "eth0",
-    "network": "my-network",
-    "type": "nic"
-  },
-  "name": "eth0"
-}
