@@ -38,6 +38,9 @@ jobs:
       NO_COLOR: 1
       INCUS_COMPOSE_TEST_E2E: 1
       TEST_PROCS: 4
+      INCUS_COMPOSE_UP_TIMEOUT: 5m
+      INCUS_COMPOSE_UP_DEPENDENCY_TIMEOUT: 10m
+      INCUS_COMPOSE_DOWN_TIMEOUT: 5m
     steps:
       - uses: actions/checkout@v7
         with:

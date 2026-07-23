@@ -538,7 +538,7 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 	}
 
 	if options.Healthd {
-		err := r.SetHealthCheckingStopped(ctx, false)
+		err := r.SetHealthCheckingStopped(startCtx, false)
 		if err != nil {
 			return r.client.hookAfter(ctx, ActionStart, r, options, err)
 		}
@@ -549,7 +549,7 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 		restart := r.IncusInstance.Config[HealthKeyPrefix+"restart"]
 
 		if (hasTest || restart == "true") && !isHealthd {
-			err = r.waitForHealthCheck(ctx, ActionStart, options)
+			err = r.waitForHealthCheck(startCtx, ActionStart, options)
 			if err != nil {
 				return r.client.hookAfter(ctx, ActionStart, r, options, err)
 			}
@@ -569,9 +569,6 @@ func (r *Instance) Running() bool {
 }
 
 func (r *Instance) waitForHealthCheck(ctx context.Context, action Action, options Options) error {
-	ctx, cancel := context.WithTimeout(ctx, options.Timeout)
-	defer cancel()
-
 	if !options.ExternalHealthd {
 		// Wait for healthd to be available for 3 seconds.
 		err := retry.New(
@@ -660,16 +657,9 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 		}
 	}
 
-	timeout := options.DependencyTimeout
-	if timeout == 0 {
-		timeout = options.Timeout
-	}
-
-	var cancel context.CancelFunc
-	if timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-	} else {
-		ctx, cancel = context.WithCancel(ctx)
+	dTimeout := options.DependencyTimeout
+	if dTimeout == 0 {
+		dTimeout = options.Timeout
 	}
 
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -679,6 +669,16 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 	defer logTicker.Stop()
 
 	for depName, requiredStatus := range r.Config.Dependencies {
+		var (
+			dCtx   context.Context
+			cancel context.CancelFunc
+		)
+		if dTimeout > 0 {
+			dCtx, cancel = context.WithTimeout(ctx, dTimeout)
+		} else {
+			dCtx, cancel = context.WithCancel(ctx)
+		}
+
 		r.client.LogDebug("Waiting for dependency", "instance", r.incusName, "dep", depName, "status", requiredStatus)
 		// Report the wait on the instance's start line so it shows a spinner
 		// instead of stalling silently. This wait is not an Incus operation,
@@ -705,14 +705,15 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 					}
 				default:
 				}
-			case <-ctx.Done():
+			case <-dCtx.Done():
 				cancel()
-				return fmt.Errorf("dependency '%v' did not reach status %q within %s", depName, requiredStatus, timeout)
+				return fmt.Errorf("dependency '%v' did not reach status %q within %s", depName, requiredStatus, dTimeout)
 			}
 		}
+
+		cancel()
 	}
 
-	cancel()
 	return nil
 }
 
