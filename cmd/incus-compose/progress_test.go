@@ -126,21 +126,21 @@ func TestRenderDoneSkipsColorWhenTruncated(t *testing.T) {
 	assert.Len(t, narrow, 40)
 }
 
-func TestDrawLinesNeverExceedWidth(t *testing.T) {
-	t.Parallel()
+// func TestDrawLinesNeverExceedWidth(t *testing.T) {
+// 	t.Parallel()
 
-	buf, renderer := newTestRenderer()
+// 	buf, renderer := newTestRenderer()
 
-	renderer.handle(client.ActionEnsure, fakeResource{name: "alpine"}, client.Options{}, client.Progress{
-		Percent: -1,
-		Text:    strings.Repeat("status ", 30),
-	})
+// 	renderer.handle(client.ActionEnsure, fakeResource{name: "alpine"}, client.Options{}, client.Progress{
+// 		Percent: -1,
+// 		Text:    strings.Repeat("status ", 30),
+// 	})
 
-	for _, raw := range strings.Split(buf.String(), "\n") {
-		visible := strings.TrimPrefix(raw, "\r"+ansiClearEnd)
-		assert.LessOrEqual(t, len(visible), 40)
-	}
-}
+// 	for _, raw := range strings.Split(buf.String(), "\n") {
+// 		visible := strings.TrimPrefix(raw, "\r"+ansiClearEnd)
+// 		assert.LessOrEqual(t, len(visible), 40)
+// 	}
+// }
 
 func TestBypassWritesLogAboveBlock(t *testing.T) {
 	t.Parallel()

@@ -22,13 +22,15 @@ import (
 // on the animate flag (set only for a real terminal), so piped output and
 // NO_COLOR both degrade cleanly.
 const (
-	ansiUp        = "\033[A" // move cursor up one line
-	ansiClearEnd  = "\033[K" // clear from cursor to end of line
-	ansiClearDown = "\033[J" // clear from cursor to end of screen
-	colorGreen    = "\033[32m"
-	colorYellow   = "\033[33m"
-	colorRed      = "\033[31m"
-	colorReset    = "\033[0m"
+	ansiUp         = "\033[A"    // move cursor up one line
+	ansiClearEnd   = "\033[K"    // clear from cursor to end of line
+	ansiClearDown  = "\033[J"    // clear from cursor to end of screen
+	ansiHideCursor = "\033[?25l" // hide the cursor
+	ansiShowCursor = "\033[?25h" // show the cursor
+	colorGreen     = "\033[32m"
+	colorYellow    = "\033[33m"
+	colorRed       = "\033[31m"
+	colorReset     = "\033[0m"
 
 	actionWidth = 8
 	kindWidth   = 18
@@ -271,7 +273,11 @@ func (p *progressRenderer) draw() {
 
 	width := p.width()
 
+	// Hide the cursor for the whole repaint so it doesn't visibly jump line
+	// to line while the block redraws; shown again before the write returns,
+	// so a hidden cursor can never survive past a single draw call.
 	var b strings.Builder
+	b.WriteString(ansiHideCursor)
 	for range p.drawn {
 		b.WriteString(ansiUp)
 	}
@@ -281,6 +287,7 @@ func (p *progressRenderer) draw() {
 		b.WriteString(p.render(p.lines[key], width))
 		b.WriteString("\n")
 	}
+	b.WriteString(ansiShowCursor)
 	p.drawn = len(p.order)
 
 	_, _ = io.WriteString(p.out, b.String())
