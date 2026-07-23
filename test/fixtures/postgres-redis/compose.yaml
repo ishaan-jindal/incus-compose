@@ -36,7 +36,11 @@ services:
       REDIS_URL: redis://redis:6379
       NODE_ENV: production
     volumes:
-      - ./app:/usr/src/app
+      - type: bind
+        source: ./app
+        target: /usr/src/app
+        x-incus-compose:
+          seed: true
     working_dir: /usr/src/app
     command: node server.js
 
