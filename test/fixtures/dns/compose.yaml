@@ -1,0 +1,18 @@
+services:
+  service-db:
+    image: docker.io/nginxinc/nginx-unprivileged:alpine
+    container_name: my-db
+    environment:
+      NGINX_WORKER_PROCESSES: 1
+    x-incus:
+      limits.cpu: 1
+
+  dev:
+    image: docker.io/alpine:edge
+
+networks:
+  default:
+    x-incus:
+      # The target must be an incus instance name, see: https://serverfault.com/a/947713
+      raw.dnsmasq: |
+        cname=db.mydomain.lan,my-db

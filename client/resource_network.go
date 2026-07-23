@@ -374,10 +374,19 @@ func (r *Network) UpdateDNSAliases(ownedServices []string, newIPs map[string][]s
 	// Copy new.
 	maps.Copy(current, newIPs)
 
+	userRaw, userFound := r.Config.Extensions["raw.dnsmasq"]
+
 	raw := dnsmasqRecords(current)
-	if net.Config["raw.dnsmasq"] == raw {
-		// Same config.
-		return nil
+	if userFound {
+		// Check same config.
+		if net.Config["raw.dnsmasq"] == raw+userRaw {
+			return nil
+		}
+	} else {
+		// Check same config.
+		if net.Config["raw.dnsmasq"] == raw {
+			return nil
+		}
 	}
 
 	put := net.Writable()
@@ -387,7 +396,11 @@ func (r *Network) UpdateDNSAliases(ownedServices []string, newIPs map[string][]s
 	if raw == "" {
 		delete(put.Config, "raw.dnsmasq")
 	} else {
-		put.Config["raw.dnsmasq"] = raw
+		if userFound {
+			put.Config["raw.dnsmasq"] = raw + userRaw
+		} else {
+			put.Config["raw.dnsmasq"] = raw
+		}
 	}
 
 	r.client.LogDebug("Updating the network", "config", put)
