@@ -51,6 +51,14 @@ for correct semver ordering. Headings below preserve each release's announced fo
   "bring your own healthd" permanently instead of passing the flag on every
   invocation. Combines with the flag by OR: either is enough to turn it on.
   (by @jochumdev)
+- `networks.{name}.aliases` on a service's network attachment now registers
+  extra DNS names for its instance: each alias becomes a
+  `cname=<alias>,<instance>` record in the network's `raw.dnsmasq`, resolving
+  immediately instead of waiting on a DHCP lease like the existing
+  service-name records. Works across networks shared between projects
+  (`external: true`) without clobbering the other project's records. Limited
+  to single-instance services, since a CNAME alias can only point at one
+  target. (by @jochumdev)
 
 ### Fixed
 

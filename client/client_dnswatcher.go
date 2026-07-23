@@ -15,25 +15,40 @@ import (
 // acquire its DHCP lease before recording its DNS address.
 const dnsIPWaitTimeout = 5 * time.Second
 
-// DNSmasqParse parses raw.dnsmasq address lines into a service->[]IP map.
-func DNSmasqParse(raw string) map[string][]string {
-	result := map[string][]string{}
+// DNSmasqParse parses a raw.dnsmasq value into its three parts: address
+// records as a service->[]IP map, cname records as a target->[]alias map,
+// and any other lines (e.g. user-supplied raw.dnsmasq content) verbatim.
+func DNSmasqParse(raw string) (map[string][]string, map[string][]string, string) {
+	addresses := map[string][]string{}
+	cnames := map[string][]string{}
+	var extra strings.Builder
+
 	for _, line := range strings.Split(raw, "\n") {
 		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "address=/") {
-			continue
-		}
-		rest := line[len("address=/"):]
-		slash := strings.Index(rest, "/")
-		if slash < 1 {
-			continue
-		}
-		svc, ip := rest[:slash], rest[slash+1:]
-		if ip != "" {
-			result[svc] = append(result[svc], ip)
+		if strings.HasPrefix(line, "address=/") {
+			rest := line[len("address=/"):]
+			slash := strings.Index(rest, "/")
+			if slash < 1 {
+				continue
+			}
+			svc, ip := rest[:slash], rest[slash+1:]
+			if ip != "" {
+				addresses[svc] = append(addresses[svc], ip)
+			}
+		} else if strings.HasPrefix(line, "cname=") {
+			rest := line[len("cname="):]
+			parts := strings.Split(rest, ",")
+			if len(parts) < 2 {
+				continue
+			}
+			cnames[parts[len(parts)-1]] = parts[0 : len(parts)-1]
+		} else {
+			if len(line) > 1 {
+				fmt.Fprintf(&extra, "%s\n", line)
+			}
 		}
 	}
-	return result
+	return addresses, cnames, extra.String()
 }
 
 // dnsmasqRecords builds the raw.dnsmasq content: one "address" record per
@@ -99,7 +114,7 @@ func (c *Client) RegisterDNSWatcher() error {
 		switch r.Kind() {
 		case KindNetwork:
 			net, ok := r.(*Network)
-			if ok && action == ActionEnsure && !net.Config.External {
+			if ok && action == ActionEnsure {
 				networks[net.IncusName()] = net
 				c.LogDebug("DNSWatcher network", "network", net.Name())
 			}
@@ -188,11 +203,11 @@ func (c *Client) RegisterDNSWatcher() error {
 					}
 				}
 
-				err = network.UpdateDNSAliases(owned, servicesIPs)
+				err = network.updateDNSAliases(owned, servicesIPs)
 				if err != nil && strings.Contains(err.Error(), "ETag doesn't match") {
 					// Try a second time.
 					time.Sleep(100 * time.Millisecond)
-					err = network.UpdateDNSAliases(owned, servicesIPs)
+					err = network.updateDNSAliases(owned, servicesIPs)
 				}
 
 				errs = errors.Join(errs, err)

@@ -64,12 +64,21 @@ func runCommand(ctx context.Context, t *testing.T, projectName string, args ...s
 	return stdout, err
 }
 
+// stripIPs removes IPv4 and IPv6 addresses from a raw.dnsmasq value so
+// DHCP-leased address= lines become deterministic for snapshotting.
+func stripIPs(raw string) string {
+	ipv4Regex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
+	ipv6Regex := regexp.MustCompile(`(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}`)
+
+	out := ipv4Regex.ReplaceAllString(raw, "-stripped-")
+	return ipv6Regex.ReplaceAllString(out, "-stripped-")
+}
+
 // stripListOutput removes dynamic content (IP addresses, network hashes) for snapshot comparison.
 func stripListOutput(t *testing.T, output *bytes.Buffer, stripHealth bool) string {
 	t.Helper()
 
-	ipRegex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
-	outStr := ipRegex.ReplaceAllString(output.String(), "-stripped-")
+	outStr := stripIPs(output.String())
 
 	if stripHealth {
 		healthRegex := regexp.MustCompile(`"health": "[a-zA-Z]+",`)
@@ -393,7 +402,8 @@ func dnsServiceIPs(t *testing.T, c *client.Client, networks []string, service st
 	for _, name := range networks {
 		net, _, err := conn.GetNetwork(name)
 		require.NoError(t, err, "for network %q", name)
-		ips = append(ips, client.DNSmasqParse(net.Config["raw.dnsmasq"])[service]...)
+		netIps, _, _ := client.DNSmasqParse(net.Config["raw.dnsmasq"])
+		ips = append(ips, netIps[service]...)
 	}
 	return ips
 }
@@ -498,4 +508,47 @@ func TestE2EUpReconcilesToReplicas(t *testing.T) {
 	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 	assertCount(3)
+}
+
+// TestDNSCnameAliasAcrossProjects brings up the dns and dns2 fixtures together.
+// dns2's default network is external and points at dns's network via
+// x-incus-compose.network: dns-default, so both projects register their
+// service-network aliases (network.CNames) on the very same Incus network.
+// Snapshotting dns's network raw.dnsmasq confirms both projects' cnames
+// coexist without clobbering each other.
+func TestDNSCnameAliasAcrossProjects(t *testing.T) {
+	skipLocal(t)
+	t.Parallel()
+
+	ctx := t.Context()
+	composeDNS := "../../test/fixtures/dns/compose.yaml"
+	composeDNS2 := "../../test/fixtures/dns2/compose.yaml"
+
+	// dns2's compose.yaml hardcodes x-incus-compose.network: dns-default, so
+	// the dns project must be named literally "dns" for the names to line up.
+	// Cleanups run LIFO, so dns2 (registered second) is torn down before dns.
+	t.Cleanup(func() {
+		_, _ = runCommand(context.Background(), t, "dns", "-f", composeDNS, "down", "--project")
+	})
+	t.Cleanup(func() {
+		_, _ = runCommand(context.Background(), t, "dns2", "-f", composeDNS2, "down", "--project")
+	})
+
+	_, err := runCommand(ctx, t, "dns", "-f", composeDNS, "up", "--detach")
+	require.NoError(t, err)
+
+	_, err = runCommand(ctx, t, "dns2", "-f", composeDNS2, "up", "--detach")
+	require.NoError(t, err)
+
+	// Matches dns2's hardcoded x-incus-compose.network: dns-default.
+	const networkName = "dns-default"
+
+	c := projectClient(ctx, t, "dns")
+	conn, err := c.Connection()
+	require.NoError(t, err)
+
+	net, _, err := conn.GetNetwork(networkName)
+	require.NoError(t, err)
+
+	snapshotter.SnapshotT(t, stripIPs(net.Config["raw.dnsmasq"]))
 }
