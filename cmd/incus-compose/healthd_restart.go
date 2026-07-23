@@ -18,9 +18,10 @@ func newHealthdRestartCommand() *cli.Command {
 		Usage: "Restart the ic-healthd sidecar",
 		Flags: []cli.Flag{
 			&cli.DurationFlag{
-				Name:  "timeout",
-				Usage: "Timeout for stopping",
-				Value: 10 * time.Second,
+				Name:    "timeout",
+				Usage:   "Timeout for stopping",
+				Value:   10 * time.Second,
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_RESTART_TIMEOUT"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {

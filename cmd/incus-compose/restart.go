@@ -21,13 +21,15 @@ func newRestartCommand() *cli.Command {
 		ArgsUsage: "[SERVICE...]",
 		Flags: []cli.Flag{
 			&cli.DurationFlag{
-				Name:  "timeout",
-				Usage: "Timeout for stopping and starting",
-				Value: 2 * time.Minute,
+				Name:    "timeout",
+				Usage:   "Timeout for stopping and starting",
+				Value:   2 * time.Minute,
+				Sources: cli.EnvVars("INCUS_COMPOSE_RESTART_TIMEOUT"),
 			},
 			&cli.BoolFlag{
-				Name:  "with-deps",
-				Usage: "Also restart linked services",
+				Name:    "with-deps",
+				Usage:   "Also restart linked services",
+				Sources: cli.EnvVars("INCUS_COMPOSE_RESTART_WITH_DEPS"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {

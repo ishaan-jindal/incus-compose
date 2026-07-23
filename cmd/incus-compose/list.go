@@ -125,10 +125,12 @@ func newListCommand() *cli.Command {
 					}
 					return nil
 				},
+				Sources: cli.EnvVars("INCUS_COMPOSE_LIST_FORMAT"),
 			},
 			&cli.BoolFlag{
-				Name:  "no-healthd",
-				Usage: "List the healthd sidecar",
+				Name:    "no-healthd",
+				Usage:   "List the healthd sidecar",
+				Sources: cli.EnvVars("INCUS_COMPOSE_LIST_NO_HEALTHD"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {

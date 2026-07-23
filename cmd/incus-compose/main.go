@@ -250,6 +250,7 @@ func newRootCommand() *cli.Command {
 			},
 			&cli.BoolFlag{
 				Name:    "os-env",
+				Sources: cli.EnvVars("INCUS_COMPOSE_OS_ENV"),
 				Aliases: []string{"E"},
 				Usage:   `Include OS environment variables for interpolation`,
 			},

@@ -29,15 +29,18 @@ func newPsCommand() *cli.Command {
 				Name:    "all",
 				Aliases: []string{"a"},
 				Usage:   "Show all containers (including stopped ones)",
+				Sources: cli.EnvVars("INCUS_COMPOSE_PS_ALL"),
 			},
 			&cli.BoolFlag{
 				Name:    "quiet",
 				Aliases: []string{"q"},
 				Usage:   "Only display Incus instance names",
+				Sources: cli.EnvVars("INCUS_COMPOSE_PS_QUIET"),
 			},
 			&cli.BoolFlag{
-				Name:  "services",
-				Usage: "Display services (compose service names) instead of instances",
+				Name:    "services",
+				Usage:   "Display services (compose service names) instead of instances",
+				Sources: cli.EnvVars("INCUS_COMPOSE_PS_SERVICES"),
 			},
 			&cli.StringFlag{
 				Name:  "format",
@@ -49,10 +52,12 @@ func newPsCommand() *cli.Command {
 					}
 					return nil
 				},
+				Sources: cli.EnvVars("INCUS_COMPOSE_PS_FORMAT"),
 			},
 			&cli.BoolFlag{
-				Name:  "with-deps",
-				Usage: "Also list linked services",
+				Name:    "with-deps",
+				Usage:   "Also list linked services",
+				Sources: cli.EnvVars("INCUS_COMPOSE_PS_WITH_DEPS"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {

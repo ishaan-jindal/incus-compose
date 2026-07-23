@@ -21,13 +21,15 @@ func newStartCommand() *cli.Command {
 		ArgsUsage: "[SERVICE...]",
 		Flags: []cli.Flag{
 			&cli.DurationFlag{
-				Name:  "timeout",
-				Usage: "Timeout for starting",
-				Value: 2 * time.Minute,
+				Name:    "timeout",
+				Usage:   "Timeout for starting",
+				Value:   2 * time.Minute,
+				Sources: cli.EnvVars("INCUS_COMPOSE_START_TIMEOUT"),
 			},
 			&cli.BoolFlag{
-				Name:  "with-deps",
-				Usage: "Also start linked services",
+				Name:    "with-deps",
+				Usage:   "Also start linked services",
+				Sources: cli.EnvVars("INCUS_COMPOSE_START_WITH_DEPS"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {

@@ -20,32 +20,37 @@ func newPullCommand() *cli.Command {
 		ArgsUsage: "[SERVICE...]",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
-				Name:  "ignore-buildable",
-				Usage: `Ignore images that can be built`,
+				Name:    "ignore-buildable",
+				Usage:   `Ignore images that can be built`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_PULL_IGNORE_BUILDABLE"),
 			},
 			&cli.BoolFlag{
-				Name:  "ignore-pull-failures",
-				Usage: `Pull what it can and ignores images with pull failures`,
+				Name:    "ignore-pull-failures",
+				Usage:   `Pull what it can and ignores images with pull failures`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_PULL_IGNORE_PULL_FAILURES"),
 			},
 			&cli.BoolFlag{
 				Name:    "include-deps",
 				Aliases: []string{"with-deps"},
 				Usage:   "Also pull linked services",
+				Sources: cli.EnvVars("INCUS_COMPOSE_PULL_INCLUDE_DEPS"),
 			},
 			&cli.StringFlag{
-				Name:  "policy",
-				Usage: `Apply pull policy ("missing"|"always") - ignored just for compatibility now`,
-				Value: "always",
+				Name:    "policy",
+				Usage:   `Apply pull policy ("missing"|"always") - ignored just for compatibility now`,
+				Value:   "always",
+				Sources: cli.EnvVars("INCUS_COMPOSE_PULL_POLICY"),
 			},
 			&cli.BoolFlag{
-				Name:  "no-healthd",
-				Usage: "Don't pull the healthd sidecar",
+				Name:    "no-healthd",
+				Usage:   "Don't pull the healthd sidecar",
+				Sources: cli.EnvVars("INCUS_COMPOSE_PULL_NO_HEALTHD"),
 			},
 			&cli.StringFlag{
 				Name:    "healthd-image",
 				Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
 				Value:   DefaultHealthdImage,
-				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
+				Sources: cli.EnvVars("INCUS_COMPOSE_PULL_HEALTHD_IMAGE"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {

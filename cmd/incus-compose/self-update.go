@@ -18,12 +18,14 @@ func newSelfUpdateCommand() *cli.Command {
 		Category: "extensions",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
-				Name:  "draft",
-				Usage: `Also consider draft releases when checking for updates`,
+				Name:    "draft",
+				Usage:   `Also consider draft releases when checking for updates`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_SELF_UPDATE_DRAFT"),
 			},
 			&cli.BoolFlag{
-				Name:  "pre-release",
-				Usage: `Also consider pre-releases when checking for updates`,
+				Name:    "pre-release",
+				Usage:   `Also consider pre-releases when checking for updates`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_SELF_UPDATE_PRE_RELEASE"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {

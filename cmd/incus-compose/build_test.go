@@ -14,9 +14,9 @@ import (
 
 func skipIfNoBuilder(t *testing.T) {
 	t.Helper()
-	if override := os.Getenv("INCUS_COMPOSE_BUILDER"); override != "" {
+	if override := os.Getenv("INCUS_COMPOSE_BUILD_BUILDER"); override != "" {
 		if _, err := exec.LookPath(override); err != nil {
-			t.Skipf("Skipping: INCUS_COMPOSE_BUILDER=%q not found", override)
+			t.Skipf("Skipping: INCUS_COMPOSE_BUILD_BUILDER=%q not found", override)
 		}
 		return
 	}
