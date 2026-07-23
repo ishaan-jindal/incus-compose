@@ -10,6 +10,12 @@ import (
 // Incus allows up to 63 characters (DNS hostname limit).
 const MaxIncusNameLen = 63
 
+// Those define extensions that came with a specific release.
+const (
+	Incus72Extension = "oci_network_config"
+	Incus73Extension = "instance_port_forward"
+)
+
 // Health check status constants written to HealthConfigKey by ic-healthd.
 // Re-exported from the shared package for backward compatibility with
 // existing client.Health* references.

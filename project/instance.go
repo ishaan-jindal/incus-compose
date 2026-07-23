@@ -16,9 +16,6 @@ import (
 	"github.com/lxc/incus-compose/client"
 )
 
-const incus72Extension = "oci_network_config"
-const incus73Extension = "instance_port_forward"
-
 // labelIncusComposePrefix is the instance config prefix for incus-compose labels.
 const labelIncusComposePrefix = "user.label.incus-compose."
 
@@ -357,7 +354,7 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 		}
 
 		if ((ipv4Address != "" && gateway4 == "none") || (ipv6Address != "" && gateway6 == "none")) &&
-			!c.Global().HasExtension(incus73Extension) {
+			!c.Global().HasExtension(client.Incus73Extension) {
 			errs = errors.Join(
 				errs,
 				fmt.Errorf("for gateway=none on network %q you need at least incus 7.3 or 7.0.2 LTS", name),
@@ -432,7 +429,7 @@ func instanceProxyDevices(c *client.Client, devices []client.InstanceDevice, ser
 		}
 
 		if nat && connectAddr == "" {
-			if !c.Global().HasExtension(incus72Extension) {
+			if !c.Global().HasExtension(client.Incus72Extension) {
 				errs = errors.Join(
 					errs,
 					fmt.Errorf("for nat on port %q you need at least incus 7.2 or 7.0.1 LTS",
@@ -443,7 +440,7 @@ func instanceProxyDevices(c *client.Client, devices []client.InstanceDevice, ser
 			}
 			connectAddr = "0.0.0.0"
 		} else if nat {
-			if !c.Global().HasExtension(incus73Extension) {
+			if !c.Global().HasExtension(client.Incus73Extension) {
 				errs = errors.Join(
 					errs,
 					fmt.Errorf("for nat with a static ip on port %q you need at least incus 7.3 or 7.0.2 LTS",

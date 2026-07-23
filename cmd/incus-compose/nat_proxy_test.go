@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/lxc/incus-compose/client"
 )
 
 // TestE2ENatProxy verifies that published ports create NAT proxy devices
@@ -101,6 +103,12 @@ func TestE2ENATProxyWithPortAndStaticIP(t *testing.T) {
 	ctx := t.Context()
 	pn := t.Name()
 
+	c := projectClient(ctx, t, pn, client.EnsureProjectWithCreate())
+	conn, err := c.Connection()
+	require.NoError(t, err)
+
+	skipNo73(t, c)
+
 	dir := writeTempFiles(t, map[string]string{
 		"compose.yaml": `services:
   web:
@@ -126,11 +134,7 @@ networks:
 		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
-	require.NoError(t, err)
-
-	c := projectClient(ctx, t, pn)
-	conn, err := c.Connection()
+	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
 	inst, _, err := conn.GetInstance("web-1")
