@@ -91,9 +91,9 @@ fix folder="./...":
     golangci-lint run --fix {{ folder }}
 
 # Dev install creates your dev environment: `just dev-install [container] [listen] [project] [image]`
-dev-install container_name="local:ict" listen='127.0.0.1:1443' project='default' image='images:debian/trixie' storagepool='default':
+dev-install container_name="local:ict" listen='127.0.0.1:1443' project='default' image='images:debian/trixie' storagepool='default' repo='stable':
     go install gotest.tools/gotestsum@latest
-    @just make-nested "{{ container_name }}" "{{ image }}" "{{ listen }}" "{{ project }}" "{{ storagepool }}"
+    @just make-nested "{{ container_name }}" "{{ image }}" "{{ listen }}" "{{ project }}" "{{ storagepool }}" "{{ repo }}"
 
 # Run commands in the nested incus.
 incus *args:
@@ -229,18 +229,15 @@ push: pre-commit
     git push
 
 [private]
-make-nested container='local:ict' image='images:debian/trixie' listen="127.0.0.1:1443" project="default" storagepool="default":
+make-nested container='local:ict' image='images:debian/trixie' listen="127.0.0.1:1443" project="default" storagepool="default" repo="stable":
     #!/usr/bin/env bash
     set -euo pipefail
-
-    # Behavior of this script:
-    #  - Uses the incus client cert
-    #  - Try create nested container
 
     container="{{ container }}"
     image="{{ image }}"
     listen="{{ listen }}"
     storagepool="{{ storagepool }}"
+    repo="{{ repo }}"
 
     key_file=""
     cert_file=""
@@ -252,7 +249,7 @@ make-nested container='local:ict' image='images:debian/trixie' listen="127.0.0.1
     # Run setup script (certificate injection is handled by the script)
     set +e
     echo "Trying to create a nested container:\n"
-    INCUS_PROJECT="{{ project }}" ./scripts/setup-nested-incus.sh -c "${cert_file}" -n "${container}" -i "${image}" -r stable -l "${listen}" -p "${storagepool}"
+    INCUS_PROJECT="{{ project }}" ./scripts/setup-nested-incus.sh -c "${cert_file}" -n "${container}" -i "${image}" -r "${repo}" -l "${listen}" -p "${storagepool}"
     set -e
 
     if [[ -z "${listen}" ]]; then
@@ -268,5 +265,5 @@ make-nested container='local:ict' image='images:debian/trixie' listen="127.0.0.1
         url="https://${listen}"
     fi
 
-    INCUS_REMOTE="${container%%:*}" incus remote remove "${container##*:}" || exit 0
+    INCUS_REMOTE="${container%%:*}" incus remote remove "${container##*:}" || true
     incus remote add "${container##*:}" "${url}" --accept-certificate
