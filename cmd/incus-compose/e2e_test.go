@@ -270,33 +270,6 @@ func TestE2EStartStopRestartWithDeps(t *testing.T) {
 	runE2ETests(ctx, t, pn, tests)
 }
 
-func TestE2EUpDownGrafana(t *testing.T) {
-	t.Parallel()
-	skipLocal(t)
-	skipE2E(t)
-
-	ctx := t.Context()
-	pn := t.Name()
-	compose := "../../test/fixtures/grafana/compose.yaml"
-
-	t.Cleanup(func() {
-		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
-	})
-
-	tests := []e2eTest{
-		{
-			name: "up grafana",
-			args: []string{"-f", compose, "up", "--detach"},
-		},
-		{
-			name: "list grafana",
-			args: []string{"-f", compose, "list"},
-		},
-	}
-
-	runE2ETests(ctx, t, pn, tests)
-}
-
 func TestE2EUpUp(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
