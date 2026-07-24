@@ -62,7 +62,7 @@ jobs:
             --packages="./..." \
             --junitfile "$REPORTS_DIR/junit.xml" \
             -- -count=1 -parallel "$TEST_PROCS" -timeout 20m \
-            -covermode=atomic -coverprofile="$REPORTS_DIR/cover.out" -v 2>&1
+               -covermode=atomic -coverprofile="$REPORTS_DIR/cover.out" -v 2>&1
 
       - name: Publish test results
         if: always()
@@ -83,6 +83,7 @@ jobs:
     needs: test-e2e
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - name: Hugo
