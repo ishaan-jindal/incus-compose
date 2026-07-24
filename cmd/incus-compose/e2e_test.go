@@ -219,49 +219,32 @@ func TestE2EStartStopRestartWithDeps(t *testing.T) {
 
 	tests := []e2eTest{
 		{
-			name: "up",
-			args: []string{"-f", compose, "up", "--detach"},
+			name:            "up",
+			args:            []string{"-f", compose, "up", "--detach"},
+			snapshot:        true,
+			snapStripHealth: false,
 		},
 		{
-			name:     "list up",
-			args:     []string{"-f", compose, "list", "--format=json"},
-			snapshot: true,
+			name:            "restart",
+			args:            []string{"-f", compose, "restart", "--with-deps", "nginx"},
+			snapshot:        true,
+			snapStripHealth: false,
 		},
 		{
-			name: "restart",
-			args: []string{"-f", compose, "restart", "--with-deps", "nginx"},
-		},
-		{
-			name:     "list restart",
-			args:     []string{"-f", compose, "list", "--format=json"},
-			snapshot: true,
-		},
-		{
-			name: "stop manually",
-			args: []string{"-f", compose, "stop", "nginx", "backend1", "backend2"},
-		},
-		{
-			name:            "list manual stop",
-			args:            []string{"-f", compose, "list", "--format=json"},
+			name:            "stop manually",
+			args:            []string{"-f", compose, "stop", "nginx", "backend1", "backend2"},
 			snapshot:        true,
 			snapStripHealth: true,
 		},
 		{
-			name: "start deps",
-			args: []string{"-f", compose, "start", "--with-deps", "nginx"},
+			name:            "start deps",
+			args:            []string{"-f", compose, "start", "--with-deps", "nginx"},
+			snapshot:        true,
+			snapStripHealth: false,
 		},
 		{
-			name:     "list start deps",
-			args:     []string{"-f", compose, "list", "--format=json"},
-			snapshot: true,
-		},
-		{
-			name: "stop deps",
-			args: []string{"-f", compose, "stop", "--with-deps", "backend1"},
-		},
-		{
-			name:            "list stop deps",
-			args:            []string{"-f", compose, "list", "--format=json"},
+			name:            "stop deps",
+			args:            []string{"-f", compose, "stop", "--with-deps", "backend1"},
 			snapshot:        true,
 			snapStripHealth: true,
 		},

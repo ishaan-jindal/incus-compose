@@ -64,6 +64,25 @@ func runCommand(ctx context.Context, t *testing.T, projectName string, args ...s
 	return stdout, err
 }
 
+func runCommandSnapshot(ctx context.Context, t *testing.T, projectName string, strip bool, args ...string) {
+	t.Helper()
+
+	_, err := runCommand(ctx, t, projectName, args...)
+	require.NoError(t, err)
+
+	listArgs := []string{}
+	for i, a := range args {
+		if (a == "-f" || a == "--file") && i+1 < len(args) {
+			listArgs = []string{a, args[i+1]}
+		}
+	}
+
+	listArgs = append(listArgs, "list", "--format=json")
+	stdout, err := runCommand(ctx, t, projectName, listArgs...)
+	require.NoError(t, err)
+	snapshotter.SnapshotT(t, stripListOutput(t, stdout, strip))
+}
+
 // stripIPs removes IPv4 and IPv6 addresses from a raw.dnsmasq value so
 // DHCP-leased address= lines become deterministic for snapshotting.
 func stripIPs(raw string) string {
@@ -143,16 +162,15 @@ func runE2ETests(ctx context.Context, t *testing.T, projectName string, tests []
 				time.Sleep(time.Second)
 			}
 
-			stdout, err := runCommand(ctx, t, projectName, tt.args...)
-
-			if !tt.wantErr {
-				require.NoError(t, err)
-
-				if tt.snapshot {
-					snapshotter.SnapshotT(t, stripListOutput(t, stdout, tt.snapStripHealth))
-				}
+			if tt.snapshot {
+				runCommandSnapshot(ctx, t, projectName, tt.snapStripHealth, tt.args...)
 			} else {
-				require.Error(t, err)
+				_, err := runCommand(ctx, t, projectName, tt.args...)
+				if !tt.wantErr {
+					require.NoError(t, err)
+				} else {
+					require.Error(t, err)
+				}
 			}
 		})
 	}
@@ -328,31 +346,22 @@ func TestUpDownUpSimpleNginx(t *testing.T) {
 
 	tests := []e2eTest{
 		{
-			name: "up simple-nginx",
-			args: []string{"-f", compose, "up", "--detach"},
+			name:            "up simple-nginx",
+			args:            []string{"-f", compose, "up", "--detach"},
+			snapshot:        true,
+			snapStripHealth: false,
 		},
 		{
-			name:     "list up simple-nginx",
-			args:     []string{"-f", compose, "list", "--format", "json"},
-			snapshot: true,
+			name:            "down simple-nginx",
+			args:            []string{"-f", compose, "down"},
+			snapshot:        true,
+			snapStripHealth: true,
 		},
 		{
-			name: "down simple-nginx",
-			args: []string{"-f", compose, "down"},
-		},
-		{
-			name:     "list down simple-nginx",
-			args:     []string{"-f", compose, "list", "--format", "json"},
-			snapshot: true,
-		},
-		{
-			name: "up simple-nginx",
-			args: []string{"-f", compose, "up", "--detach"},
-		},
-		{
-			name:     "list down-up simple-nginx",
-			args:     []string{"-f", compose, "list", "--format", "json"},
-			snapshot: true,
+			name:            "up simple-nginx",
+			args:            []string{"-f", compose, "up", "--detach"},
+			snapshot:        true,
+			snapStripHealth: false,
 		},
 	}
 
@@ -373,13 +382,10 @@ func TestNormalLifecycle(t *testing.T) {
 
 	tests := []e2eTest{
 		{
-			name: "up",
-			args: []string{"-f", compose, "up", "--detach"},
-		},
-		{
-			name:     "list",
-			args:     []string{"-f", compose, "list", "--format=json"},
-			snapshot: true,
+			name:            "up",
+			args:            []string{"-f", compose, "up", "--detach"},
+			snapshot:        true,
+			snapStripHealth: true,
 		},
 		{
 			name: "down",

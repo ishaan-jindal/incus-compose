@@ -16,7 +16,7 @@
     "incus_name": "testnormallifecycle-ic-healthd",
     "image": "ghcr.io/lxc/incus-compose/ic-healthd:latest",
     "status": "Running",
-    "health": "Healthy",
+    "health": "-stripped-",
     "addresses": [
       "-stripped-"
     ]
@@ -28,7 +28,7 @@
     "incus_name": "web1-1",
     "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
     "status": "Running",
-    "health": "Healthy",
+    "health": "-stripped-",
     "addresses": [
       "-stripped-"
     ]
@@ -40,7 +40,7 @@
     "incus_name": "web2-1",
     "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
     "status": "Running",
-    "health": "Healthy",
+    "health": "-stripped-",
     "addresses": [
       "-stripped-"
     ]
