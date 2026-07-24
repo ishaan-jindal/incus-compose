@@ -96,21 +96,14 @@ func runCommandSnapshotList(ctx context.Context, t *testing.T, projectName strin
 	snapshotter.SnapshotT(t, stripListOutput(t, stdout, strip))
 }
 
-// stripIPs removes IPv4 and IPv6 addresses from a raw.dnsmasq value so
-// DHCP-leased address= lines become deterministic for snapshotting.
-func stripIPs(raw string) string {
-	ipv4Regex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
-	ipv6Regex := regexp.MustCompile(`(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}`)
-
-	out := ipv4Regex.ReplaceAllString(raw, "-stripped-")
-	return ipv6Regex.ReplaceAllString(out, "-stripped-")
-}
-
 // stripListOutput removes dynamic content (IP addresses, network hashes) for snapshot comparison.
 func stripListOutput(t *testing.T, output *bytes.Buffer, stripHealth bool) string {
 	t.Helper()
 
-	outStr := stripIPs(output.String())
+	ipv4Regex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
+	ipv6Regex := regexp.MustCompile(`(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}`)
+	outStr := ipv4Regex.ReplaceAllString(output.String(), "-stripped-")
+	outStr = ipv6Regex.ReplaceAllString(outStr, "-stripped-")
 
 	if stripHealth {
 		healthRegex := regexp.MustCompile(`"health": "[a-zA-Z]+",`)
@@ -573,5 +566,19 @@ func TestDNSCnameAliasAcrossProjects(t *testing.T) {
 	net, _, err := conn.GetNetwork(networkName)
 	require.NoError(t, err)
 
-	snapshotter.SnapshotT(t, stripIPs(net.Config["raw.dnsmasq"]))
+	ipv4Regex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
+	ipv6Regex := regexp.MustCompile(`(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}`)
+
+	lines := strings.Split(net.Config["raw.dnsmasq"], "\n")
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if ipv6Regex.MatchString(line) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+
+	outStr := ipv4Regex.ReplaceAllString(strings.Join(kept, "\n"), "-stripped-")
+
+	snapshotter.SnapshotT(t, outStr)
 }
