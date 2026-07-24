@@ -429,8 +429,6 @@ func (r *Network) updateDNSAliases(ownedServices []string, newIPs map[string][]s
 		put.Config["raw.dnsmasq"] = raw
 	}
 
-	r.client.LogDebug("Updating the network", "config", put)
-
 	if err := r.conn.UpdateNetwork(r.incusName, put, etag); err != nil {
 		return fmt.Errorf("updating dnsmasq records for network %q: %w", r.Name(), err)
 	}
