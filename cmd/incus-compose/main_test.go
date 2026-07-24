@@ -64,7 +64,20 @@ func runCommand(ctx context.Context, t *testing.T, projectName string, args ...s
 	return stdout, err
 }
 
+// runCommandSnapshot runs args and snapshots its own stdout. Use this when the
+// command itself is the interesting output (ps, exec, list, ...).
 func runCommandSnapshot(ctx context.Context, t *testing.T, projectName string, strip bool, args ...string) {
+	t.Helper()
+
+	stdout, err := runCommand(ctx, t, projectName, args...)
+	require.NoError(t, err)
+	snapshotter.SnapshotT(t, stripListOutput(t, stdout, strip))
+}
+
+// runCommandSnapshotList runs args (a mutating command with no interesting
+// stdout of its own, e.g. up/down/start/stop/restart) and snapshots the
+// project's `list` state afterward instead, forwarding args' -f/--file flag.
+func runCommandSnapshotList(ctx context.Context, t *testing.T, projectName string, strip bool, args ...string) {
 	t.Helper()
 
 	_, err := runCommand(ctx, t, projectName, args...)
@@ -147,24 +160,28 @@ func projectClient(ctx context.Context, t *testing.T, projectName string, opts .
 }
 
 type e2eTest struct {
-	name            string
-	args            []string
-	wantErr         bool
-	snapshot        bool
+	name    string
+	args    []string
+	wantErr bool
+	// snapshot snapshots args' own stdout (ps, exec, list, ...).
+	snapshot bool
+	// snapshotList runs args (a mutating command with no interesting stdout
+	// of its own) then snapshots the resulting `list` state instead.
+	snapshotList    bool
 	snapStripHealth bool
 }
 
 func runE2ETests(ctx context.Context, t *testing.T, projectName string, tests []e2eTest) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.snapshot {
+			switch {
+			case tt.snapshotList:
 				// This ugly sleep lets incus settle before we ask for "list".
 				time.Sleep(time.Second)
-			}
-
-			if tt.snapshot {
+				runCommandSnapshotList(ctx, t, projectName, tt.snapStripHealth, tt.args...)
+			case tt.snapshot:
 				runCommandSnapshot(ctx, t, projectName, tt.snapStripHealth, tt.args...)
-			} else {
+			default:
 				_, err := runCommand(ctx, t, projectName, tt.args...)
 				if !tt.wantErr {
 					require.NoError(t, err)
@@ -348,19 +365,19 @@ func TestUpDownUpSimpleNginx(t *testing.T) {
 		{
 			name:            "up simple-nginx",
 			args:            []string{"-f", compose, "up", "--detach"},
-			snapshot:        true,
+			snapshotList:    true,
 			snapStripHealth: false,
 		},
 		{
 			name:            "down simple-nginx",
 			args:            []string{"-f", compose, "down"},
-			snapshot:        true,
+			snapshotList:    true,
 			snapStripHealth: true,
 		},
 		{
 			name:            "up simple-nginx",
 			args:            []string{"-f", compose, "up", "--detach"},
-			snapshot:        true,
+			snapshotList:    true,
 			snapStripHealth: false,
 		},
 	}
@@ -384,7 +401,7 @@ func TestNormalLifecycle(t *testing.T) {
 		{
 			name:            "up",
 			args:            []string{"-f", compose, "up", "--detach"},
-			snapshot:        true,
+			snapshotList:    true,
 			snapStripHealth: true,
 		},
 		{

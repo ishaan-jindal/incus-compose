@@ -221,31 +221,31 @@ func TestE2EStartStopRestartWithDeps(t *testing.T) {
 		{
 			name:            "up",
 			args:            []string{"-f", compose, "up", "--detach"},
-			snapshot:        true,
+			snapshotList:    true,
 			snapStripHealth: false,
 		},
 		{
 			name:            "restart",
 			args:            []string{"-f", compose, "restart", "--with-deps", "nginx"},
-			snapshot:        true,
+			snapshotList:    true,
 			snapStripHealth: false,
 		},
 		{
 			name:            "stop manually",
 			args:            []string{"-f", compose, "stop", "nginx", "backend1", "backend2"},
-			snapshot:        true,
+			snapshotList:    true,
 			snapStripHealth: true,
 		},
 		{
 			name:            "start deps",
 			args:            []string{"-f", compose, "start", "--with-deps", "nginx"},
-			snapshot:        true,
+			snapshotList:    true,
 			snapStripHealth: false,
 		},
 		{
 			name:            "stop deps",
 			args:            []string{"-f", compose, "stop", "--with-deps", "backend1"},
-			snapshot:        true,
+			snapshotList:    true,
 			snapStripHealth: true,
 		},
 	}

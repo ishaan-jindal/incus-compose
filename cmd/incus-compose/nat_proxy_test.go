@@ -30,7 +30,7 @@ func TestE2ENATProxy(t *testing.T) {
 		{
 			name:            "up",
 			args:            []string{"-f", compose, "up", "--detach"},
-			snapshot:        true,
+			snapshotList:    true,
 			snapStripHealth: true,
 		},
 	}
