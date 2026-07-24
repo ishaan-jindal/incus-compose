@@ -49,8 +49,8 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - name: default
-            remote: local-https
+          - name: stable
+            remote: ict-stable
           - name: custom
             remote: ict-custom
           - name: lts
