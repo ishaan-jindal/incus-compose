@@ -50,18 +50,20 @@ jobs:
       matrix:
         include:
           - name: default
-            runs-on: [self-hosted, incus-compose, default]
-          - name: custom-storage
-            runs-on: [self-hosted, incus-compose, custom-storage]
-          - name: custom-network
-            runs-on: [self-hosted, incus-compose, custom-network]
-    runs-on: ${{ matrix.runs-on }}
+            remote: local-https
+          - name: custom
+            remote: ict-custom
+          - name: lts
+            remote: ict-lts
+          - name: daily
+            remote: ict-daily
+    runs-on: [self-hosted, incus-compose, default]
     timeout-minutes: 120
     permissions:
       contents: read
       checks: write # publish JUnit results as a check run
     env:
-      INCUS_REMOTE: local-https
+      INCUS_REMOTE: ${{ matrix.remote }}
       INCUS_COMPOSE_IMAGE_CACHE: incus-compose-tests-cache
       NO_COLOR: 1
       TEST_PROCS: 4

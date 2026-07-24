@@ -177,6 +177,7 @@ func newLogsCommand() *cli.Command {
 				Name:    "follow",
 				Aliases: []string{"f"},
 				Usage:   "Follow log output",
+				Sources: cli.EnvVars("INCUS_COMPOSE_LOGS_FOLLOW"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {

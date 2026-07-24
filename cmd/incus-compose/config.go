@@ -33,44 +33,54 @@ func newConfigCommand() *cli.Command {
 					}
 					return nil
 				},
+				Sources: cli.EnvVars("INCUS_COMPOSE_CONFIG_FORMAT"),
 			},
 			&cli.BoolFlag{
-				Name:  "services",
-				Usage: "Print the service names, one per line",
+				Name:    "services",
+				Usage:   "Print the service names, one per line",
+				Sources: cli.EnvVars("INCUS_COMPOSE_CONFIG_SERVICES"),
 			},
 			&cli.BoolFlag{
-				Name:  "volumes",
-				Usage: "Print the volume names, one per line",
+				Name:    "volumes",
+				Usage:   "Print the volume names, one per line",
+				Sources: cli.EnvVars("INCUS_COMPOSE_CONFIG_VOLUMES"),
 			},
 			&cli.BoolFlag{
-				Name:  "networks",
-				Usage: "Print the network names, one per line",
+				Name:    "networks",
+				Usage:   "Print the network names, one per line",
+				Sources: cli.EnvVars("INCUS_COMPOSE_CONFIG_NETWORKS"),
 			},
 			&cli.BoolFlag{
-				Name:  "profiles",
-				Usage: "Print the profile names, one per line",
+				Name:    "profiles",
+				Usage:   "Print the profile names, one per line",
+				Sources: cli.EnvVars("INCUS_COMPOSE_CONFIG_PROFILES"),
 			},
 			&cli.BoolFlag{
 				Name:    "quiet",
 				Aliases: []string{"q"},
 				Usage:   "Only validate the configuration, don't print anything",
+				Sources: cli.EnvVars("INCUS_COMPOSE_CONFIG_QUIET"),
 			},
 			&cli.BoolFlag{
-				Name:  "images",
-				Usage: "Print the image names, one per line",
+				Name:    "images",
+				Usage:   "Print the image names, one per line",
+				Sources: cli.EnvVars("INCUS_COMPOSE_CONFIG_IMAGES"),
 			},
 			&cli.BoolFlag{
-				Name:  "environment",
-				Usage: "Print environment used for interpolation",
+				Name:    "environment",
+				Usage:   "Print environment used for interpolation",
+				Sources: cli.EnvVars("INCUS_COMPOSE_CONFIG_ENVIRONMENT"),
 			},
 			&cli.BoolFlag{
-				Name:  "variables",
-				Usage: "Print model variables and default values",
+				Name:    "variables",
+				Usage:   "Print model variables and default values",
+				Sources: cli.EnvVars("INCUS_COMPOSE_CONFIG_VARIABLES"),
 			},
 			&cli.StringFlag{
 				Name:    "output",
 				Aliases: []string{"o"},
 				Usage:   "Save to file (default to stdout)",
+				Sources: cli.EnvVars("INCUS_COMPOSE_CONFIG_OUTPUT"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {

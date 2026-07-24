@@ -55,6 +55,9 @@ type Network struct {
 	created     bool
 	Config      NetworkConfig
 
+	// CNames is a map of cnames indexed by target.
+	CNames map[string][]string
+
 	// conn is this resource's own event-isolated Incus connection, set in
 	// Ensure() (which always runs before any other action) so concurrent
 	// workers never share a *ProtocolIncus. See Client.Connection.
@@ -92,6 +95,7 @@ func newNetwork(c *Client, name string, configGetter Config) (*Network, error) {
 		client:       c,
 		composeName:  name,
 		Config:       *config,
+		CNames:       map[string][]string{},
 	}
 
 	// Static initial name: used offline and as first guess before Ensure resolves candidates.
@@ -350,12 +354,12 @@ func (r *Network) Delete(ctx context.Context, opts ...Option) error {
 	return r.client.hookAfter(ctx, ActionDelete, r, options, err)
 }
 
-// UpdateDNSAliases reads raw.dnsmasq from Incus, replaces records for
+// updateDNSAliases reads raw.dnsmasq from Incus, replaces records for
 // ownedServices with newIPs (preserving all other records), and writes back.
 // Setting raw.dnsmasq disables AppArmor for the dnsmasq process (not containers).
 // The update is idempotent: if the resulting config is unchanged, dnsmasq is not restarted.
-func (r *Network) UpdateDNSAliases(ownedServices []string, newIPs map[string][]string) error {
-	if r.Config.External || !r.IsEnsured() {
+func (r *Network) updateDNSAliases(ownedServices []string, newIPs map[string][]string) error {
+	if !r.IsEnsured() {
 		return nil
 	}
 
@@ -364,19 +368,54 @@ func (r *Network) UpdateDNSAliases(ownedServices []string, newIPs map[string][]s
 		return fmt.Errorf("reading network %q: %w", r.Name(), err)
 	}
 
-	current := DNSmasqParse(net.Config["raw.dnsmasq"])
+	cAddresses, cCnames, cExtra := DNSmasqParse(net.Config["raw.dnsmasq"])
 
 	// Delete owned.
-	maps.DeleteFunc(current, func(k string, _ []string) bool {
+	maps.DeleteFunc(cAddresses, func(k string, _ []string) bool {
 		return slices.Contains(ownedServices, k)
 	})
 
 	// Copy new.
-	maps.Copy(current, newIPs)
+	maps.Copy(cAddresses, newIPs)
 
-	raw := dnsmasqRecords(current)
+	userRaw, userFound := r.Config.Extensions["raw.dnsmasq"]
+
+	var s strings.Builder
+	s.WriteString(dnsmasqRecords(cAddresses))
+	if len(cExtra) > 0 {
+		fmt.Fprintf(&s, "%s\n", cExtra)
+	}
+
+	for oldTarget, oldCnames := range cCnames {
+		_, ok := r.CNames[oldTarget]
+		if !ok {
+			fmt.Fprintf(&s, "cname=%s,%s\n", strings.Join(oldCnames, ","), oldTarget)
+		}
+	}
+	for target, cnames := range r.CNames {
+		oldCnames, exists := cCnames[target]
+		if !exists {
+			fmt.Fprintf(&s, "cname=%s,%s\n", strings.Join(cnames, ","), target)
+		} else {
+			for _, oldCname := range oldCnames {
+				if !slices.Contains(cnames, oldCname) {
+					cnames = append(cnames, oldCname)
+				}
+			}
+			fmt.Fprintf(&s, "cname=%s,%s\n", strings.Join(cnames, ","), target)
+		}
+	}
+
+	if userFound {
+		s.WriteString(userRaw)
+	}
+
+	raw := s.String()
+
+	r.client.LogDebug("dnsmasq", "raw", raw)
+
+	// Check same config.
 	if net.Config["raw.dnsmasq"] == raw {
-		// Same config.
 		return nil
 	}
 
@@ -389,8 +428,6 @@ func (r *Network) UpdateDNSAliases(ownedServices []string, newIPs map[string][]s
 	} else {
 		put.Config["raw.dnsmasq"] = raw
 	}
-
-	r.client.LogDebug("Updating the network", "config", put)
 
 	if err := r.conn.UpdateNetwork(r.incusName, put, etag); err != nil {
 		return fmt.Errorf("updating dnsmasq records for network %q: %w", r.Name(), err)

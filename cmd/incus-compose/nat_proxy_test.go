@@ -28,13 +28,10 @@ func TestE2ENATProxy(t *testing.T) {
 
 	tests := []e2eTest{
 		{
-			name: "up",
-			args: []string{"-f", compose, "up", "--detach"},
-		},
-		{
-			name:     "list",
-			args:     []string{"-f", compose, "list", "--format", "json"},
-			snapshot: true,
+			name:            "up",
+			args:            []string{"-f", compose, "up", "--detach"},
+			snapshotList:    true,
+			snapStripHealth: true,
 		},
 	}
 

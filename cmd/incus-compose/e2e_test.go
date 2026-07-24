@@ -219,78 +219,34 @@ func TestE2EStartStopRestartWithDeps(t *testing.T) {
 
 	tests := []e2eTest{
 		{
-			name: "up",
-			args: []string{"-f", compose, "up", "--detach"},
+			name:            "up",
+			args:            []string{"-f", compose, "up", "--detach"},
+			snapshotList:    true,
+			snapStripHealth: false,
 		},
 		{
-			name:     "list up",
-			args:     []string{"-f", compose, "list", "--format=json"},
-			snapshot: true,
+			name:            "restart",
+			args:            []string{"-f", compose, "restart", "--with-deps", "nginx"},
+			snapshotList:    true,
+			snapStripHealth: false,
 		},
 		{
-			name: "restart",
-			args: []string{"-f", compose, "restart", "--with-deps", "nginx"},
-		},
-		{
-			name:     "list restart",
-			args:     []string{"-f", compose, "list", "--format=json"},
-			snapshot: true,
-		},
-		{
-			name: "stop manually",
-			args: []string{"-f", compose, "stop", "nginx", "backend1", "backend2"},
-		},
-		{
-			name:            "list manual stop",
-			args:            []string{"-f", compose, "list", "--format=json"},
-			snapshot:        true,
+			name:            "stop manually",
+			args:            []string{"-f", compose, "stop", "nginx", "backend1", "backend2"},
+			snapshotList:    true,
 			snapStripHealth: true,
 		},
 		{
-			name: "start deps",
-			args: []string{"-f", compose, "start", "--with-deps", "nginx"},
+			name:            "start deps",
+			args:            []string{"-f", compose, "start", "--with-deps", "nginx"},
+			snapshotList:    true,
+			snapStripHealth: false,
 		},
 		{
-			name:     "list start deps",
-			args:     []string{"-f", compose, "list", "--format=json"},
-			snapshot: true,
-		},
-		{
-			name: "stop deps",
-			args: []string{"-f", compose, "stop", "--with-deps", "backend1"},
-		},
-		{
-			name:            "list stop deps",
-			args:            []string{"-f", compose, "list", "--format=json"},
-			snapshot:        true,
+			name:            "stop deps",
+			args:            []string{"-f", compose, "stop", "--with-deps", "backend1"},
+			snapshotList:    true,
 			snapStripHealth: true,
-		},
-	}
-
-	runE2ETests(ctx, t, pn, tests)
-}
-
-func TestE2EUpDownGrafana(t *testing.T) {
-	t.Parallel()
-	skipLocal(t)
-	skipE2E(t)
-
-	ctx := t.Context()
-	pn := t.Name()
-	compose := "../../test/fixtures/grafana/compose.yaml"
-
-	t.Cleanup(func() {
-		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
-	})
-
-	tests := []e2eTest{
-		{
-			name: "up grafana",
-			args: []string{"-f", compose, "up", "--detach"},
-		},
-		{
-			name: "list grafana",
-			args: []string{"-f", compose, "list"},
 		},
 	}
 

@@ -21,13 +21,15 @@ func newStopCommand() *cli.Command {
 		ArgsUsage: "[SERVICE...]",
 		Flags: []cli.Flag{
 			&cli.DurationFlag{
-				Name:  "timeout",
-				Usage: "Timeout for stopping",
-				Value: 10 * time.Second,
+				Name:    "timeout",
+				Usage:   "Timeout for stopping",
+				Value:   10 * time.Second,
+				Sources: cli.EnvVars("INCUS_COMPOSE_STOP_TIMEOUT"),
 			},
 			&cli.BoolFlag{
-				Name:  "with-deps",
-				Usage: "Also stop linked services",
+				Name:    "with-deps",
+				Usage:   "Also stop linked services",
+				Sources: cli.EnvVars("INCUS_COMPOSE_STOP_WITH_DEPS"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {

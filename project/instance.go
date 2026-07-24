@@ -58,7 +58,9 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	}
 	resources = append(resources, image)
 
-	devices, networks, err := instanceNetworkDevices(c, p, service)
+	instanceName := instanceName(service, index, scale)
+
+	devices, networks, err := instanceNetworkDevices(c, p, service, instanceName)
 	if err != nil {
 		errs = errors.Join(errs, err)
 	}
@@ -133,14 +135,14 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		GID:              gid,
 	}
 
-	ir, err := c.Resource(client.KindInstance, instanceName(service, index, scale), instCfg)
+	ir, err := c.Resource(client.KindInstance, instanceName, instCfg)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	instance, ok := ir.(*client.Instance)
 	if !ok {
-		return nil, nil, client.ErrUnknown.WithKindName(client.KindInstance, instanceName(service, index, scale))
+		return nil, nil, client.ErrUnknown.WithKindName(client.KindInstance, instanceName)
 	}
 
 	return instance, resources, nil
@@ -287,7 +289,7 @@ func instanceImage(c *client.Client, service types.ServiceConfig) (client.Resour
 
 // instanceNetworkDevices builds the NIC devices (eth0, eth1, ...) for a service's
 // networks along with the network resources they reference.
-func instanceNetworkDevices(c *client.Client, p *types.Project, service types.ServiceConfig) ([]client.InstanceDevice, []client.Resource, error) {
+func instanceNetworkDevices(c *client.Client, p *types.Project, service types.ServiceConfig, instanceName string) ([]client.InstanceDevice, []client.Resource, error) {
 	var errs error
 	devices := []client.InstanceDevice{}
 	resources := []client.Resource{}
@@ -375,15 +377,28 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 		// Whatever we set before, `x-incus` overrides it.
 		maps.Copy(extensions, userExtensions)
 
-		network, err := c.Resource(client.KindNetwork, name, netConfig)
+		rNetwork, err := c.Resource(client.KindNetwork, name, netConfig)
 		if err != nil {
 			errs = errors.Join(errs, err)
 			continue
 		}
 
+		if sNet != nil && len(sNet.Aliases) > 0 {
+			network, ok := rNetwork.(*client.Network)
+			if !ok {
+				errs = errors.Join(
+					errs,
+					fmt.Errorf("failed to get network: %q", name),
+				)
+				continue
+			}
+
+			network.CNames[instanceName] = sNet.Aliases
+		}
+
 		nicConfig := client.InstanceDeviceConfig{
 			DeviceType: client.InstanceDeviceTypeNic,
-			Network:    network,
+			Network:    rNetwork,
 			Extensions: extensions,
 		}
 
@@ -393,7 +408,7 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 		})
 		ethIdx++
 
-		resources = append(resources, network)
+		resources = append(resources, rNetwork)
 	}
 
 	return devices, resources, errs

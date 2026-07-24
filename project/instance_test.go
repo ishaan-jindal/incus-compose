@@ -596,7 +596,7 @@ func TestInstanceNetworkDevices(t *testing.T) {
 			},
 		}}
 
-		devices, resources, err := instanceNetworkDevices(c, p, service)
+		devices, resources, err := instanceNetworkDevices(c, p, service, "")
 		require.NoError(t, err)
 		require.Len(t, devices, 1)
 		assert.Equal(t, "eth0", devices[0].Name)
@@ -608,7 +608,7 @@ func TestInstanceNetworkDevices(t *testing.T) {
 
 	t.Run("no networks", func(t *testing.T) {
 		t.Parallel()
-		devices, resources, err := instanceNetworkDevices(c, &types.Project{}, types.ServiceConfig{Name: "web"})
+		devices, resources, err := instanceNetworkDevices(c, &types.Project{}, types.ServiceConfig{Name: "web"}, "")
 		require.NoError(t, err)
 		assert.Empty(t, devices)
 		assert.Empty(t, resources)

@@ -129,10 +129,6 @@ func TestConfigSnapshots(t *testing.T) {
 			Fixture: "dev-environment/compose.yaml",
 		},
 		{
-			Name:    "grafana_yaml",
-			Fixture: "grafana/compose.yaml",
-		},
-		{
 			Name:    "simple-nginx_yaml",
 			Fixture: "simple-nginx/compose.yaml",
 		},

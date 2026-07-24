@@ -194,13 +194,52 @@ func (r *Instance) ServiceName() string {
 	return r.Config.ServiceName
 }
 
-// WaitIPs polls the instance state until it reports at least one global address
-// or the timeout elapses. A freshly started container may not have its DHCP
-// lease yet, so this gives it time. On timeout it returns whatever was found
-// (possibly empty).
+// WaitIPs polls the instance state until each attached NIC reports its
+// expected global addresses (IPv4 always, IPv6 too unless the network or this
+// NIC's own attachment disables it) or the timeout elapses. A freshly started
+// container may not have its DHCP lease(s) yet, so this gives it time. On
+// timeout it returns an error: DNSWatcher registers an AAAA-equivalent record
+// for any address family it waited for, so a missing one must not pass silently.
 func (r *Instance) WaitIPs(ctx context.Context, timeout time.Duration) (ips []InterfaceIPs, err error) {
 	if err := r.fetch(); err != nil {
 		return nil, err
+	}
+
+	// Cache if ipv6 is required per network. Incus brings up IPv6 automatically
+	// on OCI containers unless the network (or this NIC's own attachment)
+	// disables it. External networks opt out of the requirement entirely: we
+	// never configure them ourselves, and whether they actually hand out IPv6
+	// isn't something we can reliably know from our side.
+	networkIpv6 := map[string]bool{}
+	for _, dev := range r.Config.Devices {
+		if dev.Config.DeviceType != InstanceDeviceTypeNic {
+			continue
+		}
+
+		networkName := dev.Config.NetworkName
+		needsIPv6 := false
+
+		net, ok := dev.Config.Network.(*Network)
+		if ok {
+			networkName = net.IncusName()
+			needsIPv6 = !net.Config.External
+
+			v, extOk := net.Config.Extensions["ipv6.address"]
+			if extOk && v == "none" {
+				needsIPv6 = false
+			}
+		}
+
+		// A device-level override (e.g. x-incus ipv6.address: none on this
+		// specific attachment) takes priority over the network's own setting.
+		v, extOk := dev.Config.Extensions["ipv6.address"]
+		if extOk && v == "none" {
+			needsIPv6 = false
+		}
+
+		if networkName != "" {
+			networkIpv6[networkName] = needsIPv6
+		}
 	}
 
 	deadline, cancel := context.WithTimeout(ctx, timeout)
@@ -211,8 +250,29 @@ func (r *Instance) WaitIPs(ctx context.Context, timeout time.Duration) (ips []In
 		if r.Running() {
 			ips, err = r.client.InstanceIPs(r.IncusName())
 			if err == nil {
-				cancel()
-				return ips, nil
+				needIPv6 := false
+
+				for _, ip := range ips {
+					if len(ip.IPv6s) > 0 {
+						continue
+					}
+
+					ipv6, ok := networkIpv6[ip.Network]
+					if !ok {
+						r.client.LogWarn("Found an unknown network", "resource", r, "network", ip.Network)
+						continue
+					}
+
+					// If we don't have an IPv6 yet but we need one wait again.
+					if ipv6 {
+						needIPv6 = true
+					}
+				}
+
+				if !needIPv6 {
+					cancel()
+					return ips, nil
+				}
 			}
 		}
 
@@ -538,7 +598,7 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 	}
 
 	if options.Healthd {
-		err := r.SetHealthCheckingStopped(ctx, false)
+		err := r.SetHealthCheckingStopped(startCtx, false)
 		if err != nil {
 			return r.client.hookAfter(ctx, ActionStart, r, options, err)
 		}
@@ -549,7 +609,7 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 		restart := r.IncusInstance.Config[HealthKeyPrefix+"restart"]
 
 		if (hasTest || restart == "true") && !isHealthd {
-			err = r.waitForHealthCheck(ctx, ActionStart, options)
+			err = r.waitForHealthCheck(startCtx, ActionStart, options)
 			if err != nil {
 				return r.client.hookAfter(ctx, ActionStart, r, options, err)
 			}
@@ -569,9 +629,6 @@ func (r *Instance) Running() bool {
 }
 
 func (r *Instance) waitForHealthCheck(ctx context.Context, action Action, options Options) error {
-	ctx, cancel := context.WithTimeout(ctx, options.Timeout)
-	defer cancel()
-
 	if !options.ExternalHealthd {
 		// Wait for healthd to be available for 3 seconds.
 		err := retry.New(
@@ -660,16 +717,9 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 		}
 	}
 
-	timeout := options.DependencyTimeout
-	if timeout == 0 {
-		timeout = options.Timeout
-	}
-
-	var cancel context.CancelFunc
-	if timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-	} else {
-		ctx, cancel = context.WithCancel(ctx)
+	dTimeout := options.DependencyTimeout
+	if dTimeout == 0 {
+		dTimeout = options.Timeout
 	}
 
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -679,6 +729,16 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 	defer logTicker.Stop()
 
 	for depName, requiredStatus := range r.Config.Dependencies {
+		var (
+			dCtx   context.Context
+			cancel context.CancelFunc
+		)
+		if dTimeout > 0 {
+			dCtx, cancel = context.WithTimeout(ctx, dTimeout)
+		} else {
+			dCtx, cancel = context.WithCancel(ctx)
+		}
+
 		r.client.LogDebug("Waiting for dependency", "instance", r.incusName, "dep", depName, "status", requiredStatus)
 		// Report the wait on the instance's start line so it shows a spinner
 		// instead of stalling silently. This wait is not an Incus operation,
@@ -705,14 +765,15 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 					}
 				default:
 				}
-			case <-ctx.Done():
+			case <-dCtx.Done():
 				cancel()
-				return fmt.Errorf("dependency '%v' did not reach status %q within %s", depName, requiredStatus, timeout)
+				return fmt.Errorf("dependency '%v' did not reach status %q within %s", depName, requiredStatus, dTimeout)
 			}
 		}
+
+		cancel()
 	}
 
-	cancel()
 	return nil
 }
 

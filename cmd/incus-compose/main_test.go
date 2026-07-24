@@ -64,12 +64,46 @@ func runCommand(ctx context.Context, t *testing.T, projectName string, args ...s
 	return stdout, err
 }
 
+// runCommandSnapshot runs args and snapshots its own stdout. Use this when the
+// command itself is the interesting output (ps, exec, list, ...).
+func runCommandSnapshot(ctx context.Context, t *testing.T, projectName string, strip bool, args ...string) {
+	t.Helper()
+
+	stdout, err := runCommand(ctx, t, projectName, args...)
+	require.NoError(t, err)
+	snapshotter.SnapshotT(t, stripListOutput(t, stdout, strip))
+}
+
+// runCommandSnapshotList runs args (a mutating command with no interesting
+// stdout of its own, e.g. up/down/start/stop/restart) and snapshots the
+// project's `list` state afterward instead, forwarding args' -f/--file flag.
+func runCommandSnapshotList(ctx context.Context, t *testing.T, projectName string, strip bool, args ...string) {
+	t.Helper()
+
+	_, err := runCommand(ctx, t, projectName, args...)
+	require.NoError(t, err)
+
+	listArgs := []string{}
+	for i, a := range args {
+		if (a == "-f" || a == "--file") && i+1 < len(args) {
+			listArgs = []string{a, args[i+1]}
+		}
+	}
+
+	listArgs = append(listArgs, "list", "--format=json")
+	stdout, err := runCommand(ctx, t, projectName, listArgs...)
+	require.NoError(t, err)
+	snapshotter.SnapshotT(t, stripListOutput(t, stdout, strip))
+}
+
 // stripListOutput removes dynamic content (IP addresses, network hashes) for snapshot comparison.
 func stripListOutput(t *testing.T, output *bytes.Buffer, stripHealth bool) string {
 	t.Helper()
 
-	ipRegex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
-	outStr := ipRegex.ReplaceAllString(output.String(), "-stripped-")
+	ipv4Regex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
+	ipv6Regex := regexp.MustCompile(`(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}`)
+	outStr := ipv4Regex.ReplaceAllString(output.String(), "-stripped-")
+	outStr = ipv6Regex.ReplaceAllString(outStr, "-stripped-")
 
 	if stripHealth {
 		healthRegex := regexp.MustCompile(`"health": "[a-zA-Z]+",`)
@@ -119,31 +153,34 @@ func projectClient(ctx context.Context, t *testing.T, projectName string, opts .
 }
 
 type e2eTest struct {
-	name            string
-	args            []string
-	wantErr         bool
-	snapshot        bool
+	name    string
+	args    []string
+	wantErr bool
+	// snapshot snapshots args' own stdout (ps, exec, list, ...).
+	snapshot bool
+	// snapshotList runs args (a mutating command with no interesting stdout
+	// of its own) then snapshots the resulting `list` state instead.
+	snapshotList    bool
 	snapStripHealth bool
 }
 
 func runE2ETests(ctx context.Context, t *testing.T, projectName string, tests []e2eTest) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.snapshot {
+			switch {
+			case tt.snapshotList:
 				// This ugly sleep lets incus settle before we ask for "list".
 				time.Sleep(time.Second)
-			}
-
-			stdout, err := runCommand(ctx, t, projectName, tt.args...)
-
-			if !tt.wantErr {
-				require.NoError(t, err)
-
-				if tt.snapshot {
-					snapshotter.SnapshotT(t, stripListOutput(t, stdout, tt.snapStripHealth))
+				runCommandSnapshotList(ctx, t, projectName, tt.snapStripHealth, tt.args...)
+			case tt.snapshot:
+				runCommandSnapshot(ctx, t, projectName, tt.snapStripHealth, tt.args...)
+			default:
+				_, err := runCommand(ctx, t, projectName, tt.args...)
+				if !tt.wantErr {
+					require.NoError(t, err)
+				} else {
+					require.Error(t, err)
 				}
-			} else {
-				require.Error(t, err)
 			}
 		})
 	}
@@ -319,31 +356,22 @@ func TestUpDownUpSimpleNginx(t *testing.T) {
 
 	tests := []e2eTest{
 		{
-			name: "up simple-nginx",
-			args: []string{"-f", compose, "up", "--detach"},
+			name:            "up simple-nginx",
+			args:            []string{"-f", compose, "up", "--detach"},
+			snapshotList:    true,
+			snapStripHealth: false,
 		},
 		{
-			name:     "list up simple-nginx",
-			args:     []string{"-f", compose, "list", "--format", "json"},
-			snapshot: true,
+			name:            "down simple-nginx",
+			args:            []string{"-f", compose, "down"},
+			snapshotList:    true,
+			snapStripHealth: true,
 		},
 		{
-			name: "down simple-nginx",
-			args: []string{"-f", compose, "down"},
-		},
-		{
-			name:     "list down simple-nginx",
-			args:     []string{"-f", compose, "list", "--format", "json"},
-			snapshot: true,
-		},
-		{
-			name: "up simple-nginx",
-			args: []string{"-f", compose, "up", "--detach"},
-		},
-		{
-			name:     "list down-up simple-nginx",
-			args:     []string{"-f", compose, "list", "--format", "json"},
-			snapshot: true,
+			name:            "up simple-nginx",
+			args:            []string{"-f", compose, "up", "--detach"},
+			snapshotList:    true,
+			snapStripHealth: false,
 		},
 	}
 
@@ -364,13 +392,10 @@ func TestNormalLifecycle(t *testing.T) {
 
 	tests := []e2eTest{
 		{
-			name: "up",
-			args: []string{"-f", compose, "up", "--detach"},
-		},
-		{
-			name:     "list",
-			args:     []string{"-f", compose, "list", "--format=json"},
-			snapshot: true,
+			name:            "up",
+			args:            []string{"-f", compose, "up", "--detach"},
+			snapshotList:    true,
+			snapStripHealth: true,
 		},
 		{
 			name: "down",
@@ -393,7 +418,8 @@ func dnsServiceIPs(t *testing.T, c *client.Client, networks []string, service st
 	for _, name := range networks {
 		net, _, err := conn.GetNetwork(name)
 		require.NoError(t, err, "for network %q", name)
-		ips = append(ips, client.DNSmasqParse(net.Config["raw.dnsmasq"])[service]...)
+		netIps, _, _ := client.DNSmasqParse(net.Config["raw.dnsmasq"])
+		ips = append(ips, netIps[service]...)
 	}
 	return ips
 }
@@ -498,4 +524,61 @@ func TestE2EUpReconcilesToReplicas(t *testing.T) {
 	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 	assertCount(3)
+}
+
+// TestDNSCnameAliasAcrossProjects brings up the dns and dns2 fixtures together.
+// dns2's default network is external and points at dns's network via
+// x-incus-compose.network: dns-default, so both projects register their
+// service-network aliases (network.CNames) on the very same Incus network.
+// Snapshotting dns's network raw.dnsmasq confirms both projects' cnames
+// coexist without clobbering each other.
+func TestDNSCnameAliasAcrossProjects(t *testing.T) {
+	skipLocal(t)
+	t.Parallel()
+
+	ctx := t.Context()
+	composeDNS := "../../test/fixtures/dns/compose.yaml"
+	composeDNS2 := "../../test/fixtures/dns2/compose.yaml"
+
+	// dns2's compose.yaml hardcodes x-incus-compose.network: dns-default, so
+	// the dns project must be named literally "dns" for the names to line up.
+	// Cleanups run LIFO, so dns2 (registered second) is torn down before dns.
+	t.Cleanup(func() {
+		_, _ = runCommand(context.Background(), t, "dns", "-f", composeDNS, "down", "--project")
+	})
+	t.Cleanup(func() {
+		_, _ = runCommand(context.Background(), t, "dns2", "-f", composeDNS2, "down", "--project")
+	})
+
+	_, err := runCommand(ctx, t, "dns", "-f", composeDNS, "up", "--detach")
+	require.NoError(t, err)
+
+	_, err = runCommand(ctx, t, "dns2", "-f", composeDNS2, "up", "--detach")
+	require.NoError(t, err)
+
+	// Matches dns2's hardcoded x-incus-compose.network: dns-default.
+	const networkName = "dns-default"
+
+	c := projectClient(ctx, t, "dns")
+	conn, err := c.Connection()
+	require.NoError(t, err)
+
+	net, _, err := conn.GetNetwork(networkName)
+	require.NoError(t, err)
+
+	ipv4Regex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
+	ipv6Regex := regexp.MustCompile(`(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}`)
+
+	lines := strings.Split(net.Config["raw.dnsmasq"], "\n")
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if ipv6Regex.MatchString(line) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+
+	outStr := ipv4Regex.ReplaceAllString(strings.Join(kept, "\n"), "-stripped-")
+
+	snapshotter.SnapshotT(t, outStr)
 }

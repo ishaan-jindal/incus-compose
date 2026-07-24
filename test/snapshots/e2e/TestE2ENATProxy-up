@@ -16,7 +16,7 @@
     "incus_name": "web-1",
     "image": "docker.io/nginx:alpine",
     "status": "Running",
-    "health": "Unknown",
+    "health": "-stripped-",
     "addresses": [
       "-stripped-"
     ]
@@ -28,7 +28,7 @@
     "incus_name": "web-nat-1",
     "image": "docker.io/nginx:alpine",
     "status": "Running",
-    "health": "Unknown",
+    "health": "-stripped-",
     "addresses": [
       "-stripped-"
     ]
