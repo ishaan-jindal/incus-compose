@@ -69,3 +69,6 @@ func (e *Error) As(target any) bool {
 // ErrRetriesExhausted indicates a checker gave up on its own after exhausting
 // its configured retries; the runner evaluates restart policy in response.
 var ErrRetriesExhausted = newError("healthcheck retries exhausted")
+
+// ErrNotRunning is an internal sentinel error.
+var ErrNotRunning = newError("not running")
