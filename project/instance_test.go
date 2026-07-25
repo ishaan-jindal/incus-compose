@@ -196,6 +196,11 @@ func TestInstanceConfig(t *testing.T) {
 func TestInstanceConfigResourceLimits(t *testing.T) {
 	t.Parallel()
 
+	gc, err := client.NewTestClient(t.Context())
+	require.NoError(t, err)
+	c, err := gc.EnsureProject("default")
+	require.NoError(t, err)
+
 	tests := []struct {
 		name       string
 		limits     *types.Resource
@@ -260,7 +265,7 @@ func TestInstanceConfigResourceLimits(t *testing.T) {
 				service.Extensions = types.Extensions{"x-incus": tt.xIncus}
 			}
 
-			config, err := instanceConfig(service, "test")
+			config, err := instanceConfig(c, service, "test")
 			require.NoError(t, err)
 
 			for key, value := range tt.want {
