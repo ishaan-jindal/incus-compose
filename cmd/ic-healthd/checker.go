@@ -301,9 +301,6 @@ func (c *checker) writeStatus(ctx context.Context, status string) error {
 
 	slog.Info("Status update", "instance", c.name, "old", inst.Config[shared.HealthStatusKey], "current", status)
 
-	wInst := inst.Writable()
-	wInst.Config[shared.HealthStatusKey] = status
-
 	// Retry while Incus reports the instance's operation lock is still held
 	// by another action (e.g. this write racing its own "start" operation).
 	// The lock is short-lived, so a handful of short retries clears it.
@@ -315,6 +312,14 @@ func (c *checker) writeStatus(ctx context.Context, status string) error {
 			return strings.Contains(err.Error(), "Instance is busy")
 		}),
 	).Do(func() error {
+		inst, _, err = c.conn.GetInstance(c.name)
+		if err != nil {
+			return err
+		}
+
+		wInst := inst.Writable()
+		wInst.Config[shared.HealthStatusKey] = status
+
 		op, opErr := c.conn.UpdateInstance(c.name, wInst, "")
 		if opErr != nil {
 			return opErr

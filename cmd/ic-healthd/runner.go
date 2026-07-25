@@ -150,14 +150,6 @@ func (r *Runner) writeStatus(ctx context.Context, status string) error {
 
 	slog.Debug("Writing status", "own-project", r.config.OwnProject, "own-name", r.config.OwnName, "status", status)
 
-	inst, _, err := myConn.GetInstance(r.config.OwnName)
-	if err != nil {
-		return err
-	}
-
-	wInst := inst.Writable()
-	wInst.Config[shared.HealthStatusKey] = status
-
 	// Retry while Incus reports the instance's operation lock is still held
 	// by another action (e.g. this write racing its own "start" operation).
 	// The lock is short-lived, so a handful of short retries clears it.
@@ -169,6 +161,14 @@ func (r *Runner) writeStatus(ctx context.Context, status string) error {
 			return strings.Contains(err.Error(), "Instance is busy")
 		}),
 	).Do(func() error {
+		inst, _, err := myConn.GetInstance(r.config.OwnName)
+		if err != nil {
+			return err
+		}
+
+		wInst := inst.Writable()
+		wInst.Config[shared.HealthStatusKey] = status
+
 		op, opErr := myConn.UpdateInstance(r.config.OwnName, wInst, "")
 		if opErr != nil {
 			return opErr
