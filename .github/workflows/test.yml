@@ -66,7 +66,7 @@ jobs:
       INCUS_REMOTE: ${{ matrix.remote }}
       INCUS_COMPOSE_IMAGE_CACHE: incus-compose-tests-cache
       NO_COLOR: 1
-      TEST_PROCS: 4
+      TEST_PROCS: 2
       INCUS_COMPOSE_UP_DEPENDENCY_TIMEOUT: "2m"
       INCUS_COMPOSE_UP_TIMEOUT: "1m"
       INCUS_COMPOSE_DOWN_TIMEOUT: "30s"
