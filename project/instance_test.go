@@ -179,6 +179,86 @@ func TestInstanceConfig(t *testing.T) {
 	assert.Equal(t, "3", config[client.HealthKeyPrefix+"retries"])
 }
 
+func TestInstanceConfigResourceLimits(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		limits     *types.Resource
+		xIncus     map[string]any
+		want       map[string]string
+		notPresent []string
+	}{
+		{
+			name:   "integer cpu and memory",
+			limits: &types.Resource{NanoCPUs: 2, MemoryBytes: 512 << 20},
+			want: map[string]string{
+				"limits.cpu":    "2",
+				"limits.memory": "512MiB",
+			},
+			notPresent: []string{"limits.cpu.allowance"},
+		},
+		{
+			name:   "fractional cpu",
+			limits: &types.Resource{NanoCPUs: 0.5},
+			want: map[string]string{
+				"limits.cpu.allowance": "50%",
+			},
+			notPresent: []string{"limits.cpu", "limits.memory"},
+		},
+		{
+			name:   "x-incus overrides integer cpu and memory",
+			limits: &types.Resource{NanoCPUs: 2, MemoryBytes: 512 << 20},
+			xIncus: map[string]any{
+				"limits.cpu":    "4",
+				"limits.memory": "1GiB",
+			},
+			want: map[string]string{
+				"limits.cpu":    "4",
+				"limits.memory": "1GiB",
+			},
+			notPresent: []string{"limits.cpu.allowance"},
+		},
+		{
+			name:   "x-incus overrides fractional cpu allowance",
+			limits: &types.Resource{NanoCPUs: 0.5},
+			xIncus: map[string]any{
+				"limits.cpu.allowance": "25%",
+			},
+			want: map[string]string{
+				"limits.cpu.allowance": "25%",
+			},
+			notPresent: []string{"limits.cpu", "limits.memory"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := types.ServiceConfig{
+				Name: "web",
+				Deploy: &types.DeployConfig{
+					Resources: types.Resources{Limits: tt.limits},
+				},
+			}
+			if tt.xIncus != nil {
+				service.Extensions = types.Extensions{"x-incus": tt.xIncus}
+			}
+
+			config, err := instanceConfig(service, "test")
+			require.NoError(t, err)
+
+			for key, value := range tt.want {
+				assert.Equal(t, value, config[key])
+			}
+			for _, key := range tt.notPresent {
+				assert.NotContains(t, config, key)
+			}
+		})
+	}
+}
+
 func TestInstanceConfigMinimal(t *testing.T) {
 	t.Parallel()
 
