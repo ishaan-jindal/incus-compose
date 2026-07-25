@@ -82,6 +82,8 @@ func (c *GlobalClient) newProjectClient(name, incusName string, created bool) (*
 		hookDone:      func(err error) error { return err },
 	}
 
+	addEventHook(cp)
+
 	if c.IsDebugging() {
 		cp.logger = cp.logger.With("incus_project", incusName)
 	}

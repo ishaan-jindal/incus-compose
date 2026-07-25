@@ -11,6 +11,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/avast/retry-go/v5"
@@ -113,6 +114,11 @@ type Instance struct {
 	created   bool
 	Config    InstanceConfig
 
+	mu *sync.Mutex
+
+	// Updated is broadcasted whenever an fetch() or some timeout happened.
+	Updated *sync.Cond
+
 	// deleteMarked indicates that this instance will be deleted after Ensure(),
 	// this is for down scaling instances.
 	deleteMarked bool
@@ -159,11 +165,15 @@ func newInstance(c *Client, name string, configGetter Config) (*Instance, error)
 		config.Extensions = make(map[string]string)
 	}
 
+	mu := &sync.Mutex{}
+
 	inst := &Instance{
 		BaseResource: NewBaseResource(KindInstance, name, config.Priority),
 		client:       c,
 		incusName:    SanitizeIncusName(name, -1),
 		Config:       *config,
+		mu:           mu,
+		Updated:      sync.NewCond(mu),
 	}
 
 	return inst, nil
@@ -291,6 +301,17 @@ func (r *Instance) HasFull() bool {
 }
 
 func (r *Instance) fetch() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.conn == nil {
+		conn, err := r.client.Connection()
+		if err != nil {
+			return err
+		}
+		r.conn = conn
+	}
+
 	// Fresh instance.
 	instance, _, err := r.conn.GetInstance(r.incusName)
 	if err != nil {
@@ -318,6 +339,9 @@ func (r *Instance) fetch() error {
 		r.IncusInstanceFull = full
 	}
 
+	// Let everyone know that we have updated.
+	r.Updated.Broadcast()
+
 	return nil
 }
 
@@ -329,15 +353,9 @@ func (r *Instance) Ensure(ctx context.Context, opts ...Option) error {
 		return err
 	}
 
-	conn, err := r.client.Connection()
-	if err != nil {
-		return err
-	}
-	r.conn = conn
-
 	// Try to get existing
 	// Check if exists
-	err = r.fetch()
+	err := r.fetch()
 	if err == nil {
 		err = r.ensured()
 		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
@@ -568,25 +586,62 @@ func (r *Instance) buildDevices() (map[string]map[string]string, error) {
 
 // Start starts the instance.
 func (r *Instance) Start(ctx context.Context, opts ...Option) error {
+	const action = ActionStart
 	options := NewOptions(opts...)
 
-	if err := r.client.hookBefore(ctx, ActionStart, r, options, nil); err != nil {
+	if err := r.client.hookBefore(ctx, action, r, options, nil); err != nil {
 		return err
 	}
 
 	if !r.IsEnsured() {
-		return r.client.hookAfter(ctx, ActionStart, r, options, ErrNotEnsured)
+		return r.client.hookAfter(ctx, action, r, options, ErrNotEnsured)
 	}
 
+	// When already running update the instance to be
+	// "managed" by setting user.healthcheck.stopped then exit with ErrRunning.
 	if r.Running() {
 		if options.Healthd {
 			err := r.SetHealthCheckingStopped(ctx, false)
 			if err != nil {
-				return r.client.hookAfter(ctx, ActionStart, r, options, err)
+				return r.client.hookAfter(ctx, action, r, options, err)
 			}
 		}
 
-		return r.client.hookAfter(ctx, ActionStart, r, options, ErrRunning)
+		return r.client.hookAfter(ctx, action, r, options, ErrRunning)
+	}
+
+	// Wait for the healthcheck to success if a test is defined.
+	_, hasTest := r.IncusInstance.Config[HealthKeyPrefix+"test"]
+	restart := r.IncusInstance.Config[HealthKeyPrefix+"restart"]
+	v, ok := r.IncusInstance.Config[HealthKeyPrefix+"daemon"]
+	isHealthd := ok && v == "true"
+
+	if !isHealthd && (hasTest || restart == "true") && options.Healthd && !options.ExternalHealthd {
+		// Wait for healthd to be available for 3 seconds.
+		err := retry.New(
+			retry.Context(ctx),
+			retry.Attempts(6),
+			retry.Delay(500*time.Millisecond),
+		).Do(func() error {
+			healthd, err := r.client.FindHealthd()
+			if err != nil {
+				return err
+			}
+
+			hInstState, _, err := r.conn.GetInstanceState(healthd)
+			if err != nil {
+				return fmt.Errorf("failed to get the healthd '%v' instance state: %w", healthd, err)
+			}
+
+			if hInstState.StatusCode != incusApi.Running {
+				return fmt.Errorf("healthd '%v' not running cannot wait for it to check dependencies", healthd)
+			}
+
+			return nil
+		})
+		if err != nil {
+			return r.client.hookAfter(ctx, action, r, options, err)
+		}
 	}
 
 	startCtx, cancel := context.WithTimeout(ctx, options.Timeout)
@@ -594,29 +649,35 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 
 	err := r.start(startCtx, options)
 	if err != nil {
-		return r.client.hookAfter(ctx, ActionStart, r, options, err)
+		return r.client.hookAfter(ctx, action, r, options, err)
 	}
 
 	if options.Healthd {
 		err := r.SetHealthCheckingStopped(startCtx, false)
 		if err != nil {
-			return r.client.hookAfter(ctx, ActionStart, r, options, err)
+			return r.client.hookAfter(ctx, action, r, options, err)
 		}
 
-		// Wait for the healthcheck to success if a test is defined.
-		_, hasTest := r.IncusInstance.Config[HealthKeyPrefix+"test"]
-		_, isHealthd := r.IncusInstance.Config[HealthKeyPrefix+"daemon"]
-		restart := r.IncusInstance.Config[HealthKeyPrefix+"restart"]
-
 		if (hasTest || restart == "true") && !isHealthd {
-			err = r.waitForHealthCheck(startCtx, ActionStart, options)
+			r.client.globalClient.emitProgress(action, r, options, Progress{
+				Percent: -1,
+				Text:    "Waiting for the healthcheck",
+			})
+
+			err = r.waitForHealthCheck(startCtx)
 			if err != nil {
-				return r.client.hookAfter(ctx, ActionStart, r, options, err)
+				return r.client.hookAfter(
+					ctx,
+					action,
+					r,
+					options,
+					fmt.Errorf("failed to wait for the healthcheck with timeout: %v", options.Timeout),
+				)
 			}
 		}
 	}
 
-	return r.client.hookAfter(ctx, ActionStart, r, options, nil)
+	return r.client.hookAfter(ctx, action, r, options, nil)
 }
 
 // Running returns true if the instance is running.
@@ -628,58 +689,61 @@ func (r *Instance) Running() bool {
 	return r.IncusInstance.StatusCode == incusApi.Running
 }
 
-func (r *Instance) waitForHealthCheck(ctx context.Context, action Action, options Options) error {
-	if !options.ExternalHealthd {
-		// Wait for healthd to be available for 3 seconds.
-		err := retry.New(
-			retry.Context(ctx),
-			retry.Attempts(6),
-			retry.Delay(500*time.Millisecond),
-		).Do(func() error {
-			healthd, err := r.client.FindHealthd()
-			if err != nil {
-				return err
-			}
+// See: https://pkg.go.dev/context#AfterFunc
+func waitOnCond(ctx context.Context, cond *sync.Cond, conditionMet func() bool) error {
+	cond.L.Lock()
+	defer cond.L.Unlock()
 
-			hInstState, _, err := r.conn.GetInstanceState(healthd)
-			if err != nil {
-				return fmt.Errorf("failed to get the healthd '%v' instance state: %w", healthd, err)
-			}
+	stopf := context.AfterFunc(ctx, func() {
+		// We need to acquire cond.L here to be sure that the Broadcast
+		// below won't occur before the call to Wait, which would result
+		// in a missed signal (and deadlock).
+		cond.L.Lock()
+		defer cond.L.Unlock()
 
-			if hInstState.StatusCode != incusApi.Running {
-				return fmt.Errorf("healthd '%v' not running cannot wait for it to check dependencies", healthd)
-			}
-
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-	}
-
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-
-	r.client.globalClient.emitProgress(action, r, options, Progress{
-		Percent: -1,
-		Text:    "Waiting for the healthcheck",
+		// If multiple goroutines are waiting on cond simultaneously,
+		// we need to make sure we wake up exactly this one.
+		// That means that we need to Broadcast to all of the goroutines,
+		// which will wake them all up.
+		//
+		// If there are N concurrent calls to waitOnCond, each of the goroutines
+		// will spuriously wake up O(N) other goroutines that aren't ready yet,
+		// so this will cause the overall CPU cost to be O(N²).
+		cond.Broadcast()
 	})
+	defer stopf()
 
-	for {
-		err := r.fetch()
-		if err == nil && r.IncusInstance.Config[HealthStatusKey] == HealthStatusHealthy {
-			r.client.LogDebug("Ready", "resource", r)
-
-			return nil
-		}
-
-		select {
-		case <-ticker.C:
-			// r.client.LogDebug("Waiting for the healthcheck", "resource", r)
-		case <-ctx.Done():
-			return fmt.Errorf("did not reach status %q within %s", HealthStatusHealthy, options.Timeout)
+	// Since the wakeups are using Broadcast instead of Signal, this call to
+	// Wait may unblock due to some other goroutine's context becoming done,
+	// so to be sure that ctx is actually done we need to check it in a loop.
+	for !conditionMet() {
+		cond.Wait()
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 	}
+
+	return nil
+}
+
+func (r *Instance) waitForHealthCheck(ctx context.Context) error {
+	err := r.fetch()
+	if err == nil && r.IncusInstance.Config[HealthStatusKey] == HealthStatusHealthy {
+		r.client.LogDebug("Ready", "resource", r)
+
+		return nil
+	}
+
+	err = waitOnCond(
+		ctx,
+		r.Updated,
+		func() bool { return r.IncusInstance.Config[HealthStatusKey] == HealthStatusHealthy },
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // waitForDependencies blocks until all Config.Dependencies reach their required
@@ -689,44 +753,10 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 		return nil
 	}
 
-	if !options.ExternalHealthd {
-		// Wait for healthd to be available for 3 seconds.
-		err := retry.New(
-			retry.Context(ctx),
-			retry.Attempts(6),
-			retry.Delay(500*time.Millisecond),
-		).Do(func() error {
-			healthd, err := r.client.FindHealthd()
-			if err != nil {
-				return err
-			}
-
-			hInstState, _, err := r.conn.GetInstanceState(healthd)
-			if err != nil {
-				return fmt.Errorf("failed to get the healthd '%v' instance state: %w", healthd, err)
-			}
-
-			if hInstState.StatusCode != incusApi.Running {
-				return fmt.Errorf("healthd '%v' not running cannot wait for it to check dependencies", healthd)
-			}
-
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-	}
-
 	dTimeout := options.DependencyTimeout
 	if dTimeout == 0 {
 		dTimeout = options.Timeout
 	}
-
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-
-	logTicker := time.NewTicker(2 * time.Second)
-	defer logTicker.Stop()
 
 	for depName, requiredStatus := range r.Config.Dependencies {
 		var (
@@ -747,28 +777,22 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 			Percent: -1,
 			Text:    fmt.Sprintf("Waiting for dependency %s", depName),
 		})
-		for {
-			inst, _, err := r.conn.GetInstance(depName)
-			if err == nil && inst.Config[HealthStatusKey] == requiredStatus {
-				r.client.LogDebug("Dependency ready", "dep", depName)
-				break
-			}
 
-			select {
-			case <-ticker.C:
-				select {
-				case <-logTicker.C:
-					if err == nil {
-						r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "status", inst.Config[HealthStatusKey])
-					} else {
-						r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "error", err)
-					}
-				default:
-				}
-			case <-dCtx.Done():
-				cancel()
-				return fmt.Errorf("dependency '%v' did not reach status %q within %s", depName, requiredStatus, dTimeout)
-			}
+		rInst, err := r.client.Resource(KindInstance, depName, &InstanceConfig{})
+		if err != nil {
+			cancel()
+			return fmt.Errorf("while getting instance %q: %w", depName, err)
+		}
+		inst, ok := rInst.(*Instance)
+		if !ok {
+			cancel()
+			return fmt.Errorf("failed to cast the instance %q", depName)
+		}
+
+		err = inst.waitForHealthCheck(dCtx)
+		if err != nil {
+			cancel()
+			return fmt.Errorf("failed to wait for the dependency %q with timeout %v", depName, dTimeout)
 		}
 
 		cancel()

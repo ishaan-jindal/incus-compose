@@ -274,9 +274,19 @@ type ResourceStore struct {
 	resources []Resource
 }
 
-// All returns all resources.
-func (s *ResourceStore) All() []Resource {
+// all returns all resources.
+func (s *ResourceStore) all() []Resource {
 	return s.resources
+}
+
+// Range runs a function on each resource with an active lock.
+func (s *ResourceStore) Range(f func(r Resource)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, r := range s.resources {
+		f(r)
+	}
 }
 
 // Add appends a resource to the store.

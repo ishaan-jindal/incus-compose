@@ -25,6 +25,13 @@ for correct semver ordering. Headings below preserve each release's announced fo
   its own status; the runner alone decides whether to restart an instance.
   `incus-compose healthd restart` no longer needs to register a client-side
   reloader hook, since healthd resyncs itself from events. (by @jochumdev)
+- `up`'s wait for a service's own healthcheck to become healthy, and its
+  wait on `depends_on: { condition: service_healthy }` dependencies, no
+  longer poll Incus every 500ms. The client now opens a project-scoped
+  Incus lifecycle event listener and blocks on a per-instance condition
+  variable that's broadcast whenever that instance's state is refreshed
+  from a lifecycle event (start/stop/update), cutting idle `GetInstance`
+  API calls during `up`. (by @jochumdev)
 
 ### Removed
 

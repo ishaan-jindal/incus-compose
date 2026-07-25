@@ -561,7 +561,7 @@ func (c *GlobalClient) DeleteProject(name string, force bool) error {
 	for _, p := range c.projects {
 		if p.project == name {
 			// Delete networks first - they are global, not project-scoped
-			networks, err := ByKind[*Network](p.resources.All(), KindNetwork)
+			networks, err := ByKind[*Network](p.resources.all(), KindNetwork)
 			if err != nil {
 				c.LogWarn("Deleting networks", "error", err)
 				continue
