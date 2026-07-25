@@ -14,6 +14,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/types"
 
 	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/shared"
 )
 
 // labelIncusComposePrefix is the instance config prefix for incus-compose labels.
@@ -356,10 +357,11 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 		}
 
 		if ((ipv4Address != "" && gateway4 == "none") || (ipv6Address != "" && gateway6 == "none")) &&
-			!c.Global().HasExtension(client.Incus73Extension) {
-			errs = errors.Join(
-				errs,
-				fmt.Errorf("for gateway=none on network %q you need at least incus 7.3 or 7.0.2 LTS", name),
+			!c.Global().HasExtension(shared.Incus73Extension) {
+			c.LogWarn(
+				"For `gateway=none` on a network you need at least incus 7.3 or 7.0.2 LTS",
+				"service", service.Name,
+				"network", name,
 			)
 			continue
 		}
@@ -444,23 +446,20 @@ func instanceProxyDevices(c *client.Client, devices []client.InstanceDevice, ser
 		}
 
 		if nat && connectAddr == "" {
-			if !c.Global().HasExtension(client.Incus72Extension) {
-				errs = errors.Join(
-					errs,
-					fmt.Errorf("for nat on port %q you need at least incus 7.2 or 7.0.1 LTS",
-						port.Published,
-					),
+			if !c.Global().HasExtension(shared.Incus72Extension) {
+				c.LogWarn("For nat you need at least incus 7.2 or 7.0.1 LTS",
+					"service", service.Name,
+					"port", port.Published,
 				)
 				continue
 			}
 			connectAddr = "0.0.0.0"
 		} else if nat {
-			if !c.Global().HasExtension(client.Incus73Extension) {
-				errs = errors.Join(
-					errs,
-					fmt.Errorf("for nat with a static ip on port %q you need at least incus 7.3 or 7.0.2 LTS",
-						port.Published,
-					),
+			if !c.Global().HasExtension(shared.Incus73Extension) {
+				c.LogWarn(
+					"For nat with a static ip you need at least incus 7.2 or 7.0.1 LTS",
+					"service", service.Name,
+					"port", port.Published,
 				)
 				continue
 			}

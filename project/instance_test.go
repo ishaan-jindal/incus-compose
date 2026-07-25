@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/shared"
 )
 
 func TestFormatMemoryLimit(t *testing.T) {
@@ -624,7 +625,7 @@ func TestInstanceProxyDevices(t *testing.T) {
 	c, err := gc.EnsureProject("default")
 	require.NoError(t, err)
 
-	if !c.Global().HasExtension(client.Incus72Extension) {
+	if !c.Global().HasExtension(shared.Incus72Extension) {
 		t.Skip("Nat tests require at least incus 7.2 or 7.0.1 LTS")
 	}
 
