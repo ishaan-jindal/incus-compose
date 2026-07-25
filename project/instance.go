@@ -45,7 +45,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	var errs error
 	resources := []client.Resource{}
 
-	config, err := instanceConfig(service, p.Name)
+	config, err := instanceConfig(c, service, p.Name)
 	if err != nil {
 		errs = errors.Join(errs, err)
 	}
@@ -152,7 +152,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 // instanceConfig builds the Incus instance config map from a compose service.
 // Environment vars become environment.* keys, labels become user.* keys, and
 // restart/resource/healthcheck settings and raw x-incus options are merged in.
-func instanceConfig(service types.ServiceConfig, projectName string) (map[string]string, error) {
+func instanceConfig(c *client.Client, service types.ServiceConfig, projectName string) (map[string]string, error) {
 	config := make(map[string]string, len(service.Environment)+len(service.Labels))
 
 	// Environment variables
@@ -214,6 +214,19 @@ func instanceConfig(service types.ServiceConfig, projectName string) (map[string
 
 		if service.HealthCheck.Timeout != nil {
 			config[client.HealthKeyPrefix+"timeout"] = service.HealthCheck.Timeout.String()
+		}
+	}
+
+	// DNS - https://github.com/compose-spec/compose-spec/blob/main/05-services.md#dns
+	if c.Global().HasExtension(shared.Incus72Extension) {
+		if len(service.DNS) > 0 {
+			config["oci.dns.nameservers"] = strings.Join(service.DNS, ",")
+		}
+		if len(service.DNSSearch) > 0 {
+			config["oci.dns.search"] = strings.Join(service.DNSSearch, ",")
+		}
+		if service.DomainName != "" {
+			config["oci.dns.domain"] = service.DomainName
 		}
 	}
 

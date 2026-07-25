@@ -69,6 +69,10 @@ for correct semver ordering. Headings below preserve each release's announced fo
   (`external: true`) without clobbering the other project's records. Limited
   to single-instance services, since a CNAME alias can only point at one
   target. (by @jochumdev)
+- `dns` / `dns_search` / `domainname` now map to Incus's `oci.dns.nameservers` /
+  `oci.dns.search` / `oci.dns.domain` instance config keys, seeding the
+  container's initial `/etc/resolv.conf`. `dns_opt` has no Incus equivalent
+  and is not mapped. (by @jochumdev)
 
 ### Fixed
 
