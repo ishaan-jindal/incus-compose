@@ -430,7 +430,7 @@ type swapWriter struct {
 // logWriter is the destination behind the default slog handler.
 var logWriter = &swapWriter{w: os.Stderr}
 
-func (s *swapWriter) Write(b []byte) (int, error) {
+func (s *swapWriter) Write(b []byte) (int, error) { // nolint:unparam
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.w.Write(b)

@@ -104,17 +104,6 @@ func (c *checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 	}
 	defer cancel()
 
-	if inStart && c.check(phaseCtx) == nil {
-		// First success during the start period: switch to the normal checker.
-		c.failures = 0
-
-		if err := c.writeStatus(phaseCtx, shared.HealthStatusHealthy); err != nil {
-			slog.Debug("updating healthcheck status", "instance", c.name, "error", err)
-		}
-
-		return phaseNormal
-	}
-
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -126,7 +115,9 @@ func (c *checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 			done := false
 
 			err := c.check(phaseCtx)
-			if err == nil {
+			if errors.Is(err, ErrNotRunning) {
+				continue
+			} else if err == nil {
 				c.failures = 0
 				status = shared.HealthStatusHealthy
 
@@ -178,7 +169,7 @@ func (c *checker) check(ctx context.Context) error {
 	}
 
 	if inst.StatusCode != incusApi.Running {
-		return errors.New("not running")
+		return ErrNotRunning
 	}
 
 	// Build command based on test format

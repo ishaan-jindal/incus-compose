@@ -915,3 +915,56 @@ func TestE2EUpDownWithVolume(t *testing.T) {
 
 	runE2ETests(ctx, t, pn, tests)
 }
+
+// TestE2EUpReconcilesToReplicas verifies docker-parity scaling: a plain `up`
+// reconciles a service to deploy.replicas in both directions. A manual --scale
+// applies only to that invocation; the next plain `up` restores replicas.
+func TestE2EUpReconcilesToReplicas(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := t.Context()
+	pn := t.Name()
+	compose := "../../test/fixtures/nginx-downscale/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+	})
+
+	// Baseline: deploy.replicas=3.
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	c := projectClient(ctx, t, pn)
+	allNames := []string{"web-1", "web-2", "web-3", "web-4", "web-5"}
+	assertCount := func(want int) {
+		t.Helper()
+		for i, name := range allNames {
+			ok, err := c.InstanceExists(name)
+			require.NoError(t, err)
+			require.Equal(t, i < want, ok, "instance %q existence (want %d running)", name, want)
+		}
+	}
+	assertCount(3)
+
+	// Manual downscale to 1.
+	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach", "--scale=web=1")
+	require.NoError(t, err)
+	assertCount(1)
+
+	// Plain up restores replicas=3 (scales back up).
+	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+	assertCount(3)
+
+	// Manual upscale to 5.
+	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach", "--scale=web=5")
+	require.NoError(t, err)
+	assertCount(5)
+
+	// Plain up reconciles back down to replicas=3.
+	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+	assertCount(3)
+}

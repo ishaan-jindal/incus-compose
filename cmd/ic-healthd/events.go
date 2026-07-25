@@ -16,10 +16,6 @@ import (
 // event payload carries only name/project/action; handlers do a targeted
 // GetInstance(name) to read config, cheaper than a full list.
 func (r *Runner) handleEvent(ctx context.Context, event incusApi.Event) {
-	if event.Type != incusApi.EventTypeLifecycle {
-		return
-	}
-
 	var lc incusApi.EventLifecycle
 	if err := json.Unmarshal(event.Metadata, &lc); err != nil {
 		slog.Debug("Decoding lifecycle event", "error", err)
@@ -30,16 +26,18 @@ func (r *Runner) handleEvent(ctx context.Context, event incusApi.Event) {
 		return
 	}
 
-	slog.Debug("New lifecycle event", "instance", lc.Name, "action", lc.Action)
-
 	switch lc.Action {
-	case incusApi.EventLifecycleInstanceCreated, incusApi.EventLifecycleInstanceStarted:
+	case incusApi.EventLifecycleInstanceStarted:
+		slog.Debug("New lifecycle event", "instance", lc.Name, "action", lc.Action)
 		r.handleStarted(ctx, lc.Name)
 	case incusApi.EventLifecycleInstanceUpdated:
+		slog.Debug("New lifecycle event", "instance", lc.Name, "action", lc.Action)
 		r.handleUpdated(ctx, lc.Name)
 	case incusApi.EventLifecycleInstanceDeleted:
+		slog.Debug("New lifecycle event", "instance", lc.Name, "action", lc.Action)
 		r.handleDeleted(ctx, lc.Name)
-	case incusApi.EventLifecycleInstanceStopped, incusApi.EventLifecycleInstanceShutdown:
+	case incusApi.EventLifecycleInstanceStopped:
+		slog.Debug("New lifecycle event", "instance", lc.Name, "action", lc.Action)
 		r.handleStopped(ctx, lc.Name)
 	}
 }
@@ -436,8 +434,13 @@ func (r *Runner) resync(ctx context.Context) error {
 		}
 	}
 	var toStart []string
-	for name := range discovered {
-		if _, ok := r.tracked[name]; !ok {
+	for name, cfg := range discovered {
+		if !cfg.Running {
+			continue
+		}
+
+		_, ok := r.tracked[name]
+		if !ok {
 			toStart = append(toStart, name)
 		}
 	}

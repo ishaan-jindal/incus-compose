@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -104,15 +105,20 @@ func buildLoadOptions(cmd *cli.Command) []project.LoadOption {
 	return loadOpts
 }
 
-func initLogger(debug bool, noColor bool) {
+func initLogger(debug bool, noColor bool, writer io.Writer) {
 	level := slog.LevelInfo
 	if debug {
 		level = slog.LevelDebug
 	}
 
-	logWriter.Swap(colorable.NewColorable(os.Stderr))
+	if !noColor && runtime.GOOS == "windows" {
+		writer = logWriter.Swap(colorable.NewColorable(os.Stderr))
+	} else {
+		writer = logWriter.Swap(writer)
+	}
+
 	logger := slog.New(tint.NewHandler(
-		logWriter,
+		writer,
 		&tint.Options{
 			NoColor:    noColor,
 			Level:      level,
@@ -291,7 +297,7 @@ func newRootCommand() *cli.Command {
 				}
 			}
 
-			initLogger(cmd.Bool("debug"), noColor)
+			initLogger(cmd.Bool("debug"), noColor, cmd.ErrWriter)
 
 			// Commands that don't need an Incus client connection
 			noClientCommands := []string{"config", "version", "incus"}
