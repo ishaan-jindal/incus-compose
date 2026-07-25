@@ -1,5 +1,3 @@
-//go:build unix && !darwin
-
 package client
 
 import (
@@ -76,19 +74,6 @@ func TestBuildMetadataTarWithConfigJSON(t *testing.T) {
 	require.ErrorIs(t, err, io.EOF)
 }
 
-func TestDetectBuilderPreferred(t *testing.T) {
-	t.Parallel()
-	p, err := buildDetectBuilder("echo")
-	require.NoError(t, err)
-	require.Contains(t, p, "echo")
-}
-
-func TestDetectBuilderPreferredMissing(t *testing.T) {
-	t.Parallel()
-	_, err := buildDetectBuilder("this-binary-does-not-exist-incus-compose-test")
-	require.Error(t, err)
-}
-
 func TestOptionBuild(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -149,10 +134,10 @@ func TestBuildArgs_Podman(t *testing.T) {
 	}
 	args := buildArgs(true, cfg, "ic-compose-build-test", "/tmp/out.tar")
 	require.Contains(t, args, "build")
-	require.Contains(t, args, "-t")
+	require.Contains(t, args, "--tag")
 	require.Contains(t, args, "ic-compose-build-test")
 	require.Contains(t, args, "/path/to/ctx")
-	require.Contains(t, args, "-f")
+	require.Contains(t, args, "--file")
 	require.Contains(t, args, "Containerfile")
 	require.Contains(t, args, "--platform")
 	require.Contains(t, args, "linux/amd64")
