@@ -14,6 +14,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/types"
 
 	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/shared"
 )
 
 // labelIncusComposePrefix is the instance config prefix for incus-compose labels.
@@ -44,7 +45,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	var errs error
 	resources := []client.Resource{}
 
-	config, err := instanceConfig(service, p.Name)
+	config, err := instanceConfig(c, service, p.Name)
 	if err != nil {
 		errs = errors.Join(errs, err)
 	}
@@ -151,7 +152,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 // instanceConfig builds the Incus instance config map from a compose service.
 // Environment vars become environment.* keys, labels become user.* keys, and
 // restart/resource/healthcheck settings and raw x-incus options are merged in.
-func instanceConfig(service types.ServiceConfig, projectName string) (map[string]string, error) {
+func instanceConfig(c *client.Client, service types.ServiceConfig, projectName string) (map[string]string, error) {
 	config := make(map[string]string, len(service.Environment)+len(service.Labels))
 
 	// Environment variables
@@ -213,6 +214,19 @@ func instanceConfig(service types.ServiceConfig, projectName string) (map[string
 
 		if service.HealthCheck.Timeout != nil {
 			config[client.HealthKeyPrefix+"timeout"] = service.HealthCheck.Timeout.String()
+		}
+	}
+
+	// DNS - https://github.com/compose-spec/compose-spec/blob/main/05-services.md#dns
+	if c.Global().HasExtension(shared.Incus72Extension) {
+		if len(service.DNS) > 0 {
+			config["oci.dns.nameservers"] = strings.Join(service.DNS, ",")
+		}
+		if len(service.DNSSearch) > 0 {
+			config["oci.dns.search"] = strings.Join(service.DNSSearch, ",")
+		}
+		if service.DomainName != "" {
+			config["oci.dns.domain"] = service.DomainName
 		}
 	}
 
@@ -356,10 +370,11 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 		}
 
 		if ((ipv4Address != "" && gateway4 == "none") || (ipv6Address != "" && gateway6 == "none")) &&
-			!c.Global().HasExtension(client.Incus73Extension) {
-			errs = errors.Join(
-				errs,
-				fmt.Errorf("for gateway=none on network %q you need at least incus 7.3 or 7.0.2 LTS", name),
+			!c.Global().HasExtension(shared.Incus73Extension) {
+			c.LogWarn(
+				"For `gateway=none` on a network you need at least incus 7.3 or 7.0.2 LTS",
+				"service", service.Name,
+				"network", name,
 			)
 			continue
 		}
@@ -444,23 +459,20 @@ func instanceProxyDevices(c *client.Client, devices []client.InstanceDevice, ser
 		}
 
 		if nat && connectAddr == "" {
-			if !c.Global().HasExtension(client.Incus72Extension) {
-				errs = errors.Join(
-					errs,
-					fmt.Errorf("for nat on port %q you need at least incus 7.2 or 7.0.1 LTS",
-						port.Published,
-					),
+			if !c.Global().HasExtension(shared.Incus72Extension) {
+				c.LogWarn("For nat you need at least incus 7.2 or 7.0.1 LTS",
+					"service", service.Name,
+					"port", port.Published,
 				)
 				continue
 			}
 			connectAddr = "0.0.0.0"
 		} else if nat {
-			if !c.Global().HasExtension(client.Incus73Extension) {
-				errs = errors.Join(
-					errs,
-					fmt.Errorf("for nat with a static ip on port %q you need at least incus 7.3 or 7.0.2 LTS",
-						port.Published,
-					),
+			if !c.Global().HasExtension(shared.Incus73Extension) {
+				c.LogWarn(
+					"For nat with a static ip you need at least incus 7.2 or 7.0.1 LTS",
+					"service", service.Name,
+					"port", port.Published,
 				)
 				continue
 			}

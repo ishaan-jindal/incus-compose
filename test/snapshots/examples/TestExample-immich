@@ -44,7 +44,7 @@
     "name": "machine-learning",
     "description": "incus-compose: testexample-immich:machine_learning",
     "incus_name": "machine-learning",
-    "image": "ghcr.io/immich-app/immich-machine-learning:v3.0.1",
+    "image": "ghcr.io/immich-app/immich-machine-learning:v3",
     "status": "Running",
     "health": "Healthy",
     "addresses": [
@@ -56,7 +56,7 @@
     "name": "microservices",
     "description": "incus-compose: testexample-immich:microservices",
     "incus_name": "microservices",
-    "image": "ghcr.io/immich-app/immich-server:v3.0.1",
+    "image": "ghcr.io/immich-app/immich-server:v3",
     "status": "Running",
     "health": "Healthy",
     "addresses": [
@@ -92,7 +92,7 @@
     "name": "server",
     "description": "incus-compose: testexample-immich:server",
     "incus_name": "server",
-    "image": "ghcr.io/immich-app/immich-server:v3.0.1",
+    "image": "ghcr.io/immich-app/immich-server:v3",
     "status": "Running",
     "health": "Healthy",
     "addresses": [

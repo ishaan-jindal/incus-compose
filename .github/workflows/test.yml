@@ -86,7 +86,9 @@ jobs:
 
           gotestsum \
             --packages="./..." \
-            --junitfile "$REPORTS_DIR/junit.xml" \
+            --junitfile="$REPORTS_DIR/junit.xml" \
+            --jsonfile="$REPORTS_DIR/test.json" \
+            --post-run-command "bash -c 'echo; echo Slowest tests; gotestsum tool slowest --num=10 --jsonfile=$REPORTS_DIR/test.json'" \
             -- -count=1 -parallel "$TEST_PROCS" \
             -covermode=atomic -coverprofile="$REPORTS_DIR/cover.out" -v 2>&1
 

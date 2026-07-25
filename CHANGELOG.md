@@ -13,6 +13,16 @@ for correct semver ordering. Headings below preserve each release's announced fo
 
 ### Changed
 
+- `build:` now works on every platform instead of Linux/Unix-only: image
+  building previously unpacked the built OCI image with `umoci` (gated to
+  `unix && !darwin`, with a "not implemented" stub elsewhere), and now
+  instead derives the minimal `config.json` needed by Incus's LXC driver
+  (`Process.Args`/`Cwd`/`User`) straight from `<builder> inspect`, dropping
+  the `opencontainers/image-spec` and `opencontainers/umoci` dependencies.
+  Builder detection also no longer shells out to `<builder> version` to
+  distinguish Podman from Docker; it now checks the resolved binary name,
+  and `buildah` is tried alongside `podman`/`docker`. (by @jochumdev)
+
 - Published ports (`ports:`) create a proxy device. On Incus 7.0+ the
   device uses NAT mode (`nat=true`) with ARP/NDP-based instance IP
   detection; on older servers it falls back to a userspace proxy
@@ -66,6 +76,10 @@ for correct semver ordering. Headings below preserve each release's announced fo
   (`external: true`) without clobbering the other project's records. Limited
   to single-instance services, since a CNAME alias can only point at one
   target. (by @jochumdev)
+- `dns` / `dns_search` / `domainname` now map to Incus's `oci.dns.nameservers` /
+  `oci.dns.search` / `oci.dns.domain` instance config keys, seeding the
+  container's initial `/etc/resolv.conf`. `dns_opt` has no Incus equivalent
+  and is not mapped. (by @jochumdev)
 
 ### Fixed
 

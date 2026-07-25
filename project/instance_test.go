@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/shared"
 )
 
 func TestFormatMemoryLimit(t *testing.T) {
@@ -109,9 +110,10 @@ func TestServiceXIncusExtensionsExtractsXIncus(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, map[string]string{
-		"limits.memory":    "1024MB",
-		"limits.cpu":       "2",
-		"security.nesting": "false",
+		"limits.memory":       "1024MB",
+		"limits.cpu":          "2",
+		"security.nesting":    "false",
+		"oci.dns.nameservers": "9.9.9.9",
 	}, serviceXIncusExtensions(proj.Services["web"]))
 	assert.Nil(t, serviceXIncusExtensions(types.ServiceConfig{}))
 }
@@ -141,6 +143,12 @@ func TestInstanceName(t *testing.T) {
 
 func TestInstanceConfig(t *testing.T) {
 	t.Parallel()
+	skipLocal(t)
+
+	gc, err := client.NewTestClient(t.Context())
+	require.NoError(t, err)
+	c, err := gc.EnsureProject("default")
+	require.NoError(t, err)
 
 	val := "bar"
 	retries := uint64(3)
@@ -150,6 +158,9 @@ func TestInstanceConfig(t *testing.T) {
 		Labels:      types.Labels{"com.example": "x"},
 		Command:     types.ShellCommand{"/bin/sh", "-c", "echo hi"},
 		Restart:     "always",
+		DNS:         types.StringList{"8.8.8.8", "1.1.1.1"},
+		DNSSearch:   types.StringList{"example.com"},
+		DomainName:  "example.com",
 		Deploy: &types.DeployConfig{
 			Resources: types.Resources{
 				Limits: &types.Resource{NanoCPUs: 2, MemoryBytes: 512 << 20},
@@ -161,7 +172,7 @@ func TestInstanceConfig(t *testing.T) {
 		},
 	}
 
-	config, err := instanceConfig(service, "")
+	config, err := instanceConfig(c, service, "")
 	require.NoError(t, err)
 
 	assert.Equal(t, "bar", config["environment.FOO"])
@@ -177,6 +188,9 @@ func TestInstanceConfig(t *testing.T) {
 	assert.Equal(t, client.HealthStatusUnknown, config[client.HealthStatusKey])
 	assert.Equal(t, `["CMD","curl","-f","http://localhost"]`, config[client.HealthKeyPrefix+"test"])
 	assert.Equal(t, "3", config[client.HealthKeyPrefix+"retries"])
+	assert.Equal(t, "8.8.8.8,1.1.1.1", config["oci.dns.nameservers"])
+	assert.Equal(t, "example.com", config["oci.dns.search"])
+	assert.Equal(t, "example.com", config["oci.dns.domain"])
 }
 
 func TestInstanceConfigResourceLimits(t *testing.T) {
@@ -261,8 +275,14 @@ func TestInstanceConfigResourceLimits(t *testing.T) {
 
 func TestInstanceConfigMinimal(t *testing.T) {
 	t.Parallel()
+	skipLocal(t)
 
-	config, err := instanceConfig(types.ServiceConfig{Name: "web"}, "project1")
+	gc, err := client.NewTestClient(t.Context())
+	require.NoError(t, err)
+	c, err := gc.EnsureProject("default")
+	require.NoError(t, err)
+
+	config, err := instanceConfig(c, types.ServiceConfig{Name: "web"}, "project1")
 	require.NoError(t, err)
 	// Only the default restart policy is applied.
 	assert.Equal(t, map[string]string{
@@ -276,15 +296,23 @@ func TestInstanceConfigMinimal(t *testing.T) {
 
 func TestInstanceConfigXIncusOverrides(t *testing.T) {
 	t.Parallel()
+	skipLocal(t)
+
+	gc, err := client.NewTestClient(t.Context())
+	require.NoError(t, err)
+	c, err := gc.EnsureProject("default")
+	require.NoError(t, err)
 
 	proj, err := New().Load(t.Context(), LoadWorkingDir(fixturePath("with-incus-options")))
 	require.NoError(t, err)
 
-	config, err := instanceConfig(proj.Services["web"], "")
+	config, err := instanceConfig(c, proj.Services["web"], "")
 	require.NoError(t, err)
 	assert.Equal(t, "1024MB", config["limits.memory"])
 	assert.Equal(t, "2", config["limits.cpu"])
 	assert.Equal(t, "false", config["security.nesting"])
+	// x-incus wins over the compose `dns:` field for the same Incus key.
+	assert.Equal(t, "9.9.9.9", config["oci.dns.nameservers"])
 }
 
 func TestInstanceDependencyWaits(t *testing.T) {
@@ -657,7 +685,6 @@ func TestInstanceImage(t *testing.T) {
 
 func TestInstanceNetworkDevices(t *testing.T) {
 	t.Parallel()
-
 	skipLocal(t)
 
 	gc, err := client.NewTestClient(t.Context())
@@ -704,7 +731,7 @@ func TestInstanceProxyDevices(t *testing.T) {
 	c, err := gc.EnsureProject("default")
 	require.NoError(t, err)
 
-	if !c.Global().HasExtension(client.Incus72Extension) {
+	if !c.Global().HasExtension(shared.Incus72Extension) {
 		t.Skip("Nat tests require at least incus 7.2 or 7.0.1 LTS")
 	}
 

@@ -1,5 +1,22 @@
 package client
 
+import (
+	"archive/tar"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"strconv"
+	"strings"
+	"time"
+
+	incusApi "github.com/lxc/incus/v7/shared/api"
+	rspecs "github.com/opencontainers/runtime-spec/specs-go"
+)
+
 // BuildMode controls how build-configured images are treated during Ensure.
 type BuildMode int
 
@@ -81,4 +98,279 @@ func platformToIncusArch(platform string, arches []string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// buildDetectBuilder returns the path to the container builder.
+// If preferredBuilder is non-empty it is resolved via exec.LookPath (works for
+// both bare names and absolute paths). Otherwise podman and docker are tried in order.
+func buildDetectBuilder(preferredBuilder string) (string, error) {
+	if preferredBuilder != "" {
+		p, err := exec.LookPath(preferredBuilder)
+		if err != nil {
+			return "", fmt.Errorf("builder %q not found: %w", preferredBuilder, err)
+		}
+		return p, nil
+	}
+	for _, name := range []string{"buildah", "podman", "docker"} {
+		if p, err := exec.LookPath(name); err == nil {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf("no container builder found; install podman or docker, or set a preferred builder")
+}
+
+// buildRootfs runs the container builder and returns both the rootfs tar and
+// the OCI runtime config.json bytes. The rootfs is a ReadCloser that deletes
+// its temp file on Close. stdout/stderr are forwarded.
+func buildRootfs(ctx context.Context, c *Client, builder string, cfg *BuildConfig, stdout io.Writer, stderr io.Writer) (io.ReadCloser, []byte, error) {
+	isPodman := strings.HasSuffix(builder, "podman") || strings.HasSuffix(builder, "buildah")
+	tmpTag := fmt.Sprintf("ic-compose-build-%x", time.Now().UnixNano())
+
+	rootfsTmp, err := os.CreateTemp("", "incus-compose-rootfs-*.tar")
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating temp file: %w", err)
+	}
+	rootfsPath := rootfsTmp.Name()
+	err = rootfsTmp.Close()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	buildCfg, cleanup, err := buildConfigWithInlineDockerfile(cfg)
+	if err != nil {
+		_ = os.Remove(rootfsPath)
+		return nil, nil, err
+	}
+	defer cleanup()
+
+	args := buildArgs(isPodman, buildCfg, tmpTag, rootfsPath)
+	c.LogDebug("Executing", "command", builder, "args", args)
+
+	cmd := exec.CommandContext(ctx, builder, args...) //nolint:gosec
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		_ = os.Remove(rootfsPath)
+		return nil, nil, fmt.Errorf("building container image: %w", err)
+	}
+
+	defer func() {
+		// Remove the temporary image tag; ignore errors (best-effort cleanup).
+		c.LogDebug("Executing", "command", builder, "args", []string{"rmi", tmpTag})
+		rmi := exec.CommandContext(ctx, builder, "rmi", tmpTag) //nolint:gosec
+		rmi.Stdout = stdout
+		rmi.Stderr = stderr
+		_ = rmi.Run()
+	}()
+
+	// Generate config.json from the built image's OCI config. Incus's LXC
+	// driver only reads Process.Args, Process.Cwd, and Process.User.{UID,GID}
+	// from this file, so a handcrafted minimal OCI Runtime Spec is enough -
+	// no need to save the whole image to disk and unpack it with umoci.
+	inspect := exec.CommandContext(ctx, builder, "inspect", tmpTag) //nolint:gosec
+	inspect.Stderr = stderr
+	c.LogDebug("Executing", "command", builder, "args", inspect.Args[1:])
+	out, err := inspect.Output()
+	if err != nil {
+		_ = os.Remove(rootfsPath)
+		return nil, nil, fmt.Errorf("inspecting built image: %w", err)
+	}
+
+	// buildah nests the OCI image config differently from podman/docker
+	// (buildah: top-level object, config under .OCIv1.config; podman/docker:
+	// array of objects, config under .[].Config - podman mirrors docker's
+	// inspect format for compatibility), so decode loosely into
+	// map[string]any and pull out just the fields we need instead of
+	// depending on all three projects' Go types staying field-compatible.
+	var imgCfg map[string]any
+	if strings.HasSuffix(builder, "buildah") {
+		// buildah inspect <tag> | jq '.OCIv1.config'
+		var inspected map[string]any
+		if err := json.Unmarshal(out, &inspected); err != nil {
+			_ = os.Remove(rootfsPath)
+			return nil, nil, fmt.Errorf("parsing buildah inspect output: %w", err)
+		}
+		ociv1, _ := inspected["OCIv1"].(map[string]any)
+		imgCfg, _ = ociv1["config"].(map[string]any)
+	} else {
+		// podman/docker inspect <tag> | jq '.[].Config'
+		var inspected []map[string]any
+		if err := json.Unmarshal(out, &inspected); err != nil || len(inspected) == 0 {
+			_ = os.Remove(rootfsPath)
+			return nil, nil, fmt.Errorf("parsing %s inspect output: %w", builder, err)
+		}
+		imgCfg, _ = inspected[0]["Config"].(map[string]any)
+	}
+
+	toStrings := func(v any) []string {
+		raw, _ := v.([]any)
+		out := make([]string, 0, len(raw))
+		for _, e := range raw {
+			s, ok := e.(string)
+			if ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+
+	cwd, _ := imgCfg["WorkingDir"].(string)
+	if cwd == "" {
+		cwd = "/"
+	}
+
+	// Only numeric uid[:gid] resolves; a named USER can't be resolved
+	// without the rootfs' /etc/passwd and falls back to root, matching
+	// the numeric-only restriction on the compose `user:` override.
+	var uid, gid uint64
+	if user, _ := imgCfg["User"].(string); user != "" {
+		split := strings.SplitN(user, ":", 2)
+		uid, _ = strconv.ParseUint(split[0], 10, 32)
+		if len(split) > 1 {
+			gid, _ = strconv.ParseUint(split[1], 10, 32)
+		}
+	}
+
+	configJSON, err := json.Marshal(rspecs.Spec{
+		Version: rspecs.Version,
+		Process: &rspecs.Process{
+			Args: append(toStrings(imgCfg["Entrypoint"]), toStrings(imgCfg["Cmd"])...),
+			Cwd:  cwd,
+			User: rspecs.User{UID: uint32(uid), GID: uint32(gid)},
+		},
+	})
+	if err != nil {
+		_ = os.Remove(rootfsPath)
+		return nil, nil, fmt.Errorf("marshaling config.json: %w", err)
+	}
+
+	f, err := os.Open(rootfsPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("opening rootfs: %w", err)
+	}
+	return &tempFile{File: f, path: rootfsPath}, configJSON, nil
+}
+
+func buildConfigWithInlineDockerfile(cfg *BuildConfig) (*BuildConfig, func(), error) {
+	if cfg.DockerfileInline == "" {
+		return cfg, func() {}, nil
+	}
+	if cfg.Dockerfile != "" {
+		return nil, func() {}, fmt.Errorf("build.dockerfile and build.dockerfile_inline cannot both be set")
+	}
+
+	f, err := os.CreateTemp("", "incus-compose-Dockerfile-*")
+	if err != nil {
+		return nil, func() {}, fmt.Errorf("creating inline Dockerfile: %w", err)
+	}
+	path := f.Name()
+	if _, err := f.WriteString(cfg.DockerfileInline); err != nil {
+		_ = f.Close()
+		_ = os.Remove(path)
+		return nil, func() {}, fmt.Errorf("writing inline Dockerfile: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(path)
+		return nil, func() {}, fmt.Errorf("closing inline Dockerfile: %w", err)
+	}
+
+	buildCfg := *cfg
+	buildCfg.Dockerfile = path
+	return &buildCfg, func() { _ = os.Remove(path) }, nil
+}
+
+func buildArgs(isPodman bool, cfg *BuildConfig, tmpTag, dest string) []string {
+	args := []string{}
+	if !isPodman {
+		args = append(args, "buildx")
+	}
+	args = append(args, "build", "--tag", tmpTag)
+	if cfg.Dockerfile != "" {
+		args = append(args, "--file", cfg.Dockerfile)
+	}
+	if cfg.Platform != "" {
+		args = append(args, "--platform", cfg.Platform)
+	}
+	if cfg.Target != "" {
+		args = append(args, "--target", cfg.Target)
+	}
+	for k, v := range cfg.Args {
+		args = append(args, "--build-arg", k+"="+v)
+	}
+	if cfg.NoCache {
+		args = append(args, "--no-cache")
+	}
+	if cfg.Pull {
+		args = append(args, "--pull")
+	}
+	args = append(args, "--output", "type=tar,dest="+dest)
+	if !isPodman {
+		// buildx's --output alone only exports the tar; it does not load
+		// the image into the local docker store the way buildah/podman's
+		// own `build` command does regardless of --output. --load is
+		// needed so the image can be inspected afterward for config.json.
+		args = append(args, "--load")
+	}
+	args = append(args, cfg.Context)
+	return args
+}
+
+type tempFile struct {
+	*os.File
+	path string
+}
+
+// Close closes the file and removes it from disk.
+func (t *tempFile) Close() error {
+	err := t.File.Close()
+	// _ = os.Remove(t.path)
+	return err
+}
+
+// buildMetadataTar returns an in-memory tar containing metadata.yaml (JSON
+// content per Incus convention) and, when provided, an OCI config.json.
+func buildMetadataTar(name, arch string, configJSON []byte) (io.Reader, error) {
+	metaJSON, err := json.Marshal(incusApi.ImageMetadata{
+		Architecture: arch,
+		CreationDate: time.Now().Unix(),
+		Properties: map[string]string{
+			"description": name + " (built by incus-compose)",
+			"type":        "oci",
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshaling image metadata: %w", err)
+	}
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+
+	if err := tw.WriteHeader(&tar.Header{
+		Name: "metadata.yaml",
+		Mode: 0o644,
+		Size: int64(len(metaJSON)),
+	}); err != nil {
+		return nil, fmt.Errorf("writing metadata tar header: %w", err)
+	}
+	if _, err := tw.Write(metaJSON); err != nil {
+		return nil, fmt.Errorf("writing metadata.yaml: %w", err)
+	}
+
+	if len(configJSON) > 0 {
+		if err := tw.WriteHeader(&tar.Header{
+			Name: "config.json",
+			Mode: 0o644,
+			Size: int64(len(configJSON)),
+		}); err != nil {
+			return nil, fmt.Errorf("writing config.json tar header: %w", err)
+		}
+		if _, err := tw.Write(configJSON); err != nil {
+			return nil, fmt.Errorf("writing config.json: %w", err)
+		}
+	}
+
+	if err := tw.Close(); err != nil {
+		return nil, fmt.Errorf("closing metadata tar: %w", err)
+	}
+	return &buf, nil
 }

@@ -729,7 +729,7 @@ func (r *Image) buildImage(ctx context.Context, args Options) error {
 		return ErrCreate.WithText("no container builder").Wrap(err)
 	}
 
-	rootfs, configJSON, err := buildRootfs(ctx, builder, &buildCfg, args.Stdout, args.Stderr)
+	rootfs, configJSON, err := buildRootfs(ctx, r.client, builder, &buildCfg, args.Stdout, args.Stderr)
 	if err != nil {
 		return ErrCreate.WithText("building container image").Wrap(err)
 	}

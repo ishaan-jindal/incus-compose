@@ -15,6 +15,7 @@ import (
 
 	"github.com/lxc/incus-compose/client"
 	"github.com/lxc/incus-compose/project"
+	"github.com/lxc/incus-compose/shared"
 )
 
 var snapshotter = cupaloy.New(cupaloy.SnapshotSubdirectory(filepath.Join("..", "..", "test", "snapshots", "e2e")))
@@ -34,7 +35,7 @@ func skipE2E(t *testing.T) {
 }
 
 func skipNo73(t *testing.T, c *client.Client) {
-	if !c.Global().HasExtension(client.Incus73Extension) {
+	if !c.Global().HasExtension(shared.Incus73Extension) {
 		t.Skip("nat tests with static ip require at least incus 7.3 or 7.0.2 LTS")
 	}
 }

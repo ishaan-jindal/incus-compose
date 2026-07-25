@@ -11,6 +11,8 @@ project:
         limits.cpu: "4"
         limits.memory: 1GB
     web:
+      dns:
+        - 8.8.8.8
       environment:
         NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
       image: docker.io/nginx:alpine
@@ -19,6 +21,7 @@ project:
       x-incus:
         limits.cpu: "2"
         limits.memory: 1024MB
+        oci.dns.nameservers: 9.9.9.9
         security.nesting: "false"
   networks:
     default:

@@ -14,8 +14,7 @@ require (
 	github.com/lxc/incus/v7 v7.2.0
 	github.com/mattn/go-colorable v0.1.15
 	github.com/mattn/go-isatty v0.0.22
-	github.com/opencontainers/image-spec v1.1.1
-	github.com/opencontainers/umoci v0.6.1-0.20251213054154-70fc5ee1f4df
+	github.com/opencontainers/runtime-spec v1.3.0
 	github.com/pkg/sftp v1.13.10
 	github.com/urfave/cli/v3 v3.10.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
@@ -60,7 +59,8 @@ require (
 	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/muhlemmer/gu v0.3.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
-	github.com/opencontainers/runtime-spec v1.3.0 // indirect
+	github.com/opencontainers/image-spec v1.1.1 // indirect
+	github.com/opencontainers/umoci v0.6.1-0.20251213054154-70fc5ee1f4df // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rootless-containers/proto/go-proto v0.0.0-20260207013450-f6ee952d53d9 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
