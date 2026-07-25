@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
+	"github.com/avast/retry-go/v5"
 	incus "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 
@@ -106,7 +108,7 @@ func (c *checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 		// First success during the start period: switch to the normal checker.
 		c.failures = 0
 
-		if err := c.writeStatus(shared.HealthStatusHealthy); err != nil {
+		if err := c.writeStatus(phaseCtx, shared.HealthStatusHealthy); err != nil {
 			slog.Debug("updating healthcheck status", "instance", c.name, "error", err)
 		}
 
@@ -148,7 +150,7 @@ func (c *checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 				}
 			}
 
-			if err := c.writeStatus(status); err != nil {
+			if err := c.writeStatus(phaseCtx, status); err != nil {
 				slog.Debug("updating healthcheck status", "instance", c.name, "error", err)
 			}
 
@@ -265,13 +267,13 @@ func (c *checker) exec(ctx context.Context, cmd []string) (int, string, string, 
 // status on statusCh - the runner uses this to recognize the resulting
 // instance-updated event as self-caused, and to reset restart backoff on a
 // healthy status.
-func (c *checker) writeStatus(status string) error {
+func (c *checker) writeStatus(ctx context.Context, status string) error {
 	if c.status == status {
 		// We already wrote that.
 		return nil
 	}
 
-	inst, etag, err := c.conn.GetInstance(c.name)
+	inst, _, err := c.conn.GetInstance(c.name)
 	if err != nil {
 		return err
 	}
@@ -299,14 +301,33 @@ func (c *checker) writeStatus(status string) error {
 
 	slog.Info("Status update", "instance", c.name, "old", inst.Config[shared.HealthStatusKey], "current", status)
 
-	wInst := inst.Writable()
-	wInst.Config[shared.HealthStatusKey] = status
-	op, err := c.conn.UpdateInstance(c.name, wInst, etag)
-	if err != nil {
-		return err
-	}
+	// Retry while Incus reports the instance's operation lock is still held
+	// by another action (e.g. this write racing its own "start" operation).
+	// The lock is short-lived, so a handful of short retries clears it.
+	err = retry.New(
+		retry.Context(ctx),
+		retry.Attempts(6),
+		retry.Delay(250*time.Millisecond),
+		retry.RetryIf(func(err error) bool {
+			return strings.Contains(err.Error(), "Instance is busy")
+		}),
+	).Do(func() error {
+		inst, _, err = c.conn.GetInstance(c.name)
+		if err != nil {
+			return err
+		}
 
-	if err := op.Wait(); err != nil {
+		wInst := inst.Writable()
+		wInst.Config[shared.HealthStatusKey] = status
+
+		op, opErr := c.conn.UpdateInstance(c.name, wInst, "")
+		if opErr != nil {
+			return opErr
+		}
+
+		return op.Wait()
+	})
+	if err != nil {
 		return err
 	}
 

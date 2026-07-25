@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/avast/retry-go/v5"
 	incus "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 
@@ -77,7 +78,7 @@ func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
 		}
 		r.conn = conn.UseProject(r.config.Project)
 
-		err = r.writeStatus(shared.HealthStatusHealthy)
+		err = r.writeStatus(ctx, shared.HealthStatusHealthy)
 		if err != nil {
 			slog.Warn("Failed to update my own status", "error", err)
 		}
@@ -93,7 +94,7 @@ func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
 
 			select {
 			case <-ctx.Done():
-				return r.writeStatus(shared.HealthStatusUnhealthy)
+				return r.writeStatus(ctx, shared.HealthStatusUnhealthy)
 			case <-time.After(time.Second):
 				continue
 			}
@@ -124,7 +125,7 @@ func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
 			select {
 			case <-ctx.Done():
 				listener.Disconnect()
-				return r.writeStatus(shared.HealthStatusUnhealthy)
+				return r.writeStatus(ctx, shared.HealthStatusUnhealthy)
 			case <-reload:
 				slog.Info("manual resync requested")
 				if err := r.resync(ctx); err != nil {
@@ -140,7 +141,7 @@ func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
 
 // writeStatus persists status into the daemon's own instance, if configured
 // to know its own project/name (see Config.OwnProject/OwnName).
-func (r *Runner) writeStatus(status string) error {
+func (r *Runner) writeStatus(ctx context.Context, status string) error {
 	if r.config.OwnName == "" || r.config.OwnProject == "" {
 		return nil
 	}
@@ -149,20 +150,32 @@ func (r *Runner) writeStatus(status string) error {
 
 	slog.Debug("Writing status", "own-project", r.config.OwnProject, "own-name", r.config.OwnName, "status", status)
 
-	inst, etag, err := myConn.GetInstance(r.config.OwnName)
-	if err != nil {
-		return err
-	}
+	// Retry while Incus reports the instance's operation lock is still held
+	// by another action (e.g. this write racing its own "start" operation).
+	// The lock is short-lived, so a handful of short retries clears it.
+	return retry.New(
+		retry.Context(ctx),
+		retry.Attempts(6),
+		retry.Delay(250*time.Millisecond),
+		retry.RetryIf(func(err error) bool {
+			return strings.Contains(err.Error(), "Instance is busy")
+		}),
+	).Do(func() error {
+		inst, _, err := myConn.GetInstance(r.config.OwnName)
+		if err != nil {
+			return err
+		}
 
-	wInst := inst.Writable()
-	wInst.Config[shared.HealthStatusKey] = status
+		wInst := inst.Writable()
+		wInst.Config[shared.HealthStatusKey] = status
 
-	op, err := myConn.UpdateInstance(r.config.OwnName, wInst, etag)
-	if err != nil {
-		return err
-	}
+		op, opErr := myConn.UpdateInstance(r.config.OwnName, wInst, "")
+		if opErr != nil {
+			return opErr
+		}
 
-	return op.Wait()
+		return op.Wait()
+	})
 }
 
 // connect returns an authenticated Incus client.
