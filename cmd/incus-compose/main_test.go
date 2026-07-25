@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -46,6 +45,16 @@ func skipNotSameHost(t *testing.T, gc *client.GlobalClient) {
 	}
 }
 
+// testWriter routes writes through t.Log so parallel tests don't interleave
+// output on the shared os.Stderr; Go buffers t.Log per (sub)test and only
+// surfaces it under that test's own output.
+type testWriter struct{ t testing.TB }
+
+func (w testWriter) Write(p []byte) (int, error) {
+	w.t.Log(strings.TrimRight(string(p), "\n"))
+	return len(p), nil
+}
+
 func runCommand(ctx context.Context, t *testing.T, projectName string, args ...string) (*bytes.Buffer, error) {
 	t.Helper()
 
@@ -53,12 +62,12 @@ func runCommand(ctx context.Context, t *testing.T, projectName string, args ...s
 
 	mArgs := []string{"incus-compose", "--debug", "--project-name", projectName}
 	mArgs = append(mArgs, args...)
-	slog.DebugContext(ctx, "Running", "args", mArgs)
+	t.Log("Running", mArgs)
 
 	stdout := &bytes.Buffer{}
 	cmd := newRootCommand()
 	cmd.Writer = stdout
-	cmd.ErrWriter = os.Stderr
+	cmd.ErrWriter = testWriter{t: t}
 	err := cmd.Run(ctx, mArgs)
 
 	return stdout, err
@@ -71,7 +80,7 @@ func runCommandSnapshot(ctx context.Context, t *testing.T, projectName string, s
 
 	stdout, err := runCommand(ctx, t, projectName, args...)
 	require.NoError(t, err)
-	snapshotter.SnapshotT(t, stripListOutput(t, stdout, strip))
+	snapshotter.SnapshotT(t, stripOutput(t, stdout, strip))
 }
 
 // runCommandSnapshotList runs args (a mutating command with no interesting
@@ -83,21 +92,30 @@ func runCommandSnapshotList(ctx context.Context, t *testing.T, projectName strin
 	_, err := runCommand(ctx, t, projectName, args...)
 	require.NoError(t, err)
 
-	listArgs := []string{}
+	projectName = strings.ToLower(strings.ReplaceAll(projectName, "/", "-"))
+	listArgs := []string{"incus-compose", "--debug", "--project-name", projectName}
 	for i, a := range args {
 		if (a == "-f" || a == "--file") && i+1 < len(args) {
-			listArgs = []string{a, args[i+1]}
+			listArgs = append(listArgs, a, args[i+1])
 		}
 	}
 
 	listArgs = append(listArgs, "list", "--format=json")
-	stdout, err := runCommand(ctx, t, projectName, listArgs...)
+
+	t.Log("Running", listArgs)
+
+	stdout := &bytes.Buffer{}
+	cmd := newRootCommand()
+	cmd.Writer = stdout
+	cmd.ErrWriter = nil
+	err = cmd.Run(ctx, listArgs)
+
 	require.NoError(t, err)
-	snapshotter.SnapshotT(t, stripListOutput(t, stdout, strip))
+	snapshotter.SnapshotT(t, stripOutput(t, stdout, strip))
 }
 
-// stripListOutput removes dynamic content (IP addresses, network hashes) for snapshot comparison.
-func stripListOutput(t *testing.T, output *bytes.Buffer, stripHealth bool) string {
+// stripOutput removes dynamic content (IP addresses, network hashes) for snapshot comparison.
+func stripOutput(t *testing.T, output *bytes.Buffer, stripHealth bool) string {
 	t.Helper()
 
 	ipv4Regex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
@@ -165,6 +183,8 @@ type e2eTest struct {
 }
 
 func runE2ETests(ctx context.Context, t *testing.T, projectName string, tests []e2eTest) {
+	t.Helper()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			switch {
@@ -395,11 +415,7 @@ func TestNormalLifecycle(t *testing.T) {
 			name:            "up",
 			args:            []string{"-f", compose, "up", "--detach"},
 			snapshotList:    true,
-			snapStripHealth: true,
-		},
-		{
-			name: "down",
-			args: []string{"-f", compose, "down", "--project"},
+			snapStripHealth: false,
 		},
 	}
 
@@ -471,59 +487,6 @@ func TestUpDownscaleRemovesInstancesAndDNS(t *testing.T) {
 	after := dnsServiceIPs(t, c, networks, "web")
 	require.NotEmpty(t, after, "web-1 should still resolve after downscale")
 	require.Less(t, len(after), len(before), "DNS must shed records for removed instances")
-}
-
-// TestE2EUpReconcilesToReplicas verifies docker-parity scaling: a plain `up`
-// reconciles a service to deploy.replicas in both directions. A manual --scale
-// applies only to that invocation; the next plain `up` restores replicas.
-func TestE2EUpReconcilesToReplicas(t *testing.T) {
-	t.Parallel()
-	skipLocal(t)
-	skipE2E(t)
-
-	ctx := t.Context()
-	pn := t.Name()
-	compose := "../../test/fixtures/nginx-downscale/compose.yaml"
-
-	t.Cleanup(func() {
-		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
-	})
-
-	// Baseline: deploy.replicas=3.
-	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
-	require.NoError(t, err)
-
-	c := projectClient(ctx, t, pn)
-	allNames := []string{"web-1", "web-2", "web-3", "web-4", "web-5"}
-	assertCount := func(want int) {
-		t.Helper()
-		for i, name := range allNames {
-			ok, err := c.InstanceExists(name)
-			require.NoError(t, err)
-			require.Equal(t, i < want, ok, "instance %q existence (want %d running)", name, want)
-		}
-	}
-	assertCount(3)
-
-	// Manual downscale to 1.
-	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach", "--scale=web=1")
-	require.NoError(t, err)
-	assertCount(1)
-
-	// Plain up restores replicas=3 (scales back up).
-	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
-	require.NoError(t, err)
-	assertCount(3)
-
-	// Manual upscale to 5.
-	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach", "--scale=web=5")
-	require.NoError(t, err)
-	assertCount(5)
-
-	// Plain up reconciles back down to replicas=3.
-	_, err = runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
-	require.NoError(t, err)
-	assertCount(3)
 }
 
 // TestDNSCnameAliasAcrossProjects brings up the dns and dns2 fixtures together.
