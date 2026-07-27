@@ -7,8 +7,10 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"net/http"
 	"os"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -689,6 +691,53 @@ func (r *Instance) Running() bool {
 	return r.IncusInstance.StatusCode == incusApi.Running
 }
 
+// waitBusyOperation blocks until no queryable operation holds the instance's
+// operation lock.
+func (r *Instance) waitBusyOperation(ctx context.Context) error {
+	instanceURL := incusApi.NewURL().Path("1.0", "instances", r.incusName).String()
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return ErrOperation.WithText("waiting for a pending instance operation").Wrap(err)
+		}
+
+		ops, err := r.conn.GetOperations()
+		if err != nil {
+			return ErrOperation.WithText("listing operations").Wrap(err)
+		}
+
+		busyOp := ""
+		for _, op := range ops {
+			if op.Class != incusApi.OperationClassTask || op.StatusCode.IsFinal() {
+				continue
+			}
+
+			if slices.Contains(op.Resources["instances"], instanceURL) {
+				busyOp = op.ID
+				break
+			}
+		}
+
+		if busyOp == "" {
+			return nil
+		}
+
+		// Wait server-side for the operation to finish, bounded by the ctx
+		// deadline. A NotFound just means it completed and was pruned between
+		// the listing and here.
+		timeoutSeconds := -1
+		deadline, ok := ctx.Deadline()
+		if ok {
+			timeoutSeconds = max(int(time.Until(deadline).Seconds()), 1)
+		}
+
+		_, _, err = r.conn.GetOperationWait(busyOp, timeoutSeconds)
+		if err != nil && !incusApi.StatusErrorCheck(err, http.StatusNotFound) {
+			return ErrOperation.WithText("waiting for a pending instance operation").Wrap(err)
+		}
+	}
+}
+
 // See: https://pkg.go.dev/context#AfterFunc
 func waitOnCond(ctx context.Context, cond *sync.Cond, conditionMet func() bool) error {
 	cond.L.Lock()
@@ -838,6 +887,23 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 		return ErrRunning
 	}
 
+	// Wait until no other operation holds the instance's operation lock,
+	// e.g. an in-flight stop would reject the start with "Instance is busy".
+	err = r.waitBusyOperation(ctx)
+	if err != nil {
+		return err
+	}
+
+	// The wait may have let a concurrent start finish, re-check.
+	err = r.fetch()
+	if err != nil {
+		return err
+	}
+
+	if r.Running() {
+		return ErrRunning
+	}
+
 	op, err := r.conn.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
 		Action:  "start",
 		Timeout: options.incusTimeout(),
@@ -847,7 +913,7 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 	}
 
 	// The operation completes once the instance is running or failed to start.
-	err = r.client.hookOperation(ctx, ActionStart, r, options, op, err)
+	err = r.client.hookOperation(ctx, ActionStart, r, options, op, nil)
 	if err != nil {
 		return ErrOperation.WithText("starting an instance").Wrap(err)
 	}
@@ -1171,6 +1237,23 @@ func (r *Instance) Stop(ctx context.Context, opts ...Option) error {
 }
 
 func (r *Instance) stop(ctx context.Context, options Options) error {
+	if !r.Running() {
+		return nil
+	}
+
+	// Wait until no other operation holds the instance's operation lock,
+	// e.g. an in-flight start would reject the stop with "Instance is busy".
+	err := r.waitBusyOperation(ctx)
+	if err != nil {
+		return err
+	}
+
+	// The wait may have let a concurrent stop finish, re-check.
+	err = r.fetch()
+	if err != nil {
+		return err
+	}
+
 	if !r.Running() {
 		return nil
 	}

@@ -13,7 +13,7 @@ import (
 
 // dnsIPWaitTimeout bounds how long to wait for a freshly started instance to
 // acquire its DHCP lease before recording its DNS address.
-const dnsIPWaitTimeout = 5 * time.Second
+const dnsIPWaitTimeout = 10 * time.Second
 
 // DNSmasqParse parses a raw.dnsmasq value into its three parts: address
 // records as a service->[]IP map, cname records as a target->[]alias map,

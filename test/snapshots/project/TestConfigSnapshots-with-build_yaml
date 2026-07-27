@@ -4,6 +4,7 @@ services:
     build:
       context: $FIXTURE_PATH
       dockerfile: Dockerfile
+      no_cache: true
       target: runtime
     networks:
       default: null
@@ -13,6 +14,7 @@ services:
       dockerfile_inline: |
         FROM docker.io/alpine:latest
         RUN echo "built inline by incus-compose"
+      no_cache: true
     image: localhost/app2:latest
     networks:
       default: null

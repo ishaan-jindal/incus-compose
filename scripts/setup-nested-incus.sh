@@ -210,7 +210,7 @@ SOURCES_EOF
 
 echo "Installing Incus..."
 apt-get update -q
-apt-get install -y -q incus-base
+apt-get install -y -q incus-base pigz
 
 # Disable AppArmor in nested environment to prevent conflicts with container security profiles.
 # This is safe for development VMs but should NEVER be done on production hosts.
@@ -276,6 +276,9 @@ profiles:
       network: __BRIDGE__
       type: nic
 PRESEED_EOF
+
+incus config set images.compression_algorithm=pigz
+incus config set backups.compression_algorithm=pigz
 
 EOF
 )

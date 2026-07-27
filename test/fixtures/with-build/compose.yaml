@@ -1,12 +1,14 @@
 services:
   app:
     build:
+      no_cache: true
       context: .
       target: runtime
 
   app2:
     image: localhost/app2:latest
     build:
+      no_cache: true
       context: .
       dockerfile_inline: |
         FROM docker.io/alpine:latest
