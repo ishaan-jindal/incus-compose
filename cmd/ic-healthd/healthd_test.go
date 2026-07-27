@@ -51,7 +51,7 @@ func runIncusCommand(ctx context.Context, t *testing.T, projectName string, args
 	execCmd := exec.CommandContext(ctx, "go", mArgs...) //nolint:gosec
 	execCmd.Stdout = stdout
 	// execCmd.Stderr = os.Stderr
-	execCmd.Stderr = stderr
+	execCmd.Stderr = t.Output()
 
 	err := execCmd.Run()
 	return stdout, stderr, err
@@ -192,7 +192,7 @@ func prepareHealthd(t *testing.T, c *client.Client) (func(), *Runner) {
 	// cmd.Writer = stdout
 	// cmd.ErrWriter = stderr
 	cmd.Writer = os.Stdout
-	cmd.ErrWriter = os.Stderr
+	cmd.ErrWriter = t.Output()
 
 	incusURL, err := incusURL(c)
 	require.NoError(t, err)

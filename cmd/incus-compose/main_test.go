@@ -46,16 +46,6 @@ func skipNotSameHost(t *testing.T, gc *client.GlobalClient) {
 	}
 }
 
-// testWriter routes writes through t.Log so parallel tests don't interleave
-// output on the shared os.Stderr; Go buffers t.Log per (sub)test and only
-// surfaces it under that test's own output.
-type testWriter struct{ t testing.TB }
-
-func (w testWriter) Write(p []byte) (int, error) {
-	w.t.Log(strings.TrimRight(string(p), "\n"))
-	return len(p), nil
-}
-
 func runCommand(ctx context.Context, t *testing.T, projectName string, args ...string) (*bytes.Buffer, error) {
 	t.Helper()
 
@@ -68,7 +58,7 @@ func runCommand(ctx context.Context, t *testing.T, projectName string, args ...s
 	stdout := &bytes.Buffer{}
 	cmd := newRootCommand()
 	cmd.Writer = stdout
-	cmd.ErrWriter = testWriter{t: t}
+	cmd.ErrWriter = t.Output()
 	err := cmd.Run(ctx, mArgs)
 
 	return stdout, err
@@ -92,6 +82,9 @@ func runCommandSnapshotList(ctx context.Context, t *testing.T, projectName strin
 
 	_, err := runCommand(ctx, t, projectName, args...)
 	require.NoError(t, err)
+
+	// This makes sure that health status settles and makes tests less flaky.
+	time.Sleep(500 * time.Millisecond)
 
 	projectName = strings.ToLower(strings.ReplaceAll(projectName, "/", "-"))
 	listArgs := []string{"incus-compose", "--debug", "--project-name", projectName}
@@ -121,8 +114,10 @@ func stripOutput(t *testing.T, output *bytes.Buffer, stripHealth bool) string {
 
 	ipv4Regex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
 	ipv6Regex := regexp.MustCompile(`(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}`)
+	healthdImageRegex := regexp.MustCompile("ic-healthd:[0-9a-z.-]+")
 	outStr := ipv4Regex.ReplaceAllString(output.String(), "-stripped-")
 	outStr = ipv6Regex.ReplaceAllString(outStr, "-stripped-")
+	outStr = healthdImageRegex.ReplaceAllString(outStr, "ic-healthd:-stripped-")
 
 	if stripHealth {
 		healthRegex := regexp.MustCompile(`"health": "[a-zA-Z]+",`)
@@ -186,8 +181,14 @@ type e2eTest struct {
 func runE2ETests(ctx context.Context, t *testing.T, projectName string, tests []e2eTest) {
 	t.Helper()
 
+	_, update := os.LookupEnv("UPDATE_SNAPSHOTS")
+	prevFailed := false
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if prevFailed && !update {
+				t.Skip("Previous failed")
+			}
+
 			switch {
 			case tt.snapshotList:
 				// This ugly sleep lets incus settle before we ask for "list".
@@ -198,8 +199,14 @@ func runE2ETests(ctx context.Context, t *testing.T, projectName string, tests []
 			default:
 				_, err := runCommand(ctx, t, projectName, tt.args...)
 				if !tt.wantErr {
+					if err != nil {
+						prevFailed = true
+					}
 					require.NoError(t, err)
 				} else {
+					if err == nil {
+						prevFailed = true
+					}
 					require.Error(t, err)
 				}
 			}

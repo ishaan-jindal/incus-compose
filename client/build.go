@@ -60,7 +60,8 @@ type BuildConfig struct {
 	// Args are build-time variables (--build-arg).
 	Args map[string]string
 
-	// NoCache disables layer caching during the build.
+	// NoCache disables layer caching during the build as well as caching
+	// the resulting image on the server.
 	NoCache bool
 
 	// Pull always attempts to pull a newer version of the base image.
