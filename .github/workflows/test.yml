@@ -68,7 +68,6 @@ jobs:
       VERSION: "${{ github.sha }}"
 
       NO_COLOR: 1
-      TEST_PROCS: 2
       INCUS_COMPOSE_UP_DEPENDENCY_TIMEOUT: "2m"
       INCUS_COMPOSE_UP_TIMEOUT: "2m"
       INCUS_COMPOSE_DOWN_TIMEOUT: "1m"
@@ -81,6 +80,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+
+      - name: Cleanup
+        run: |
+          just purge-projects || true
+          just purge-networks || true
 
       - name: Set version
         run: |

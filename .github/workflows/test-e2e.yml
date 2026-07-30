@@ -40,7 +40,6 @@ jobs:
       INCUS_COMPOSE_IMAGE_CACHE: incus-compose-tests-cache
       NO_COLOR: 1
       INCUS_COMPOSE_TEST_E2E: 1
-      TEST_PROCS: 2
       INCUS_COMPOSE_UP_DEPENDENCY_TIMEOUT: "2m"
       INCUS_COMPOSE_UP_TIMEOUT: "2m"
       INCUS_COMPOSE_DOWN_TIMEOUT: "1m"
@@ -53,6 +52,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+
+      - name: Cleanup
+        run: |
+          just purge-projects || true
+          just purge-networks || true
 
       - name: Set version
         run: |
@@ -118,8 +122,6 @@ jobs:
       INCUS_COMPOSE_IMAGE_CACHE: incus-compose-tests-cache
       NO_COLOR: 1
       INCUS_COMPOSE_TEST_EXAMPLES: 1
-      TEST_PROCS: 2
-      EXAMPLE: TestExampleHugo
     steps:
       - uses: actions/checkout@v7
         with:
@@ -129,6 +131,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+
+      - name: Cleanup
+        run: |
+          just purge-projects || true
+          just purge-networks || true
 
       - name: Set version
         run: |
