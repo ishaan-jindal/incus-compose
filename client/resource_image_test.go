@@ -394,7 +394,7 @@ func TestImageFromCache(t *testing.T) {
 	ctx := t.Context()
 	c := newRandomTestClient(ctx, t, "image-from-cache-")
 
-	r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+	r, err := c.Resource(KindImage, "docker.io/library/alpine:3.21", &ImageConfig{})
 	require.NoError(t, err)
 
 	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
