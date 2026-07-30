@@ -51,7 +51,7 @@ func newDownCommand() *cli.Command {
 			&cli.BoolFlag{
 				Name:    "external-healthd",
 				Usage:   "Use healthd but do not try to lookup it",
-				Sources: cli.EnvVars("INCUS_COMPOSE_DOWN_EXTERNAL_HEALTHD"),
+				Sources: cli.EnvVars("INCUS_COMPOSE_EXTERNAL_HEALTHD"),
 			},
 			&cli.BoolFlag{
 				Name:    "no-networks",

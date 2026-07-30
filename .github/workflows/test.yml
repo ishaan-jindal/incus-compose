@@ -96,7 +96,7 @@ jobs:
           sha="${{ github.sha }}"
           short="${sha:0:7}"
           echo "VERSION=${short}" >> "$GITHUB_ENV"
-          echo "INCUS_COMPOSE_UP_HEALTHD_IMAGE=ghcr.io/lxc/incus-compose/ic-healthd:${short}" >> "$GITHUB_ENV"
+          echo "INCUS_COMPOSE_HEALTHD_IMAGE=ghcr.io/lxc/incus-compose/ic-healthd:${short}" >> "$GITHUB_ENV"
           echo "Using healthd image: ghcr.io/lxc/incus-compose/ic-healthd:${short}"
 
       - name: Build healthd

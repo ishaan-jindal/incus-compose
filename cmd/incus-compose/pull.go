@@ -44,13 +44,13 @@ func newPullCommand() *cli.Command {
 			&cli.BoolFlag{
 				Name:    "no-healthd",
 				Usage:   "Don't pull the healthd sidecar",
-				Sources: cli.EnvVars("INCUS_COMPOSE_PULL_NO_HEALTHD"),
+				Sources: cli.EnvVars("INCUS_COMPOSE_NO_HEALTHD"),
 			},
 			&cli.StringFlag{
 				Name:    "healthd-image",
 				Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
 				Value:   DefaultHealthdImage,
-				Sources: cli.EnvVars("INCUS_COMPOSE_PULL_HEALTHD_IMAGE"),
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {

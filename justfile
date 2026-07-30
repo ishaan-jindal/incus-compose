@@ -129,8 +129,7 @@ build-healthd-image tag_base="ghcr.io/lxc/incus-compose/ic-healthd":
     just run -P cmd/ic-healthd build --os-env
     echo "Building for the 'incus-compose-tests-cache' cache"
     INCUS_COMPOSE_IMAGE_CACHE="incus-compose-tests-cache" just run -P cmd/ic-healthd build --os-env
-    sed -i -e 's|export INCUS_COMPOSE_HEALTHD_UP_IMAGE=".*"|export INCUS_COMPOSE_HEALTHD_UP_IMAGE="{{ tag_base }}:'${VERSION}'"|g' \
-           -e 's|export INCUS_COMPOSE_UP_IMAGE=".*"|export INCUS_COMPOSE_UP_IMAGE="{{ tag_base }}:'${VERSION}'"|g' \
+    sed -i -e 's|export INCUS_COMPOSE_HEALTHD_IMAGE=".*"|export INCUS_COMPOSE_HEALTHD_IMAGE="{{ tag_base }}:'${VERSION}'"|g' \
            .env
 
 # Build ic-healthd container image
