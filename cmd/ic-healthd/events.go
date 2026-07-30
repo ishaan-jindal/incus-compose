@@ -300,7 +300,16 @@ func (r *Runner) evaluateBackoff(ctx context.Context, name string) {
 	ti.restartDelay = min(delay*2, maxRestartDelay)
 	r.mu.Unlock()
 
+	// The delay outlives the decision, so re-check it.
 	time.AfterFunc(delay, func() {
+		r.mu.Lock()
+		_, ok := r.tracked[name]
+		r.mu.Unlock()
+
+		if !ok || (restart == "unless-stopped" && r.isMarkedStopped(name)) {
+			return
+		}
+
 		r.spawn(ctx, name, cfg, true, true)
 	})
 }

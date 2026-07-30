@@ -523,3 +523,84 @@ func TestE2EIntentionalStopIsNotRestarted(t *testing.T) {
 		return err == nil && state.StatusCode == incusApi.Running
 	}, 30*time.Second, time.Second, "an intentionally stopped instance must stay stopped")
 }
+
+// TestE2EStaleRespawnDoesNotResurrect checks that a re-check inside a timer prevents a restart.
+func TestE2EStaleRespawnDoesNotResurrect(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	projectName := strings.ToLower(t.Name())
+	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+
+	c, p := loadProject(ctx, t, compose, projectName)
+	err := c.Open()
+	require.NoError(t, err)
+
+	hCleanup, hRunner := prepareHealthd(t, c)
+	hReload := make(chan struct{}, 10)
+
+	go func() {
+		_ = hRunner.Run(ctx, hReload)
+	}()
+
+	t.Cleanup(func() {
+		_ = c.Done()
+
+		_, _, _ = runIncusCommand(context.Background(), t, projectName, "-f", compose, "down", "--project")
+		hCleanup()
+		cancel()
+	})
+
+	c.IgnoreError(client.ActionEnsure, client.ErrNotFound)
+	c.IgnoreError(client.ActionStop, client.ErrNotRunning)
+
+	stack := client.NewStack(c, client.StackFailFast())
+	order, err := p.ServiceOrder(false)
+	require.NoError(t, err)
+
+	resources, err := p.Resources(c)
+	require.NoError(t, err)
+	stack.AddOrdered(order, resources)
+
+	require.NoError(t, stack.ForAction(client.ActionEnsure).Run(
+		ctx, client.ActionEnsure, client.OptionCreate(),
+	))
+	require.NoError(t, stack.ForAction(client.ActionStart).Run(
+		ctx, client.ActionStart, client.OptionExternalHealthd(),
+	))
+
+	target := "backend1-1"
+
+	conn, err := c.Connection()
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		inst, _, err := conn.GetInstance(target)
+		return err == nil && inst.Config[shared.HealthStatusKey] == shared.HealthStatusHealthy
+	}, 30*time.Second, 500*time.Millisecond, "instance should become healthy first")
+
+	// An unmarked stop looks like a crash, so the runner schedules a respawn
+	// interval(5s)*retries(3) = 15s out.
+	stopOp, err := conn.UpdateInstanceState(target,
+		incusApi.InstanceStatePut{Action: "stop", Timeout: -1, Force: true}, "")
+	require.NoError(t, err)
+	require.NoError(t, stopOp.Wait())
+
+	// Now mark it intentionally stopped, well inside that window.
+	instRes, err := c.Resource(client.KindInstance, target, &client.InstanceConfig{})
+	require.NoError(t, err)
+	require.NoError(t, client.RunAction(ctx, instRes, client.ActionEnsure))
+	_ = client.RunAction(ctx, instRes, client.ActionStop, client.OptionExternalHealthd())
+
+	inst, _, err := conn.GetInstance(target)
+	require.NoError(t, err)
+	require.Equal(t, "true", inst.Config[shared.HealthStoppedKey], "the mark must be written")
+
+	// Outlast the scheduled respawn.
+	require.Never(t, func() bool {
+		state, _, err := conn.GetInstanceState(target)
+		return err == nil && state.StatusCode == incusApi.Running
+	}, 30*time.Second, time.Second, "a stale respawn must not resurrect a stopped instance")
+}
