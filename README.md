@@ -1,6 +1,6 @@
 # incus-compose
 
-[![CI](https://github.com/lxc/incus-compose/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/lxc/incus-compose/actions?query=event%3Apush+branch%3Amain)
+[![CI](https://github.com/lxc/incus-compose/actions/workflows/test-e2e.yml/badge.svg?branch=main)](https://github.com/lxc/incus-compose/actions?query=event%3Apush+branch%3Amain)
 [![Go Reference](https://pkg.go.dev/badge/github.com/lxc/incus-compose.svg)](https://pkg.go.dev/github.com/lxc/incus-compose)
 [![Coverage 60%](https://img.shields.io/badge/coverage-60%25-orange)](https://github.com/lxc/incus-compose/actions/workflows/test-e2e.yml)
 
