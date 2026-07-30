@@ -76,13 +76,31 @@ func TestBuildCommandWithServiceFilter(t *testing.T) {
 
 	ctx := t.Context()
 	pn := t.Name()
-	fixture := "../../test/fixtures/with-build/compose.yaml"
+	dir := writeTempFiles(t, map[string]string{
+		"Dockerfile": `FROM docker.io/alpine:latest AS runtime
+RUN echo "built by incus-compose"
+`,
+		"compose.yaml": `services:
+  app:
+    build:
+      no_cache: true
+      context: .
+      target: runtime
+  app2:
+    build:
+      no_cache: true
+      context: .
+      dockerfile_inline: |
+        FROM docker.io/alpine:latest
+        RUN echo "built inline by incus-compose"
+`})
+	compose := filepath.Join(dir, "compose.yaml")
 
 	t.Cleanup(func() {
-		_, _ = runCommand(context.Background(), t, pn, "-f", fixture, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(ctx, t, pn, "-f", fixture, "build", "app")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "build", "app")
 	require.NoError(t, err)
 
 	c := projectClient(ctx, t, pn)
@@ -136,18 +154,21 @@ func TestBuildCommandWithNonBuildServiceFilter(t *testing.T) {
 	dir := writeTempFiles(t, map[string]string{
 		"compose.yaml": `services:
   app:
-    build: .
+    build:
+      no_cache: true
+      context: .
   sidecar:
     image: docker.io/nginx:alpine
 `,
 		"Dockerfile": "FROM docker.io/alpine:latest\n",
 	})
+	compose := filepath.Join(dir, "compose.yaml")
 
 	t.Cleanup(func() {
-		_, _ = runCommand(context.Background(), t, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(ctx, t, pn, "-f", filepath.Join(dir, "compose.yaml"), "build", "sidecar")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "build", "sidecar")
 	require.Error(t, err)
 }
 
@@ -162,18 +183,20 @@ func TestBuildCommandRejectsMultiplePlatforms(t *testing.T) {
   app:
     build:
       context: .
+      no_cache: true
       platforms:
         - linux/amd64
         - linux/arm64
 `,
 		"Dockerfile": "FROM docker.io/alpine:latest\n",
 	})
+	compose := filepath.Join(dir, "compose.yaml")
 
 	t.Cleanup(func() {
-		_, _ = runCommand(context.Background(), t, pn, "-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(ctx, t, pn, "-f", filepath.Join(dir, "compose.yaml"), "build")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "build")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "build.platforms with multiple platforms is not supported")
 }
@@ -189,17 +212,19 @@ func TestBuildCommandRejectsUnsupportedPlatform(t *testing.T) {
   app:
     build:
       context: .
+      no_cache: true
       platforms:
         - linux/unsupported
 `,
 		"Dockerfile": "FROM docker.io/alpine:latest\n",
 	})
+	compose := filepath.Join(dir, "compose.yaml")
 
 	t.Cleanup(func() {
-		_, _ = runCommand(context.Background(), t, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(ctx, t, pn, "-f", filepath.Join(dir, "compose.yaml"), "build")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "build")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unsupported build platform linux/unsupported")
 }
@@ -212,20 +237,23 @@ func TestBuildCommandReportsMissingBuilder(t *testing.T) {
 	dir := writeTempFiles(t, map[string]string{
 		"compose.yaml": `services:
   app:
-    build: .
+    build:
+      context: .
+      no_cache: true
 `,
 		"Dockerfile": "FROM docker.io/alpine:latest\n",
 	})
+	compose := filepath.Join(dir, "compose.yaml")
 
 	t.Cleanup(func() {
-		_, _ = runCommand(context.Background(), t, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
 	_, err := runCommand(
 		ctx,
 		t,
 		pn,
-		"-f", filepath.Join(dir, "compose.yaml"), "build", "--builder", "ic-unknown-builder",
+		"-f", compose, "build", "--builder", "ic-unknown-builder",
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no container builder")

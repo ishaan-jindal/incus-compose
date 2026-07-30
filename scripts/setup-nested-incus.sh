@@ -18,6 +18,7 @@ FORCE="false"
 STORAGE_POOL="default"
 BRIDGE="incusbr0"
 LISTEN=""
+OVN="false"
 
 # Track whether we created the container so we can cleanup on failure if desired
 CONTAINER_CREATED="false"
@@ -50,6 +51,7 @@ OPTIONS:
 -l ADDRESS      Add port proxy (example: 127.0.0.1:2443) (default: "")
 -p POOL         Storage pool to create (default: ${STORAGE_POOL})
 -b BRIDGE       Bridge to create (default: ${BRIDGE})
+-o              Install OVN and configure it (default: false)
 -f              Force delete any existing container (default: false)
 -h              Show this help message
 
@@ -68,7 +70,7 @@ EOF
 }
 
 # Parse arguments
-while getopts "c:n:i:r:l:p:b:fh" opt; do
+while getopts "c:n:i:r:l:p:b:ofh" opt; do
     case ${opt} in
     c)
         CLIENT_CERT="${OPTARG}"
@@ -90,6 +92,9 @@ while getopts "c:n:i:r:l:p:b:fh" opt; do
         ;;
     b)
         BRIDGE="${OPTARG}"
+        ;;
+    o)
+        OVN="true"
         ;;
     f)
         FORCE="true"
@@ -119,6 +124,15 @@ fi
 if [[ ! -f "${CLIENT_CERT}" ]]; then
     echo "Error: Certificate file not found: ${CLIENT_CERT}" >&2
     exit 1
+fi
+
+if [[ $OVN == "true" ]]; then
+  lsmod | grep -q "openvswitch"
+  rc=$?
+  if [[ $rc -ne 0 ]]; then
+    echo "Error: The openvswitch kernel module is not loaded" >&2
+    exit 1
+  fi
 fi
 
 # Sanitize container name to be DNS-safe
@@ -161,6 +175,7 @@ echo "    Incus repository: ${INCUS_REPO}"
 echo "    Repository URL: ${REPO_URL}"
 echo "    Client certificate: ${CLIENT_CERT}"
 echo "    Storage pool: ${STORAGE_POOL}"
+echo "    OVN: ${OVN}"
 echo ""
 
 if incus info "${CONTAINER_NAME}" >/dev/null 2>&1; then
@@ -227,6 +242,15 @@ echo "==> Executing installation script"
 # Keep your variable-based pipe approach; replace placeholder and stream into container
 echo "${INSTALL_SCRIPT}" | sed "s|REPO_URL_PLACEHOLDER|${REPO_URL}|g" | incus exec "${CONTAINER_NAME}" -- bash -s
 
+if [[ $OVN == "true" ]]; then
+  echo "==> Installing OVN"
+  incus exec "${CONTAINER_NAME}" -- apt-get install -qy ovn-host ovn-central
+  incus exec "${CONTAINER_NAME}" -- ovs-vsctl set open_vswitch . \
+     external_ids:ovn-remote=unix:/run/ovn/ovnsb_db.sock \
+     external_ids:ovn-encap-type=geneve \
+     external_ids:ovn-encap-ip=127.0.0.1
+fi
+
 echo "==> Executing Incus init script"
 
 CONFIGURE_SCRIPT=$(
@@ -259,8 +283,10 @@ networks:
 - name: __BRIDGE__
   type: bridge
   config:
-    ipv4.address: auto
+    ipv4.address: 10.183.0.1/23
     ipv6.address: none
+    ipv4.dhcp.ranges: 10.183.0.65-10.183.0.254
+    ipv4.ovn.ranges: 10.183.1.1-10.183.1.254
 storage_pools:
 - name: __STORAGE_POOL__
   driver: dir
@@ -277,9 +303,6 @@ profiles:
       type: nic
 PRESEED_EOF
 
-incus config set images.compression_algorithm=pigz
-incus config set backups.compression_algorithm=pigz
-
 EOF
 )
 
@@ -287,6 +310,11 @@ CONFIGURE_SCRIPT="$(echo "${CONFIGURE_SCRIPT}" | sed -e 's/__STORAGE_POOL__/'"${
 
 # Stream the configure script as well (no temp files)
 echo "${CONFIGURE_SCRIPT}" | incus exec "${CONTAINER_NAME}" -- bash -s
+
+if [[ $OVN == "true" ]]; then
+    echo "==> Seeding a permanent OVN network for fast capability detection"
+    incus exec "${CONTAINER_NAME}" -- incus network create ic-ovn-seed --type=ovn network=none
+fi
 
 # Inject client certificate into trust store
 echo "==> Adding client certificate to nested Incus trust store"
