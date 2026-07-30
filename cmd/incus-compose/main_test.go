@@ -101,7 +101,7 @@ func runCommandSnapshotList(ctx context.Context, t *testing.T, projectName strin
 	stdout := &bytes.Buffer{}
 	cmd := newRootCommand()
 	cmd.Writer = stdout
-	cmd.ErrWriter = nil
+	cmd.ErrWriter = t.Output()
 	err = cmd.Run(ctx, listArgs)
 
 	require.NoError(t, err)

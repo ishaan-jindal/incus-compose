@@ -197,7 +197,7 @@ func newListCommand() *cli.Command {
 				}
 			}
 
-			err = stack.Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter)
+			err = stack.Run(ctx, client.ActionEnsure)
 			if err != nil {
 				c.LogWarn(err.Error())
 			}
@@ -215,7 +215,7 @@ func newListCommand() *cli.Command {
 				w = fd
 			}
 
-			err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter)
+			err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure)
 			if err != nil {
 				c.LogWarn("Ensuring the stack", "error", "err")
 			}

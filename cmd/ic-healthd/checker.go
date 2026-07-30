@@ -16,11 +16,12 @@ import (
 	"github.com/lxc/incus-compose/shared"
 )
 
-// checker runs the health probe for a single instance, independent of the
-// runner except for statusCh/exitCh. It never restarts the instance it
-// watches or decides whether to - it only probes, reports its own status,
-// and exits once its retries are exhausted or its context is canceled. The
-// runner decides what happens next.
+// instanceConfigPatch is a minimal instance PATCH body carrying only config keys.
+type instanceConfigPatch struct {
+	Config map[string]string `json:"config"`
+}
+
+// checker probes one instance and reports its status; the runner decides restarts.
 type checker struct {
 	conn   incus.InstanceServer
 	name   string
@@ -33,10 +34,7 @@ type checker struct {
 	exitCh   chan<- error  // exactly one send, then run has returned for good
 }
 
-// newChecker starts a checker for name under ctx. inStart selects the
-// start-period checker; the checker is never told to restart anything - when
-// the runner wants the instance restarted first, it does so itself before
-// calling newChecker for the replacement.
+// newChecker builds a checker for name; the runner restarts the instance itself.
 func newChecker(
 	conn incus.InstanceServer,
 	name string,
@@ -60,11 +58,7 @@ const (
 	phaseNormal                    // continue with the normal-interval checker
 )
 
-// run drives the health check loop until ctx is canceled or retries are
-// exhausted. It alternates between the start-period checker (start interval,
-// bounded by the start period) and the normal checker. It keeps the outer
-// checkInstanceRunningDelay poll as a safety net for the gap between an
-// instance-stopped/-shutdown event firing and the runner's kill landing.
+// run alternates the start-period and normal phases until ctx ends or retries run out.
 func (c *checker) run(ctx context.Context, inStart bool) {
 	for {
 		if c.params.StartPeriod < 1 {
@@ -88,12 +82,8 @@ func (c *checker) run(ctx context.Context, inStart bool) {
 	}
 }
 
-// runPhase runs a single checking phase until a transition is required. When
-// inStart is true it uses the start interval and is bounded by the start
-// period; otherwise it uses the normal interval and runs until ctx is
-// canceled or retries are exhausted. The returned phaseResult tells run how
-// to proceed; the caller checks ctx.Err() first since phaseCtx.Done() also
-// unblocks this when the parent ctx is canceled.
+// runPhase runs one checking phase and returns how run should proceed. The caller
+// must check ctx.Err() first: phaseCtx.Done() also unblocks on a parent cancel.
 func (c *checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 	interval := c.params.Interval
 	retries := c.params.Retries
@@ -160,7 +150,7 @@ func (c *checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 	}
 }
 
-// check executes the healthcheck command and returns true if healthy.
+// check runs the healthcheck command once and returns nil when healthy.
 func (c *checker) check(ctx context.Context) error {
 	inst, _, err := c.conn.GetInstanceState(c.name)
 	if err != nil {
@@ -253,11 +243,7 @@ func (c *checker) exec(ctx context.Context, cmd []string) (int, string, string, 
 	return -1, "", "", nil
 }
 
-// writeStatus persists status into the instance's user.healthcheck.status
-// config key. Before actually calling UpdateInstance, it sends the new
-// status on statusCh - the runner uses this to recognize the resulting
-// instance-updated event as self-caused, and to reset restart backoff on a
-// healthy status.
+// writeStatus persists status to user.healthcheck.status, mirroring it on statusCh.
 func (c *checker) writeStatus(ctx context.Context, status string) error {
 	if c.status == status {
 		// We already wrote that.
@@ -269,15 +255,6 @@ func (c *checker) writeStatus(ctx context.Context, status string) error {
 		return err
 	}
 
-	if inst.Config[shared.HealthStoppedKey] == "true" {
-		status = shared.HealthStatusStopped
-
-		if c.status == status {
-			// We already wrote that.
-			return nil
-		}
-	}
-
 	if inst.Config[shared.HealthStatusKey] == status {
 		return nil
 	}
@@ -285,16 +262,23 @@ func (c *checker) writeStatus(ctx context.Context, status string) error {
 	select {
 	case c.statusCh <- status:
 	default:
-		// Runner isn't reading fast enough; don't block the checker on it -
-		// this is an efficiency measure only (see selfWrites), not required
-		// for correctness.
+		// Don't block on a slow runner; selfWrites is an efficiency measure only.
 	}
 
 	slog.Info("Status update", "instance", c.name, "old", inst.Config[shared.HealthStatusKey], "current", status)
 
-	// Retry while Incus reports the instance's operation lock is still held
-	// by another action (e.g. this write racing its own "start" operation).
-	// The lock is short-lived, so a handful of short retries clears it.
+	info, err := c.conn.GetConnectionInfo()
+	if err != nil {
+		return err
+	}
+
+	path := incusApi.NewURL().
+		Path("1.0", "instances", c.name).
+		Project(info.Project).
+		Target(info.Target).
+		String()
+
+	// The instance operation lock is briefly held by a concurrent start/stop.
 	err = retry.New(
 		retry.Context(ctx),
 		retry.Attempts(6),
@@ -303,20 +287,11 @@ func (c *checker) writeStatus(ctx context.Context, status string) error {
 			return strings.Contains(err.Error(), "Instance is busy")
 		}),
 	).Do(func() error {
-		inst, _, err = c.conn.GetInstance(c.name)
-		if err != nil {
-			return err
-		}
+		_, _, patchErr := c.conn.RawQuery("PATCH", path, instanceConfigPatch{
+			Config: map[string]string{shared.HealthStatusKey: status},
+		}, "")
 
-		wInst := inst.Writable()
-		wInst.Config[shared.HealthStatusKey] = status
-
-		op, opErr := c.conn.UpdateInstance(c.name, wInst, "")
-		if opErr != nil {
-			return opErr
-		}
-
-		return op.Wait()
+		return patchErr
 	})
 	if err != nil {
 		return err

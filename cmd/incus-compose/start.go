@@ -68,16 +68,10 @@ func newStartCommand() *cli.Command {
 			c.IgnoreError(client.ActionStart, client.ErrRunning)
 			c.IgnoreError(client.ActionEnsure, client.ErrNotFound)
 
-			stdout := cmd.Root().Writer
-			stderr := cmd.Root().ErrWriter
-
 			if !cmd.Root().Bool("debug") {
-				progress := newProgressRenderer(stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+				progress := newProgressRenderer(cmd.Root().Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
 				progress.Start(c)
 				defer progress.Stop(c)
-
-				stdout = progress.bypass()
-				stderr = stdout
 			}
 
 			// Register the DNS Watcher after the progress renderer so progress waits for the dns changes.
@@ -112,8 +106,6 @@ func newStartCommand() *cli.Command {
 			if err := stack.ForAction(client.ActionEnsure).Run(
 				ctx,
 				client.ActionEnsure,
-				stdout,
-				stderr,
 			); err != nil {
 				c.LogError("Getting resources", "error", err)
 				errs = errors.Join(errs, err)
@@ -131,7 +123,7 @@ func newStartCommand() *cli.Command {
 			}
 
 			filter := func(r client.Resource) bool { return r.IsEnsured() }
-			errStart := stack.ForActionF(client.ActionStart, filter).Run(ctx, client.ActionStart, stdout, stderr, startOpts...)
+			errStart := stack.ForActionF(client.ActionStart, filter).Run(ctx, client.ActionStart, startOpts...)
 			if errStart != nil {
 				c.LogError("Starting resources", "error", errStart)
 				errs = errors.Join(errs, errStart)

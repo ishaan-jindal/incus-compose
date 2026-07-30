@@ -63,16 +63,10 @@ func newHealthdDownCommand() *cli.Command {
 			}
 			defer c.WarnError(c.Done, "Failure during Client.Done()")
 
-			stdout := cmd.Root().Writer
-			stderr := cmd.Root().ErrWriter
-
 			if !cmd.Root().Bool("debug") {
-				progress := newProgressRenderer(stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+				progress := newProgressRenderer(cmd.Root().Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
 				progress.Start(c)
 				defer progress.Stop(c)
-
-				stdout = progress.bypass()
-				stderr = stdout
 			}
 
 			stack := client.NewStack(c, client.StackSortDescending())
@@ -97,17 +91,17 @@ func newHealthdDownCommand() *cli.Command {
 
 			c.LogDebug("Ensure", "resources", stack.All())
 
-			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, stdout, stderr); err != nil {
+			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
 				c.LogError("Ensuring healthd", "error", err)
 				return errLogged.Wrap(err)
 			}
 
-			if err := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, stdout, stderr, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout"))); err != nil {
+			if err := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout"))); err != nil {
 				c.LogError("Stopping healthd resources", "error", err)
 				return errLogged.Wrap(err)
 			}
 
-			if err := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, stdout, stderr, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout"))); err != nil {
+			if err := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout"))); err != nil {
 				c.LogError("Deleting healthd resources", "error", err)
 				return errLogged.Wrap(err)
 			}

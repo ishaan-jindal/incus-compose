@@ -162,9 +162,6 @@ func newUpCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			stdout := cmd.Root().Writer
-			stderr := cmd.Root().ErrWriter
-
 			// We start all resources, just ignore that warning but let progress know them (so add before - LIFO - progress runs before).
 			c.IgnoreError(client.ActionStart, client.ErrRunning)
 			c.IgnoreError(client.ActionStop, client.ErrNotRunning)
@@ -210,7 +207,7 @@ func newUpCommand() *cli.Command {
 			if cmd.Bool("recreate") {
 				var rprogress *progressRenderer
 				if !cmd.Bool("debug") {
-					rprogress = newProgressRenderer(stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+					rprogress = newProgressRenderer(cmd.Root().Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
 					rprogress.Start(rc)
 				}
 
@@ -256,11 +253,11 @@ func newUpCommand() *cli.Command {
 				recreateOptions := append(append([]client.Option{}, runOptions...), client.OptionForce())
 
 				// Ensure without create for "recreate" (resolution only, no progress).
-				if err := ensureStack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, stdout, stderr); err != nil {
+				if err := ensureStack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
 					rc.LogDebug("Ensuring for reCreate", "error", err)
 				} else {
 					// Stop
-					errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, stdout, stderr, recreateOptions...)
+					errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, recreateOptions...)
 					if errStop != nil {
 						rc.LogDebug("Stopping resources", "error", errStop)
 					}
@@ -268,7 +265,7 @@ func newUpCommand() *cli.Command {
 					// Delete
 					deleteStack := stack.ForAction(client.ActionDelete)
 					rc.LogDebug("Recreate delete", "resources", deleteStack.All())
-					errDel := deleteStack.Run(ctx, client.ActionDelete, stdout, stderr, recreateOptions...)
+					errDel := deleteStack.Run(ctx, client.ActionDelete, recreateOptions...)
 					if errDel != nil {
 						rc.LogDebug("Deleting resources", "error", errDel)
 					}
@@ -280,12 +277,9 @@ func newUpCommand() *cli.Command {
 			}
 
 			if !cmd.Root().Bool("debug") {
-				progress := newProgressRenderer(stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+				progress := newProgressRenderer(cmd.Root().Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
 				progress.Start(c)
 				defer progress.Stop(c)
-
-				stdout = progress.bypass()
-				stderr = stdout
 			}
 
 			scale := parseScale(cmd.StringSlice("scale"))
@@ -368,7 +362,7 @@ func newUpCommand() *cli.Command {
 				startOptions = append(startOptions, client.OptionDependencyTimeout(cmd.Duration("dependency-timeout")))
 			}
 
-			err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, stdout, stderr, startOptions...)
+			err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, startOptions...)
 			if err != nil {
 				c.LogError("Ensuring resources", "error", err)
 				return errLogged.Wrap(err)
@@ -378,7 +372,7 @@ func newUpCommand() *cli.Command {
 			if !cmd.Bool("no-start") {
 				startFilter := func(r client.Resource) bool { return r.IsEnsured() }
 
-				err := stack.ForActionF(client.ActionStart, startFilter).Run(ctx, client.ActionStart, stdout, stderr, startOptions...)
+				err := stack.ForActionF(client.ActionStart, startFilter).Run(ctx, client.ActionStart, startOptions...)
 				if err != nil {
 					c.LogError("Starting resources", "error", err)
 					return errLogged.Wrap(err)

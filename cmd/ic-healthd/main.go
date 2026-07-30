@@ -1,5 +1,4 @@
-// ic-healthd is a health check daemon for incus-compose.
-// It monitors instances with healthcheck directives and restarts unhealthy instances.
+// ic-healthd monitors incus-compose instances with healthchecks and restarts unhealthy ones.
 package main
 
 import (
@@ -124,8 +123,7 @@ func newVersionCommand() *cli.Command {
 	}
 }
 
-// hasDefaultRoute reports whether the kernel routing table has a default route.
-// It reads /proc/net/route directly; destination 00000000 indicates a default route.
+// hasDefaultRoute reports whether /proc/net/route lists a default route (destination 00000000).
 func hasDefaultRoute() bool {
 	data, err := os.ReadFile("/proc/net/route")
 	if err != nil {

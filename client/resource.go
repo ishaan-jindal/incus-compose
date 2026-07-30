@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"io"
 	"slices"
 	"sync"
 	"time"
@@ -28,10 +27,6 @@ type InterfaceIPs struct {
 
 // Options holds arguments for resource actions.
 type Options struct {
-	// Stdout / Stderr to use for all output.
-	Stdout io.Writer
-	Stderr io.Writer
-
 	// Create resources if they don't exist (for ActionEnsure).
 	Create bool
 
@@ -74,14 +69,6 @@ func (o Options) incusTimeout() int {
 
 // Option configures action arguments.
 type Option func(o *Options)
-
-// OptionOutput sets the stdout/stderr to use for all output.
-func OptionOutput(stdout io.Writer, stderr io.Writer) Option {
-	return func(o *Options) {
-		o.Stdout = stdout
-		o.Stderr = stderr
-	}
-}
 
 // OptionCreate creates resources if they don't exist (for ActionEnsure).
 func OptionCreate() Option {
@@ -150,8 +137,6 @@ func OptionExternalHealthd() Option {
 // NewOptions makes a ActionArgs struct from ActionO* options.
 func NewOptions(opts ...Option) Options {
 	args := Options{
-		Stdout:            io.Discard,
-		Stderr:            io.Discard,
 		Healthd:           true,
 		Timeout:           2 * time.Minute,
 		DependencyTimeout: 5 * time.Minute,

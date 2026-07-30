@@ -203,7 +203,7 @@ func TestSwapWriterRestores(t *testing.T) {
 
 	first := &bytes.Buffer{}
 	second := &bytes.Buffer{}
-	sw := &swapWriter{w: first}
+	sw := client.NewSwapWriter(first)
 
 	_, err := sw.Write([]byte("one"))
 	require.NoError(t, err)

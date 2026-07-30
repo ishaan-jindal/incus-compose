@@ -5,8 +5,7 @@ import (
 	"fmt"
 )
 
-// Error is a sentinel-based error type that supports context enrichment,
-// same pattern as client/errors.go.
+// Error is a sentinel-based error type, same pattern as client/errors.go.
 type Error struct {
 	sentinel error
 	failures uint64
@@ -66,8 +65,7 @@ func (e *Error) As(target any) bool {
 	return false
 }
 
-// ErrRetriesExhausted indicates a checker gave up on its own after exhausting
-// its configured retries; the runner evaluates restart policy in response.
+// ErrRetriesExhausted means a checker gave up; the runner then evaluates restart policy.
 var ErrRetriesExhausted = newError("healthcheck retries exhausted")
 
 // ErrNotRunning is an internal sentinel error.

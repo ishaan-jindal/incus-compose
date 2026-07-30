@@ -117,7 +117,7 @@ func (p *progressRenderer) Start(c *client.Client) {
 			}
 		}()
 
-		p.logWriter = logWriter.Swap(p.bypass())
+		p.logWriter = c.Global().SwapStderr(p.bypass())
 	}
 
 	c.Global().SetProgressHandler(p.handle)
@@ -145,7 +145,7 @@ func (p *progressRenderer) Stop(c *client.Client) {
 
 	if p.animate {
 		if p.logWriter != nil {
-			logWriter.Swap(p.logWriter)
+			c.Global().SwapStderr(p.logWriter)
 		}
 
 		close(p.stopCh)
@@ -417,32 +417,6 @@ func (w *bypassWriter) Write(b []byte) (int, error) {
 	p.writeAbove(p.logBuf[:idx+1])
 	p.logBuf = p.logBuf[idx+1:]
 	return len(b), nil
-}
-
-// swapWriter is an io.Writer whose destination can be swapped at runtime. The
-// slog handler writes through it (see initLogger) so startProgress can reroute
-// log lines above the live progress block while one is on screen.
-type swapWriter struct {
-	mu sync.Mutex
-	w  io.Writer
-}
-
-// logWriter is the destination behind the default slog handler.
-var logWriter = &swapWriter{w: os.Stderr}
-
-func (s *swapWriter) Write(b []byte) (int, error) { // nolint:unparam
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.w.Write(b)
-}
-
-// Swap replaces the destination and returns the previous one.
-func (s *swapWriter) Swap(w io.Writer) io.Writer {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	old := s.w
-	s.w = w
-	return old
 }
 
 func (p *progressRenderer) colorize(s, color string) string {

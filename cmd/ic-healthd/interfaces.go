@@ -19,9 +19,7 @@ const (
 	checkInstanceRunningDelay = 30 * time.Second
 	maxRestartDelay           = 5 * time.Minute
 
-	// debounceWindow coalesces bursts of instance-updated/instance-deleted
-	// events for the same instance (e.g. several sequential `incus config
-	// set` calls) into one kill-and-replace.
+	// debounceWindow coalesces bursts of update/delete events into one kill-and-replace.
 	debounceWindow = 100 * time.Millisecond
 )
 
@@ -35,10 +33,7 @@ const (
 	defaultStartInterval = 5 * time.Second
 )
 
-// healthIgnoreKey opts an instance out of health checking entirely: excluded
-// from discovery and from every lifecycle event handler. Set by incus-compose
-// on the healthd sidecar itself, and available to any service via
-// `x-incus: user.healthcheck.ignore: "true"`.
+// healthIgnoreKey opts an instance out of health checking entirely.
 const healthIgnoreKey = shared.HealthKeyPrefix + "ignore"
 
 // Config holds the healthd configuration.
@@ -52,10 +47,7 @@ type Config struct {
 	Project    string
 }
 
-// instanceConfig is what a checker is built with: the six health-check
-// parameters, plus Restart - a real parameter the runner reads for its own
-// restart-policy logic, not something the checker itself acts on - and
-// Running, the instance's run state at the moment of the read.
+// instanceConfig is what a checker is built with, plus fields only the runner reads.
 type instanceConfig struct {
 	Test          []string
 	StartPeriod   time.Duration
@@ -68,10 +60,7 @@ type instanceConfig struct {
 	Running bool // inst.StatusCode == api.Running, read alongside the other fields
 }
 
-// equal compares two instanceConfig values field by field. Test is a slice
-// (not comparable with ==), so this can't be a plain == on the struct; use
-// slices.Equal for Test and plain field comparison for everything else -
-// no reflect.DeepEqual needed.
+// equal compares two instanceConfig values; Test is a slice, so == will not do.
 func (a instanceConfig) equal(b instanceConfig) bool {
 	return slices.Equal(a.Test, b.Test) &&
 		a.StartPeriod == b.StartPeriod &&

@@ -4,17 +4,45 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/url"
 	"os"
 	"slices"
 	"strings"
+	"sync"
 
 	incusClient "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/lxc/incus/v7/shared/cliconfig"
 )
+
+// SwapWriter is an io.Writer whose destination can be swapped at runtime.
+type SwapWriter struct {
+	mu sync.RWMutex
+	w  io.Writer
+}
+
+// NewSwapWriter creates a LogWriter initially writing to w.
+func NewSwapWriter(w io.Writer) *SwapWriter {
+	return &SwapWriter{w: w}
+}
+
+func (l *SwapWriter) Write(b []byte) (int, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.w.Write(b)
+}
+
+// Swap replaces the destination and returns the previous one.
+func (l *SwapWriter) Swap(w io.Writer) io.Writer {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	old := l.w
+	l.w = w
+	return old
+}
 
 // ClientConfig holds configuration options for the Client.
 type ClientConfig struct {
@@ -23,6 +51,12 @@ type ClientConfig struct {
 
 	// Logger to use within this client.
 	Logger *slog.Logger
+
+	// Stdout is the stdout writer to use.
+	Stdout io.Writer
+
+	// Stderr is the swappable stderr writer.
+	Stderr *SwapWriter
 
 	// NetworkPrefix is the prefix for new networks (default: "ic-").
 	NetworkPrefix string
@@ -52,6 +86,16 @@ func ClientURL(u string) ClientOption {
 // ClientLogger sets the client to use within the created client.
 func ClientLogger(l *slog.Logger) ClientOption {
 	return func(c *ClientConfig) { c.Logger = l }
+}
+
+// ClientStdout sets the clients stdout.
+func ClientStdout(w io.Writer) ClientOption {
+	return func(c *ClientConfig) { c.Stdout = w }
+}
+
+// ClientStderrWriter sets the swappable writer.
+func ClientStderrWriter(lw *SwapWriter) ClientOption {
+	return func(c *ClientConfig) { c.Stderr = lw }
 }
 
 // ClientDefaultStoragePool sets the default storage pool name.
@@ -93,7 +137,10 @@ type GlobalClient struct {
 	ctx    context.Context
 	config ClientConfig
 
-	logger    *slog.Logger
+	logger *slog.Logger
+
+	stdout    io.Writer
+	stderr    *SwapWriter
 	projects  []*Client
 	cliConfig *cliconfig.Config
 
@@ -127,6 +174,8 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 		DefaultStoragePool: "detect",
 		NetworkPrefix:      "ic-",
 		DescriptionFormat:  "incus-compose: %s",
+		Stdout:             os.Stdout,
+		Stderr:             NewSwapWriter(os.Stderr),
 	}
 
 	for _, o := range opts {
@@ -140,6 +189,8 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 		ctx:       ctx,
 		config:    config,
 		logger:    config.Logger,
+		stdout:    config.Stdout,
+		stderr:    config.Stderr,
 		cliConfig: cliConf,
 	}
 
@@ -295,7 +346,7 @@ func NewOfflineClient(ctx context.Context, projectName string) *Client {
 		config:       config,
 		project:      projectName,
 		incusProject: SanitizeProjectName(projectName),
-		logger:       slog.Default().With("project", projectName),
+		logger:       gc.logger.With("project", projectName),
 	}
 }
 
@@ -409,6 +460,21 @@ func (c *GlobalClient) LogWarn(msg string, args ...any) {
 // The `any` here is ok.
 func (c *GlobalClient) LogInfo(msg string, args ...any) {
 	c.logger.InfoContext(c.ctx, msg, args...)
+}
+
+// SwapStderr redirects this client's log output to w.
+func (c *GlobalClient) SwapStderr(w io.Writer) io.Writer {
+	return c.stderr.Swap(w)
+}
+
+// Stdout returns this clients standard output.
+func (c *GlobalClient) Stdout() io.Writer {
+	return c.stdout
+}
+
+// Stderr returns this clients error output.
+func (c *GlobalClient) Stderr() io.Writer {
+	return c.stderr
 }
 
 // LogDebug logs a debug message.

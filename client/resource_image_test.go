@@ -429,7 +429,7 @@ func TestImagePullDeletes(t *testing.T) {
 	skipLocal(t)
 	c := newRandomTestClient(t.Context(), t, "image-pull-delete-")
 
-	r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+	r, err := c.Resource(KindImage, "docker.io/library/alpine:3.22", &ImageConfig{})
 	require.NoError(t, err)
 
 	require.NoError(t, RunAction(t.Context(), r, ActionEnsure, OptionCreate()))

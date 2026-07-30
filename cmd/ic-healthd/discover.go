@@ -15,29 +15,21 @@ import (
 	"github.com/lxc/incus-compose/shared"
 )
 
-// restartPolicies are the user.healthcheck.restart values that make an
-// instance worth tracking even without a test command.
+// restartPolicies are the restart values worth tracking even without a test command.
 var restartPolicies = []string{"always", "on-failure", "unless-stopped"}
 
-// isIgnored reports whether an instance opts out of health checking
-// entirely via user.healthcheck.ignore, the sidecar's own tag and the
-// general-purpose escape hatch (x-incus: user.healthcheck.ignore: "true").
+// isIgnored reports whether an instance opts out via user.healthcheck.ignore.
 func isIgnored(cfg map[string]string) bool {
 	return cfg[healthIgnoreKey] == "true"
 }
 
-// hasHealthCheck reports whether an instance declares a test command or a
-// restart policy - the two things that make it worth tracking at all.
+// hasHealthCheck reports whether an instance declares a test command or a restart policy.
 func hasHealthCheck(cfg map[string]string) bool {
 	return cfg[shared.HealthKeyPrefix+"test"] != "" || slices.Contains(restartPolicies, cfg[shared.HealthKeyPrefix+"restart"])
 }
 
-// discover returns instance configs from the set of healthchecks declared on
-// instances in the project the connection is scoped to. Instances carrying
-// user.healthcheck.ignore=true are skipped, as are instances without a test
-// command and without a restart policy. Per-instance parse errors are
-// collected and returned as a joined error; valid instances are still
-// registered so one broken instance cannot stop the daemon.
+// discover returns the config of every trackable instance in the connection's project.
+// Per-instance parse errors are joined and returned; valid instances still register.
 func discover(conn incus.InstanceServer) (map[string]instanceConfig, error) {
 	instances := map[string]instanceConfig{}
 
@@ -72,11 +64,7 @@ func discover(conn incus.InstanceServer) (map[string]instanceConfig, error) {
 	return instances, errs
 }
 
-// parseInstance decodes user.healthcheck.* keys into an instanceConfig.
-// Missing optional keys fall back to sensible defaults. running is the
-// instance's run state at the moment cfg was read (inst.StatusCode ==
-// api.Running), passed in rather than read here since callers already have
-// it from the same GetInstance call.
+// parseInstance decodes user.healthcheck.* keys into an instanceConfig, applying defaults.
 func parseInstance(cfg map[string]string, running bool) (instanceConfig, error) {
 	ic := instanceConfig{
 		StartPeriod:   defaultStartPeriod,
@@ -90,8 +78,7 @@ func parseInstance(cfg map[string]string, running bool) (instanceConfig, error) 
 
 	testRaw := cfg[shared.HealthKeyPrefix+"test"]
 	if testRaw == "" && slices.Contains(restartPolicies, ic.Restart) {
-		// Restart policy without a test command: probe with a no-op test so
-		// the instance is still monitored for its running state.
+		// Restart policy without a test: probe with a no-op so run state is watched.
 		testRaw = `["NONE"]`
 	}
 
@@ -151,10 +138,7 @@ func parseInstance(cfg map[string]string, running bool) (instanceConfig, error) 
 	return ic, nil
 }
 
-// baseRestartDelay computes the initial restart backoff for cfg: interval *
-// retries, clamped to [defaultRestartDelay, maxRestartDelay]. Falls back to
-// defaultRestartDelay when interval/retries aren't meaningfully set (e.g. a
-// restart-policy-only instance with no test command).
+// baseRestartDelay is interval*retries, clamped to [defaultRestartDelay, maxRestartDelay].
 func baseRestartDelay(cfg instanceConfig) time.Duration {
 	if cfg.Interval <= 0 || cfg.Retries <= 0 {
 		return defaultRestartDelay
