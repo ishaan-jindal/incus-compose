@@ -22,13 +22,13 @@ func newHealthdDownCommand() *cli.Command {
 				Name:    "image",
 				Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
 				Value:   DefaultHealthdImage,
-				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_DOWN_IMAGE"),
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
 			},
 			&cli.DurationFlag{
 				Name:    "timeout",
 				Usage:   "Timeout for stopping",
 				Value:   10 * time.Second,
-				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_DOWN_TIMEOUT"),
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_TIMEOUT"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {

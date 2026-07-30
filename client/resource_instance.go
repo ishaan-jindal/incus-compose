@@ -1226,9 +1226,6 @@ func (r *Instance) Stop(ctx context.Context, opts ...Option) error {
 		return r.client.hookAfter(ctx, ActionStop, r, options, ErrNotRunning)
 	}
 
-	stopCtx, cancel := context.WithTimeout(ctx, options.Timeout)
-	defer cancel()
-
 	// Mark before for ic-healthd.
 	if options.Healthd {
 		err := r.SetHealthCheckingStopped(ctx, true)
@@ -1236,6 +1233,9 @@ func (r *Instance) Stop(ctx context.Context, opts ...Option) error {
 			return r.client.hookAfter(ctx, ActionStop, r, options, err)
 		}
 	}
+
+	stopCtx, cancel := context.WithTimeout(ctx, options.Timeout)
+	defer cancel()
 
 	err := r.stop(stopCtx, options)
 
@@ -1247,8 +1247,6 @@ func (r *Instance) stop(ctx context.Context, options Options) error {
 		return nil
 	}
 
-	// Wait until no other operation holds the instance's operation lock,
-	// e.g. an in-flight start would reject the stop with "Instance is busy".
 	err := r.waitBusyOperation(ctx)
 	if err != nil {
 		return err

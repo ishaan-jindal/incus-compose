@@ -40,9 +40,9 @@ jobs:
       INCUS_COMPOSE_IMAGE_CACHE: incus-compose-tests-cache
       NO_COLOR: 1
       INCUS_COMPOSE_TEST_E2E: 1
-      INCUS_COMPOSE_UP_DEPENDENCY_TIMEOUT: "2m"
-      INCUS_COMPOSE_UP_TIMEOUT: "2m"
-      INCUS_COMPOSE_DOWN_TIMEOUT: "1m"
+      INCUS_COMPOSE_UP_DEPENDENCY_TIMEOUT: "5m"
+      INCUS_COMPOSE_UP_TIMEOUT: "5m"
+      INCUS_COMPOSE_DOWN_TIMEOUT: "2m"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -68,7 +68,7 @@ jobs:
           sha="${{ github.sha }}"
           short="${sha:0:7}"
           echo "VERSION=${short}" >> "$GITHUB_ENV"
-          echo "INCUS_COMPOSE_UP_HEALTHD_IMAGE=ghcr.io/lxc/incus-compose/ic-healthd:${short}" >> "$GITHUB_ENV"
+          echo "INCUS_COMPOSE_HEALTHD_IMAGE=ghcr.io/lxc/incus-compose/ic-healthd:${short}" >> "$GITHUB_ENV"
           echo "Using healthd image: ghcr.io/lxc/incus-compose/ic-healthd:${short}"
 
       - name: Build healthd
@@ -148,7 +148,7 @@ jobs:
           sha="${{ github.sha }}"
           short="${sha:0:7}"
           echo "VERSION=${short}" >> "$GITHUB_ENV"
-          echo "INCUS_COMPOSE_UP_HEALTHD_IMAGE=ghcr.io/lxc/incus-compose/ic-healthd:${short}" >> "$GITHUB_ENV"
+          echo "INCUS_COMPOSE_HEALTHD_IMAGE=ghcr.io/lxc/incus-compose/ic-healthd:${short}" >> "$GITHUB_ENV"
 
       - name: Test
         run: |

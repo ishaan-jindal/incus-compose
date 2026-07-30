@@ -84,33 +84,33 @@ func newUpCommand() *cli.Command {
 			&cli.BoolFlag{
 				Name:    "no-healthd",
 				Usage:   "Don't create healthd sidecar for healthchecks",
-				Sources: cli.EnvVars("INCUS_COMPOSE_UP_NO_HEALTHD"),
+				Sources: cli.EnvVars("INCUS_COMPOSE_NO_HEALTHD"),
 			},
 			&cli.BoolFlag{
 				Name:    "external-healthd",
 				Usage:   "Use healthd but do not try to create or lookup it",
-				Sources: cli.EnvVars("INCUS_COMPOSE_UP_EXTERNAL_HEALTHD"),
+				Sources: cli.EnvVars("INCUS_COMPOSE_EXTERNAL_HEALTHD"),
 			},
 			&cli.StringFlag{
 				Name:    "healthd-image",
 				Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
 				Value:   DefaultHealthdImage,
-				Sources: cli.EnvVars("INCUS_COMPOSE_UP_HEALTHD_IMAGE"),
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
 			},
 			&cli.StringFlag{
 				Name:    "healthd-binary",
 				Usage:   "Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)",
-				Sources: cli.EnvVars("INCUS_COMPOSE_UP_HEALTHD_BINARY"),
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_BINARY"),
 			},
 			&cli.StringFlag{
 				Name:    "healthd-incus",
 				Usage:   `Connection URL of the incus to connect to from inside the sidecar. Empty = detect the ip from the bridge we are connected too`,
-				Sources: cli.EnvVars("INCUS_COMPOSE_UP_HEALTHD_INCUS"),
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_INCUS"),
 			},
 			&cli.StringFlag{
 				Name:    "healthd-network",
 				Usage:   "Incus bridge for healthd to use (default: auto-detect)",
-				Sources: cli.EnvVars("INCUS_COMPOSE_UP_HEALTHD_NETWORK"),
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_NETWORK"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
