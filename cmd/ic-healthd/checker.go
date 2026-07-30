@@ -16,6 +16,11 @@ import (
 	"github.com/lxc/incus-compose/shared"
 )
 
+// instanceConfigPatch is a minimal instance PATCH body carrying only config keys.
+type instanceConfigPatch struct {
+	Config map[string]string `json:"config"`
+}
+
 // checker runs the health probe for a single instance, independent of the
 // runner except for statusCh/exitCh. It never restarts the instance it
 // watches or decides whether to - it only probes, reports its own status,
@@ -269,15 +274,6 @@ func (c *checker) writeStatus(ctx context.Context, status string) error {
 		return err
 	}
 
-	if inst.Config[shared.HealthStoppedKey] == "true" {
-		status = shared.HealthStatusStopped
-
-		if c.status == status {
-			// We already wrote that.
-			return nil
-		}
-	}
-
 	if inst.Config[shared.HealthStatusKey] == status {
 		return nil
 	}
@@ -292,9 +288,18 @@ func (c *checker) writeStatus(ctx context.Context, status string) error {
 
 	slog.Info("Status update", "instance", c.name, "old", inst.Config[shared.HealthStatusKey], "current", status)
 
-	// Retry while Incus reports the instance's operation lock is still held
-	// by another action (e.g. this write racing its own "start" operation).
-	// The lock is short-lived, so a handful of short retries clears it.
+	info, err := c.conn.GetConnectionInfo()
+	if err != nil {
+		return err
+	}
+
+	path := incusApi.NewURL().
+		Path("1.0", "instances", c.name).
+		Project(info.Project).
+		Target(info.Target).
+		String()
+
+	// The instance operation lock is briefly held by a concurrent start/stop.
 	err = retry.New(
 		retry.Context(ctx),
 		retry.Attempts(6),
@@ -303,20 +308,11 @@ func (c *checker) writeStatus(ctx context.Context, status string) error {
 			return strings.Contains(err.Error(), "Instance is busy")
 		}),
 	).Do(func() error {
-		inst, _, err = c.conn.GetInstance(c.name)
-		if err != nil {
-			return err
-		}
+		_, _, patchErr := c.conn.RawQuery("PATCH", path, instanceConfigPatch{
+			Config: map[string]string{shared.HealthStatusKey: status},
+		}, "")
 
-		wInst := inst.Writable()
-		wInst.Config[shared.HealthStatusKey] = status
-
-		op, opErr := c.conn.UpdateInstance(c.name, wInst, "")
-		if opErr != nil {
-			return opErr
-		}
-
-		return op.Wait()
+		return patchErr
 	})
 	if err != nil {
 		return err

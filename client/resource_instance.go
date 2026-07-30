@@ -1281,9 +1281,12 @@ func (r *Instance) stop(ctx context.Context, options Options) error {
 	return r.fetch()
 }
 
-// SetHealthCheckingStopped writes the user.healthcheck.stopped config key on
-// the instance. Patches only this key; a full UpdateInstance races with incusd
-// writing volatile config keys around start/stop (ETag mismatch under load).
+// instanceConfigPatch is a minimal instance PATCH body carrying only config keys.
+type instanceConfigPatch struct {
+	Config map[string]string `json:"config"`
+}
+
+// SetHealthCheckingStopped writes the user.healthcheck.stopped config key.
 func (r *Instance) SetHealthCheckingStopped(ctx context.Context, stopped bool) error {
 	if err := r.fetch(); err != nil {
 		return err
@@ -1298,15 +1301,32 @@ func (r *Instance) SetHealthCheckingStopped(ctx context.Context, stopped bool) e
 		value = "true"
 	}
 
-	w := r.IncusInstance.Writable()
-	w.Config[HealthStoppedKey] = value
-
-	op, err := r.conn.UpdateInstance(r.IncusName(), w, "")
+	info, err := r.conn.GetConnectionInfo()
 	if err != nil {
 		return err
 	}
 
-	err = op.WaitContext(ctx)
+	path := incusApi.NewURL().
+		Path("1.0", "instances", r.IncusName()).
+		Project(info.Project).
+		Target(info.Target).
+		String()
+
+	// The instance operation lock is briefly held by a concurrent start/stop.
+	err = retry.New(
+		retry.Context(ctx),
+		retry.Attempts(6),
+		retry.Delay(250*time.Millisecond),
+		retry.RetryIf(func(err error) bool {
+			return strings.Contains(err.Error(), "Instance is busy")
+		}),
+	).Do(func() error {
+		_, _, err := r.conn.RawQuery("PATCH", path, instanceConfigPatch{
+			Config: map[string]string{HealthStoppedKey: value},
+		}, "")
+
+		return err
+	})
 	if err != nil {
 		return err
 	}

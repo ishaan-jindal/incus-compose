@@ -150,9 +150,18 @@ func (r *Runner) writeStatus(ctx context.Context, status string) error {
 
 	slog.Debug("Writing status", "own-project", r.config.OwnProject, "own-name", r.config.OwnName, "status", status)
 
-	// Retry while Incus reports the instance's operation lock is still held
-	// by another action (e.g. this write racing its own "start" operation).
-	// The lock is short-lived, so a handful of short retries clears it.
+	info, err := myConn.GetConnectionInfo()
+	if err != nil {
+		return err
+	}
+
+	path := incusApi.NewURL().
+		Path("1.0", "instances", r.config.OwnName).
+		Project(info.Project).
+		Target(info.Target).
+		String()
+
+	// The instance operation lock is briefly held by a concurrent start/stop.
 	return retry.New(
 		retry.Context(ctx),
 		retry.Attempts(6),
@@ -161,20 +170,11 @@ func (r *Runner) writeStatus(ctx context.Context, status string) error {
 			return strings.Contains(err.Error(), "Instance is busy")
 		}),
 	).Do(func() error {
-		inst, _, err := myConn.GetInstance(r.config.OwnName)
-		if err != nil {
-			return err
-		}
+		_, _, patchErr := myConn.RawQuery("PATCH", path, instanceConfigPatch{
+			Config: map[string]string{shared.HealthStatusKey: status},
+		}, "")
 
-		wInst := inst.Writable()
-		wInst.Config[shared.HealthStatusKey] = status
-
-		op, opErr := myConn.UpdateInstance(r.config.OwnName, wInst, "")
-		if opErr != nil {
-			return opErr
-		}
-
-		return op.Wait()
+		return patchErr
 	})
 }
 
