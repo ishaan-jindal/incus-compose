@@ -81,6 +81,10 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      - name: Incus version
+        run: |
+          incus version
+
       - name: Cleanup
         run: |
           just purge-projects || true
@@ -93,6 +97,7 @@ jobs:
           short="${sha:0:7}"
           echo "VERSION=${short}" >> "$GITHUB_ENV"
           echo "INCUS_COMPOSE_UP_HEALTHD_IMAGE=ghcr.io/lxc/incus-compose/ic-healthd:${short}" >> "$GITHUB_ENV"
+          echo "Using healthd image: ghcr.io/lxc/incus-compose/ic-healthd:${short}"
 
       - name: Build healthd
         run: |
