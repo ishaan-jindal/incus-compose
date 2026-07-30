@@ -68,9 +68,9 @@ jobs:
       VERSION: "${{ github.sha }}"
 
       NO_COLOR: 1
-      INCUS_COMPOSE_UP_DEPENDENCY_TIMEOUT: "2m"
-      INCUS_COMPOSE_UP_TIMEOUT: "2m"
-      INCUS_COMPOSE_DOWN_TIMEOUT: "1m"
+      INCUS_COMPOSE_UP_DEPENDENCY_TIMEOUT: "5m"
+      INCUS_COMPOSE_UP_TIMEOUT: "5m"
+      INCUS_COMPOSE_DOWN_TIMEOUT: "2m"
     steps:
       - uses: actions/checkout@v7
         with:
