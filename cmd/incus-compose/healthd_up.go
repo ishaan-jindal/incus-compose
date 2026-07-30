@@ -115,14 +115,10 @@ func newHealthdUpCommand() *cli.Command {
 			}
 			defer c.WarnError(c.Done, "Failure during Client.Done()")
 
-			stdout := cmd.Root().Writer
-
 			if !cmd.Root().Bool("debug") {
-				progress := newProgressRenderer(stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+				progress := newProgressRenderer(cmd.Root().Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
 				progress.Start(c)
 				defer progress.Stop(c)
-
-				stdout = progress.bypass()
 			}
 
 			stack := client.NewStack(c, client.StackWorkers(params.workers))
@@ -164,12 +160,12 @@ func newHealthdUpCommand() *cli.Command {
 				ensureOpts = append(ensureOpts, client.OptionPull())
 			}
 
-			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, stdout, cmd.Root().ErrWriter, ensureOpts...); err != nil {
+			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, ensureOpts...); err != nil {
 				c.LogError("Creating healthd resources", "error", err)
 				return errLogged.Wrap(err)
 			}
 
-			if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, stdout, cmd.Root().ErrWriter); err != nil {
+			if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart); err != nil {
 				c.LogError("Starting healthd resources", "error", err)
 				return errLogged.Wrap(err)
 			}

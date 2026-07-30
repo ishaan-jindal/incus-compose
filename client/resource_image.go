@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"strconv"
 	"strings"
@@ -444,7 +443,7 @@ func (r *Image) copyToCache(ctx context.Context, args Options) (*incusApi.ImageA
 	}
 
 	// Extract oci informations with a temporary instance.
-	err = extractAndStoreOCIConfig(ctx, r.cache, cacheAlias.Target, r.client.Config().DefaultStoragePool)
+	err = extractAndStoreOCIConfig(ctx, r.client, r.cache, cacheAlias.Target)
 	if err != nil {
 		return nil, ErrCreate.WithText("extracting OCI config from the image").Wrap(err)
 	}
@@ -465,7 +464,7 @@ func (r *Image) create(ctx context.Context, args Options) error {
 				}
 
 				// Extract oci informations with a temporary instance.
-				err = extractAndStoreOCIConfig(ctx, r.cache, cacheAlias.Target, r.client.Config().DefaultStoragePool)
+				err = extractAndStoreOCIConfig(ctx, r.client, r.cache, cacheAlias.Target)
 				if err != nil {
 					return ErrCreate.WithText("extracting OCI config from the image").Wrap(err)
 				}
@@ -577,7 +576,7 @@ func (r *Image) create(ctx context.Context, args Options) error {
 		}
 
 		// Extract oci informations with a temporary instance.
-		err = extractAndStoreOCIConfig(ctx, r.conn, targetAlias.Target, r.client.Config().DefaultStoragePool)
+		err = extractAndStoreOCIConfig(ctx, r.client, r.conn, targetAlias.Target)
 		if err != nil {
 			return ErrCreate.WithText("extracting OCI config from the image").Wrap(err)
 		}
@@ -589,7 +588,9 @@ func (r *Image) create(ctx context.Context, args Options) error {
 // extractAndStoreOCIConfig creates a temporary stopped container from this image,
 // reads oci.uid/oci.gid/oci.entrypoint/oci.cwd from its config, stores them as
 // image properties, then deletes the container.
-func extractAndStoreOCIConfig(ctx context.Context, server incusClient.InstanceServer, fingerprint string, pool string) error {
+func extractAndStoreOCIConfig(ctx context.Context, c *Client, server incusClient.InstanceServer, fingerprint string) error {
+	pool := c.Config().DefaultStoragePool
+
 	img, _, err := server.GetImage(fingerprint)
 	if err != nil {
 		return err
@@ -632,10 +633,10 @@ func extractAndStoreOCIConfig(ctx context.Context, server incusClient.InstanceSe
 				}
 			}()
 		} else {
-			slog.Warn("Failed to create a temp instance for an image (1)", "fingerprint", fingerprint[16:], "error", err)
+			c.LogWarn("Failed to create a temp instance for an image (1)", "fingerprint", fingerprint[16:], "error", err)
 		}
 	} else {
-		slog.Warn("Failed to create a temp instance for an image (2)", "fingerprint", fingerprint[16:], "error", err)
+		c.LogWarn("Failed to create a temp instance for an image (2)", "fingerprint", fingerprint[16:], "error", err)
 	}
 
 	// fetch
@@ -712,14 +713,14 @@ func (r *Image) ensureBuild(ctx context.Context, args Options) error {
 		if args.Build.Mode == BuildForce {
 			r.IncusAlias = nil
 			r.ETag = ""
-			err = r.buildImage(ctx, args)
+			err = r.buildImage(ctx, r.client, args)
 		}
 		// BuildAuto or BuildNever with an existing image: nothing to do.
 	} else {
 		if args.Build.Mode == BuildNever {
 			err = errors.New("image is missing and building is disabled")
 		} else if args.Create {
-			err = r.buildImage(ctx, args)
+			err = r.buildImage(ctx, r.client, args)
 		}
 		// !args.Create and BuildAuto: leave err non-nil (not found, don't create).
 	}
@@ -730,7 +731,7 @@ func (r *Image) ensureBuild(ctx context.Context, args Options) error {
 
 // buildImage shells out to the detected container builder, imports the rootfs
 // into Incus as a split (metadata + rootfs) image, and records the alias.
-func (r *Image) buildImage(ctx context.Context, args Options) error {
+func (r *Image) buildImage(ctx context.Context, c *Client, args Options) error {
 	server, _, err := r.conn.GetServer()
 	if err != nil {
 		return ErrCreate.WithText("getting Incus server info").Wrap(err)
@@ -760,7 +761,7 @@ func (r *Image) buildImage(ctx context.Context, args Options) error {
 		return ErrCreate.WithText("no container builder").Wrap(err)
 	}
 
-	rootfs, configJSON, err := buildRootfs(ctx, r.client, builder, &buildCfg, args.Stdout, args.Stderr)
+	rootfs, configJSON, err := buildRootfs(ctx, r.client, builder, &buildCfg, c.Global().Stdout(), c.Global().Stderr())
 	if err != nil {
 		return ErrCreate.WithText("building container image").Wrap(err)
 	}
@@ -798,7 +799,7 @@ func (r *Image) buildImage(ctx context.Context, args Options) error {
 			return ErrCreate.WithText("fetching alias after build").Wrap(err)
 		}
 
-		err = extractAndStoreOCIConfig(ctx, r.conn, alias.Target, r.client.Config().DefaultStoragePool)
+		err = extractAndStoreOCIConfig(ctx, r.client, r.conn, alias.Target)
 		if err != nil {
 			return err
 		}
@@ -833,7 +834,7 @@ func (r *Image) buildImage(ctx context.Context, args Options) error {
 			return ErrCreate.WithText("fetching alias after build").Wrap(err)
 		}
 
-		err = extractAndStoreOCIConfig(ctx, r.cache, alias.Target, r.client.Config().DefaultStoragePool)
+		err = extractAndStoreOCIConfig(ctx, r.client, r.cache, alias.Target)
 		if err != nil {
 			return err
 		}

@@ -106,7 +106,7 @@ func newPsCommand() *cli.Command {
 			stack.AddOrdered(order, myResources)
 
 			// Run ensure (without create) to populate resource metadata/state where possible.
-			if err := stack.Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
+			if err := stack.Run(ctx, client.ActionEnsure); err != nil {
 				c.LogWarn("Ensuring the stack", "error", err)
 			}
 

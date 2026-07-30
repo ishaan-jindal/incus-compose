@@ -131,7 +131,7 @@ func newBuildCommand() *cli.Command {
 				ensureOpts = append(ensureOpts, client.OptionPull())
 			}
 
-			err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter, ensureOpts...)
+			err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, ensureOpts...)
 			if err != nil {
 				c.LogError("Ensuring resources", "error", err)
 				return errLogged.Wrap(err)

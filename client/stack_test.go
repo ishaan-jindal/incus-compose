@@ -132,7 +132,7 @@ func TestParallelImageDownload(t *testing.T) {
 	require.Len(t, batches, 1, "all images should be in one batch")
 	require.Len(t, batches[0], 3, "batch should have 3 images")
 
-	require.NoError(t, stack.Run(ctx, ActionEnsure, nil, nil, OptionCreate()))
+	require.NoError(t, stack.Run(ctx, ActionEnsure, OptionCreate()))
 
 	for _, name := range imageNames {
 		img, err := c.Resource(KindImage, name, &ImageConfig{})
@@ -176,7 +176,7 @@ func TestStackHooksWithStack(t *testing.T) {
 	require.NoError(t, err)
 
 	stack.Add(profile)
-	require.NoError(t, stack.Run(ctx, ActionEnsure, nil, nil, OptionCreate()))
+	require.NoError(t, stack.Run(ctx, ActionEnsure, OptionCreate()))
 	require.True(t, beforeCalled, "before hook should be called")
 	require.True(t, afterCalled, "after hook should be called")
 	require.NoError(t, afterErr, "after hook should receive nil error")
@@ -198,7 +198,7 @@ func TestStackErrorAggregation(t *testing.T) {
 
 	stack.Add(p1, p2)
 
-	err = stack.Run(ctx, ActionEnsure, nil, nil)
+	err = stack.Run(ctx, ActionEnsure)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "error-test-1")
 	require.Contains(t, err.Error(), "error-test-2")
@@ -254,12 +254,12 @@ func TestStackInstanceWithSecrets(t *testing.T) {
 	stack.Add(network, image, instance)
 
 	ensureStack := stack.ForAction(ActionEnsure)
-	require.NoError(t, ensureStack.Run(ctx, ActionEnsure, nil, nil, OptionCreate()))
+	require.NoError(t, ensureStack.Run(ctx, ActionEnsure, OptionCreate()))
 	for _, r := range ensureStack.All() {
 		require.True(t, r.IsEnsured(), "resource %q should be ensured", r.Name())
 	}
-	require.NoError(t, stack.ForAction(ActionStart).Run(ctx, ActionStart, nil, nil))
-	require.NoError(t, stack.ForAction(ActionStop).Run(ctx, ActionStop, nil, nil, OptionForce()))
+	require.NoError(t, stack.ForAction(ActionStart).Run(ctx, ActionStart))
+	require.NoError(t, stack.ForAction(ActionStop).Run(ctx, ActionStop, OptionForce()))
 }
 
 func TestStackEnsureWithoutCreate_Fails(t *testing.T) {
@@ -273,7 +273,7 @@ func TestStackEnsureWithoutCreate_Fails(t *testing.T) {
 
 	stack := NewStack(c)
 	stack.Add(profile)
-	require.Error(t, stack.ForAction(ActionEnsure).Run(ctx, ActionEnsure, nil, nil))
+	require.Error(t, stack.ForAction(ActionEnsure).Run(ctx, ActionEnsure))
 }
 
 func TestStackSingleProfileEnsure(t *testing.T) {
@@ -289,7 +289,7 @@ func TestStackSingleProfileEnsure(t *testing.T) {
 	stack.Add(profile)
 
 	ensureStack := stack.ForAction(ActionEnsure)
-	require.NoError(t, ensureStack.Run(ctx, ActionEnsure, nil, nil, OptionCreate()))
+	require.NoError(t, ensureStack.Run(ctx, ActionEnsure, OptionCreate()))
 	for _, r := range ensureStack.All() {
 		require.True(t, r.IsEnsured(), "resource %q should be ensured", r.Name())
 	}
@@ -311,7 +311,7 @@ func TestStackProfileAndNetworkMixedPriorities(t *testing.T) {
 	stack.Add(profile, network)
 
 	ensureStack := stack.ForAction(ActionEnsure)
-	require.NoError(t, ensureStack.Run(ctx, ActionEnsure, nil, nil, OptionCreate()))
+	require.NoError(t, ensureStack.Run(ctx, ActionEnsure, OptionCreate()))
 	for _, r := range ensureStack.All() {
 		require.True(t, r.IsEnsured(), "resource %q should be ensured", r.Name())
 	}
@@ -352,12 +352,12 @@ func TestStackSimpleNginx(t *testing.T) {
 	stack.Add(network, image, instance)
 
 	ensureStack := stack.ForAction(ActionEnsure)
-	require.NoError(t, ensureStack.Run(ctx, ActionEnsure, nil, nil, OptionCreate()))
+	require.NoError(t, ensureStack.Run(ctx, ActionEnsure, OptionCreate()))
 	for _, r := range ensureStack.All() {
 		require.True(t, r.IsEnsured(), "resource %q should be ensured", r.Name())
 	}
-	require.NoError(t, stack.ForAction(ActionStart).Run(ctx, ActionStart, nil, nil))
-	require.NoError(t, stack.ForAction(ActionStop).Run(ctx, ActionStop, nil, nil, OptionForce()))
+	require.NoError(t, stack.ForAction(ActionStart).Run(ctx, ActionStart))
+	require.NoError(t, stack.ForAction(ActionStop).Run(ctx, ActionStop, OptionForce()))
 }
 
 func TestStackNginxScale(t *testing.T) {
@@ -399,10 +399,10 @@ func TestStackNginxScale(t *testing.T) {
 	stack.Add(resources...)
 
 	ensureStack := stack.ForAction(ActionEnsure)
-	require.NoError(t, ensureStack.Run(ctx, ActionEnsure, nil, nil, OptionCreate()))
+	require.NoError(t, ensureStack.Run(ctx, ActionEnsure, OptionCreate()))
 	for _, r := range ensureStack.All() {
 		require.True(t, r.IsEnsured(), "resource %q should be ensured", r.Name())
 	}
-	require.NoError(t, stack.ForAction(ActionStart).Run(ctx, ActionStart, nil, nil))
-	require.NoError(t, stack.ForAction(ActionStop).Run(ctx, ActionStop, nil, nil, OptionForce()))
+	require.NoError(t, stack.ForAction(ActionStart).Run(ctx, ActionStart))
+	require.NoError(t, stack.ForAction(ActionStop).Run(ctx, ActionStop, OptionForce()))
 }

@@ -91,12 +91,12 @@ func TestE2EEventDrivenDiscovery(t *testing.T) {
 	stack.AddOrdered(order, resources)
 
 	err = stack.ForAction(client.ActionEnsure).Run(
-		ctx, client.ActionEnsure, os.Stdout, os.Stderr, client.OptionCreate(),
+		ctx, client.ActionEnsure, client.OptionCreate(),
 	)
 	require.NoError(t, err)
 
 	err = stack.ForAction(client.ActionStart).Run(
-		ctx, client.ActionStart, os.Stdout, os.Stderr, client.OptionExternalHealthd(),
+		ctx, client.ActionStart, client.OptionExternalHealthd(),
 	)
 	require.NoError(t, err)
 
@@ -203,7 +203,7 @@ func TestE2EIgnoredInstanceIsNeverTracked(t *testing.T) {
 	stack.AddOrdered(order, resources)
 
 	err = stack.ForAction(client.ActionEnsure).Run(
-		ctx, client.ActionEnsure, os.Stdout, os.Stderr, client.OptionCreate(),
+		ctx, client.ActionEnsure, client.OptionCreate(),
 	)
 	require.NoError(t, err)
 
@@ -285,12 +285,12 @@ func TestE2ECrashedInstanceRestarts(t *testing.T) {
 	stack.AddOrdered(order, resources)
 
 	err = stack.ForAction(client.ActionEnsure).Run(
-		ctx, client.ActionEnsure, os.Stdout, os.Stderr, client.OptionCreate(),
+		ctx, client.ActionEnsure, client.OptionCreate(),
 	)
 	require.NoError(t, err)
 
 	err = stack.ForAction(client.ActionStart).Run(
-		ctx, client.ActionStart, os.Stdout, os.Stderr, client.OptionExternalHealthd(),
+		ctx, client.ActionStart, client.OptionExternalHealthd(),
 	)
 	require.NoError(t, err)
 
@@ -432,12 +432,12 @@ func TestE2ERepeatedCrashesBackoff(t *testing.T) {
 	stack.AddOrdered(order, resources)
 
 	err = stack.ForAction(client.ActionEnsure).Run(
-		ctx, client.ActionEnsure, os.Stdout, os.Stderr, client.OptionCreate(),
+		ctx, client.ActionEnsure, client.OptionCreate(),
 	)
 	require.NoError(t, err)
 
 	err = stack.ForAction(client.ActionStart).Run(
-		ctx, client.ActionStart, os.Stdout, os.Stderr, client.OptionExternalHealthd(),
+		ctx, client.ActionStart, client.OptionExternalHealthd(),
 	)
 	require.NoError(t, err)
 

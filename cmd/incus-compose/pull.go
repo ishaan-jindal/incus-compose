@@ -89,16 +89,10 @@ func newPullCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			stdout := cmd.Root().Writer
-			stderr := cmd.Root().ErrWriter
-
 			if !cmd.Root().Bool("debug") {
-				progress := newProgressRenderer(stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+				progress := newProgressRenderer(cmd.Root().Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
 				progress.Start(c)
 				defer progress.Stop(c)
-
-				stdout = progress.bypass()
-				stderr = stdout
 			}
 
 			// Register the DNS Watcher after the progress renderer so progress waits for the dns changes.
@@ -176,8 +170,6 @@ func newPullCommand() *cli.Command {
 			err = stack.ForAction(client.ActionEnsure).Run(
 				ctx,
 				client.ActionEnsure,
-				stdout,
-				stderr,
 				client.OptionPull(),
 				client.OptionCreate(),
 			)

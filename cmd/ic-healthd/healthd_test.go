@@ -295,8 +295,6 @@ func TestE2EHealthdNginx(t *testing.T) {
 	err = stack.ForAction(client.ActionEnsure).Run(
 		ctx,
 		client.ActionEnsure,
-		os.Stdout,
-		os.Stderr,
 		client.OptionCreate(),
 	)
 	require.NoError(t, err)
@@ -304,8 +302,6 @@ func TestE2EHealthdNginx(t *testing.T) {
 	err = stack.ForAction(client.ActionStart).Run(
 		ctx,
 		client.ActionStart,
-		os.Stdout,
-		os.Stderr,
 		client.OptionExternalHealthd(),
 	)
 	require.NoError(t, err)

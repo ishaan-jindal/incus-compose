@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -105,16 +106,23 @@ func buildLoadOptions(cmd *cli.Command) []project.LoadOption {
 	return loadOpts
 }
 
-func initLogger(debug bool, noColor bool, writer io.Writer) {
+// initLogger builds a logger scoped to this single command invocation. It
+// must not become or mutate any process-wide global (slog.SetDefault, or a
+// shared writer) - cmd.Run is called once per real process in production,
+// but tests run many invocations concurrently in one process, and a shared
+// global there causes one command's log lines to leak into another's output.
+//
+// The returned LogWriter backs the logger's handler, so a progress renderer
+// can call client.SwapLogWriter to redirect log lines above a live display
+// without touching any process-wide state.
+func initLogger(debug bool, noColor bool, writer io.Writer) *slog.Logger {
 	level := slog.LevelInfo
 	if debug {
 		level = slog.LevelDebug
 	}
 
 	if !noColor && runtime.GOOS == "windows" {
-		writer = logWriter.Swap(colorable.NewColorable(os.Stderr))
-	} else {
-		writer = logWriter.Swap(writer)
+		writer = colorable.NewColorable(os.Stderr)
 	}
 
 	logger := slog.New(tint.NewHandler(
@@ -125,7 +133,8 @@ func initLogger(debug bool, noColor bool, writer io.Writer) {
 			TimeFormat: "15:04",
 		},
 	))
-	slog.SetDefault(logger)
+
+	return logger
 }
 
 type clientKey struct{}
@@ -297,7 +306,8 @@ func newRootCommand() *cli.Command {
 				}
 			}
 
-			initLogger(cmd.Bool("debug"), noColor, cmd.ErrWriter)
+			logWriter := client.NewSwapWriter(cmd.ErrWriter)
+			logger := initLogger(cmd.Bool("debug"), noColor, logWriter)
 
 			// Commands that don't need an Incus client connection
 			noClientCommands := []string{"config", "version", "incus"}
@@ -330,6 +340,9 @@ func newRootCommand() *cli.Command {
 			// }
 
 			opts := []client.ClientOption{
+				client.ClientLogger(logger),
+				client.ClientStdout(cmd.Writer),
+				client.ClientStderrWriter(logWriter),
 				client.ClientProvideInstanceServer(server),
 				client.ClientCacheProject(cmd.String("image-cache")),
 				client.ClientDefaultStoragePool(cmd.String("storage-pool")),
@@ -350,7 +363,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		slog.Error("Command returned", "error", err)
+		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
 }

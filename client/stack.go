@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"errors"
-	"io"
 	"sort"
 )
 
@@ -178,12 +177,8 @@ func (s *Stack) runBatch(ctx context.Context, batch []Resource, action Action, o
 //
 // Image tasks are executed in parallel using a worker pool.
 // All other tasks are executed sequentially to respect potential dependencies.
-func (s *Stack) Run(ctx context.Context, action Action, stdout io.Writer, stderr io.Writer, opts ...Option) error {
+func (s *Stack) Run(ctx context.Context, action Action, opts ...Option) error {
 	s.sort()
-
-	if stdout != nil || stderr != nil {
-		opts = append(opts, OptionOutput(stdout, stderr))
-	}
 
 	// Group tasks by priority into batches
 	batches := s.groupByPriority()

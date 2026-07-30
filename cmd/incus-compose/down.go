@@ -104,16 +104,10 @@ func newDownCommand() *cli.Command {
 			c.IgnoreError(client.ActionDelete, client.ErrNotEnsured)
 			c.IgnoreError(client.ActionDelete, client.ErrNotFound)
 
-			stdout := cmd.Root().Writer
-			stderr := cmd.Root().ErrWriter
-
 			if !cmd.Root().Bool("debug") {
-				progress := newProgressRenderer(stdout, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+				progress := newProgressRenderer(cmd.Root().Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
 				progress.Start(c)
 				defer progress.Stop(c)
-
-				stdout = progress.bypass()
-				stderr = stdout
 			}
 
 			// Register the DNS Watcher after the progress renderer so progress waits for the dns changes.
@@ -167,7 +161,7 @@ func newDownCommand() *cli.Command {
 				}
 			}
 
-			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, stdout, stderr); err != nil {
+			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
 				c.LogWarn("Getting resources", "error", err)
 			}
 
@@ -180,12 +174,12 @@ func newDownCommand() *cli.Command {
 				runOpts = append(runOpts, client.OptionExternalHealthd())
 			}
 
-			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, stdout, stderr, runOpts...)
+			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, runOpts...)
 			if errStop != nil {
 				c.LogWarn("Stopping resources", "error", errStop)
 			}
 
-			errDel := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, cmd.Root().Writer, stderr, runOpts...)
+			errDel := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, runOpts...)
 			if errDel != nil {
 				c.LogWarn("Deleting resources", "error", errDel)
 			}
