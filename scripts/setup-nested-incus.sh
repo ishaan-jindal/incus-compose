@@ -127,9 +127,7 @@ if [[ ! -f "${CLIENT_CERT}" ]]; then
 fi
 
 if [[ $OVN == "true" ]]; then
-  lsmod | grep -q "openvswitch"
-  rc=$?
-  if [[ $rc -ne 0 ]]; then
+  if lsmod | grep -q "openvswitch"; then
     echo "Error: The openvswitch kernel module is not loaded" >&2
     exit 1
   fi
