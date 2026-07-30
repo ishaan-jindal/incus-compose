@@ -64,11 +64,6 @@ func stripListOutput(t *testing.T, output *bytes.Buffer) string {
 	ipRegex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
 	outStr := ipRegex.ReplaceAllString(output.String(), "-stripped-")
 
-	// // Strip health status for now, its flaky.
-	// healthRegex, err := regexp.Compile(`"health": "[a-zA-Z]+",`)
-	// require.NoError(t, err)
-	// outStr = healthRegex.ReplaceAllString(outStr, `"health": "-stripped-",`)
-
 	// Cupaloy adds a newline, 2 lines are bad for my editors format on save.
 	return strings.Trim(outStr, "\n")
 }
@@ -187,10 +182,6 @@ func prepareHealthd(t *testing.T, c *client.Client) (func(), *Runner) {
 	t.Helper()
 
 	cmd := newRootCommand()
-	// stdout := &bytes.Buffer{}
-	// stderr := &bytes.Buffer{}
-	// cmd.Writer = stdout
-	// cmd.ErrWriter = stderr
 	cmd.Writer = os.Stdout
 	cmd.ErrWriter = t.Output()
 

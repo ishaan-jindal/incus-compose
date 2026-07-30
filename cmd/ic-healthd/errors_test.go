@@ -122,11 +122,8 @@ func TestError_As_ExtractsFromChain(t *testing.T) {
 	assert.True(t, errors.Is(extracted, sentinel))
 }
 
-// errors.As() short-circuits via plain type-assignability when the target
-// type matches the error's concrete type exactly (*Error here), so it never
-// actually calls our custom As() method - the two tests above exercise
-// errors.As() the function, not (*Error).As() the method. Call the method
-// directly to cover its own two branches.
+// errors.As() short-circuits on type-assignability and never calls our As() method,
+// so the tests above cover the function, not the method. These call it directly.
 
 func TestError_As_DirectCall_MatchingTarget(t *testing.T) {
 	err := newError("direct")

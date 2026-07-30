@@ -14,8 +14,7 @@ import (
 func TestHasDefaultRoute(t *testing.T) {
 	t.Parallel()
 
-	// This sandbox always has a default route; hasDefaultRoute reads the
-	// real /proc/net/route, no mocking needed.
+	// This sandbox always has a default route, so read the real /proc/net/route.
 	require.True(t, hasDefaultRoute())
 }
 
@@ -28,12 +27,8 @@ func TestNewVersionCommand(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestE2ERunActionViaCLI drives the real `ic-healthd run` CLI entrypoint
-// (flag parsing, the Before hook's hasDefaultRoute check, runAction, the
-// signal-handling goroutine, and Runner.Run) against a real Incus, the same
-// way incus-compose actually invokes the binary - rather than constructing
-// a Runner directly and calling Run, which every other e2e test does and
-// which never exercises main.go at all.
+// TestE2ERunActionViaCLI drives the real `ic-healthd run` entrypoint the way
+// incus-compose invokes it; every other e2e test skips main.go entirely.
 func TestE2ERunActionViaCLI(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
@@ -88,8 +83,7 @@ func TestE2ERunActionViaCLI(t *testing.T) {
 		})
 	}()
 
-	// Give it time to register its cert, connect, discover, and start
-	// listening before asking it to shut down.
+	// Let it register, connect, discover, and listen before shutting it down.
 	time.Sleep(3 * time.Second)
 	runCancel()
 

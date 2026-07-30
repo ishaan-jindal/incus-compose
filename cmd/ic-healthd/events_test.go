@@ -26,8 +26,7 @@ func writeTempFiles(t *testing.T, files map[string]string) string {
 	return dir
 }
 
-// trackedCopy returns a shallow copy of r.tracked, safe to inspect from a
-// test goroutine without racing the runner's own goroutines.
+// trackedCopy copies r.tracked so a test goroutine can inspect it without racing.
 func trackedCopy(r *Runner) map[string]*trackedInstance {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -39,13 +38,8 @@ func trackedCopy(r *Runner) map[string]*trackedInstance {
 	return out
 }
 
-// TestE2EEventDrivenDiscovery exercises the event-driven pipeline end to end
-// against a real Incus: instances created and started after the daemon is
-// already listening must be picked up via instance-created/instance-started
-// events (not the initial resync, since the daemon starts listening before
-// any of the project's instances exist), a live user.healthcheck.* edit must
-// debounce-and-respawn the checker with the new params, and instance-deleted
-// must drop tracking.
+// TestE2EEventDrivenDiscovery covers the whole event pipeline against a real Incus:
+// pick up instances via events, respawn on a live config edit, drop on delete.
 func TestE2EEventDrivenDiscovery(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
@@ -76,8 +70,7 @@ func TestE2EEventDrivenDiscovery(t *testing.T) {
 
 	c.IgnoreError(client.ActionEnsure, client.ErrNotFound)
 
-	// The daemon should be connected and listening, with nothing to track
-	// yet - the project's instances don't exist.
+	// Listening, but nothing to track yet: the project's instances don't exist.
 	require.Eventually(t, func() bool {
 		return len(trackedCopy(hRunner)) == 0
 	}, 10*time.Second, 100*time.Millisecond, "daemon should have started with nothing to track")
@@ -100,9 +93,7 @@ func TestE2EEventDrivenDiscovery(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// instance-created/instance-started events, not the initial resync
-	// (which already ran before these instances existed), should pick up
-	// all three instances.
+	// Events, not the initial resync, should pick up all three instances.
 	require.Eventually(t, func() bool {
 		return len(trackedCopy(hRunner)) == 3
 	}, 30*time.Second, 200*time.Millisecond, "instances should be tracked via lifecycle events")
@@ -110,8 +101,7 @@ func TestE2EEventDrivenDiscovery(t *testing.T) {
 	conn, err := c.Connection()
 	require.NoError(t, err)
 
-	// Every tracked instance should eventually be reported healthy - proof
-	// the checkers spawned from those events are actually running.
+	// All reported healthy proves the checkers spawned from those events run.
 	names := []string{}
 	for name := range trackedCopy(hRunner) {
 		names = append(names, name)
@@ -126,9 +116,7 @@ func TestE2EEventDrivenDiscovery(t *testing.T) {
 		}, 30*time.Second, 500*time.Millisecond, "instance %s should become healthy", name)
 	}
 
-	// Live-edit user.healthcheck.interval on one instance; the debounced
-	// instance-updated pipeline should kill and replace its checker with
-	// the new params.
+	// A live interval edit should debounce, then replace the checker with new params.
 	target := names[0]
 	inst, etag, err := conn.GetInstance(target)
 	require.NoError(t, err)
@@ -160,9 +148,7 @@ func TestE2EEventDrivenDiscovery(t *testing.T) {
 	}, 15*time.Second, 200*time.Millisecond, "deleted instance should be dropped from tracking")
 }
 
-// TestE2EIgnoredInstanceIsNeverTracked confirms user.healthcheck.ignore
-// excludes an instance from both the initial resync and every subsequent
-// lifecycle event.
+// TestE2EIgnoredInstanceIsNeverTracked covers user.healthcheck.ignore in resync and events.
 func TestE2EIgnoredInstanceIsNeverTracked(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
@@ -232,20 +218,15 @@ func TestE2EIgnoredInstanceIsNeverTracked(t *testing.T) {
 
 	require.NoError(t, inst.Start(ctx))
 
-	// Give lifecycle events (instance-created/-started/-updated) a fair
-	// chance to arrive, then confirm the ignored instance never gets tracked.
+	// Give the lifecycle events a fair chance to arrive before asserting.
 	time.Sleep(3 * time.Second)
 
 	_, tracked := trackedCopy(hRunner)[inst.IncusName()]
 	require.False(t, tracked, "ignored instance must never be tracked")
 }
 
-// TestE2ECrashedInstanceRestarts simulates a crash by stopping an instance
-// directly through the Incus API, bypassing incus-compose's own stop (which
-// sets user.healthcheck.stopped=true and is treated as intentional). The
-// runner should notice the resulting instance-stopped event, evaluate
-// restart policy via evaluateBackoff, and bring the instance back up and
-// healthy on its own.
+// TestE2ECrashedInstanceRestarts stops an instance through the raw Incus API, which
+// unlike incus-compose's stop is not marked intentional, so the runner restarts it.
 func TestE2ECrashedInstanceRestarts(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
@@ -294,8 +275,7 @@ func TestE2ECrashedInstanceRestarts(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// backend1 has no dependencies of its own (only nginx depends on it),
-	// so it's healthy as soon as its own healthcheck passes.
+	// backend1 depends on nothing, so it is healthy as soon as its own check passes.
 	target := "backend1-1"
 
 	conn, err := c.Connection()
@@ -306,8 +286,7 @@ func TestE2ECrashedInstanceRestarts(t *testing.T) {
 		return err == nil && inst.Config[shared.HealthStatusKey] == shared.HealthStatusHealthy
 	}, 30*time.Second, 500*time.Millisecond, "instance should become healthy before the crash")
 
-	// Simulate a crash: stop the instance directly via the Incus API, not
-	// through incus-compose, so it's never marked user.healthcheck.stopped.
+	// Crash it: a raw API stop is never marked user.healthcheck.stopped.
 	stopOp, err := conn.UpdateInstanceState(target, incusApi.InstanceStatePut{Action: "stop", Timeout: -1, Force: true}, "")
 	require.NoError(t, err)
 	require.NoError(t, stopOp.Wait())
@@ -327,20 +306,9 @@ func TestE2ECrashedInstanceRestarts(t *testing.T) {
 	}, 30*time.Second, 500*time.Millisecond, "restarted instance should become healthy again")
 }
 
-// TestE2ERepeatedCrashesBackoff crashes the same instance three times in a
-// row (same technique as TestE2ECrashedInstanceRestarts: a raw Incus stop,
-// bypassing incus-compose) and checks the restart backoff actually doubles
-// each time - not a fixed delay - by measuring wall-clock time between each
-// crash and the resulting restart. Each next crash is issued immediately
-// once the previous restart is observed, well inside the healthcheck
-// interval, so the checker never gets a chance to report healthy and reset
-// the backoff in between (see evaluateBackoff/handleCheckerStatus).
-//
-// Uses a compose file with backend1's retries pinned to 1 (rather than the
-// fixture's default of 3) so the interval(5s)*retries(1)=5s baseline below is
-// known upfront: spawn() only computes restartDelay fresh for a brand-new
-// trackedInstance, not on a respawn of an already-tracked one, so a live
-// edit after the instance is tracked wouldn't change the backoff baseline.
+// TestE2ERepeatedCrashesBackoff crashes an instance three times, timing each restart to
+// prove the backoff doubles: crashes land inside the check interval so it is never reset,
+// and the fixture pins retries to 1 so the 5s baseline is known upfront.
 func TestE2ERepeatedCrashesBackoff(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)

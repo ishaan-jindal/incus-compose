@@ -25,12 +25,8 @@ import (
 	"github.com/lxc/incus-compose/shared"
 )
 
-// Runner manages all health checkers for one project via event-driven
-// discovery: it reacts to the Incus lifecycle event stream instead of
-// re-listing instances on a timer or SIGHUP. tracked is the single source of
-// truth for what's running - every code path (initial discover, reconnect
-// reseed, event handling) reconciles against it: start/kill exactly the
-// delta, leave everything else running untouched.
+// Runner manages one project's health checkers, driven by the Incus event stream.
+// tracked is the single source of truth; every path reconciles the delta against it.
 type Runner struct {
 	config *Config
 
@@ -58,11 +54,7 @@ func (r *Runner) trackedCount() int {
 	return len(r.tracked)
 }
 
-// Run connects to Incus, discovers instances, and reacts to lifecycle events
-// until ctx is canceled. This is the main entry point, it should never exit
-// except when the context is done. reload triggers a manual full resync (see
-// resync) without tearing down the current connection/listener - the
-// replacement for the old SIGHUP path; normal operation no longer needs it.
+// Run reacts to lifecycle events until ctx is canceled; reload forces a full resync.
 func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
 	for {
 		conn, err := r.connect()
@@ -139,8 +131,7 @@ func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
 	}
 }
 
-// writeStatus persists status into the daemon's own instance, if configured
-// to know its own project/name (see Config.OwnProject/OwnName).
+// writeStatus persists status into the daemon's own instance, when it knows its identity.
 func (r *Runner) writeStatus(ctx context.Context, status string) error {
 	if r.config.OwnName == "" || r.config.OwnProject == "" {
 		return nil
@@ -178,11 +169,7 @@ func (r *Runner) writeStatus(ctx context.Context, status string) error {
 	})
 }
 
-// connect returns an authenticated Incus client.
-//
-// On first run, the persisted cert is missing: we generate one, register it
-// with the one-time TrustToken, and persist it for subsequent runs.
-// On restart, the persisted cert is reused and the token (already consumed) is ignored.
+// connect returns an authenticated Incus client, registering a cert on first run.
 func (r *Runner) connect() (incus.InstanceServer, error) {
 	// Token to register (generates KEY/CERT)
 	tokenPath := filepath.Join(r.config.SecretsDir, tokenFile)
@@ -235,12 +222,7 @@ func (r *Runner) connect() (incus.InstanceServer, error) {
 	})
 }
 
-// register generates a self-signed ECDSA cert, presents it to Incus over TLS,
-// and asks the server to add it to the trust store using the one-time token.
-// The server reads the cert from the TLS handshake (see incusd certificates.go),
-// applies the restrictions stored in the token metadata, and returns trusted=true.
-// The cert/key are persisted to the data dir only after successful registration,
-// so a failed attempt is retried on the next run.
+// register has Incus trust a self-signed cert via the one-time token, then persists it.
 func (r *Runner) register(token string) (incus.InstanceServer, error) {
 	certPEM, keyPEM, err := generateClientCert()
 	if err != nil {
@@ -285,8 +267,7 @@ func (r *Runner) register(token string) (incus.InstanceServer, error) {
 	return conn, nil
 }
 
-// generateClientCert returns a fresh ECDSA P-384 key pair and self-signed
-// X.509 client certificate, both PEM-encoded.
+// generateClientCert returns a PEM-encoded ECDSA P-384 key pair and self-signed cert.
 func generateClientCert() (certPEM, keyPEM []byte, err error) {
 	key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	if err != nil {

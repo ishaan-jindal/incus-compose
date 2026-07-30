@@ -12,9 +12,7 @@ import (
 	"github.com/lxc/incus-compose/shared"
 )
 
-// handleEvent dispatches one lifecycle event to the matching handler. The
-// event payload carries only name/project/action; handlers do a targeted
-// GetInstance(name) to read config, cheaper than a full list.
+// handleEvent dispatches one lifecycle event to the matching handler.
 func (r *Runner) handleEvent(ctx context.Context, event incusApi.Event) {
 	var lc incusApi.EventLifecycle
 	if err := json.Unmarshal(event.Metadata, &lc); err != nil {
@@ -42,9 +40,7 @@ func (r *Runner) handleEvent(ctx context.Context, event incusApi.Event) {
 	}
 }
 
-// handleStarted handles instance-created (parse config, start a checker) and
-// instance-started (no-op if already tracked, otherwise same as
-// instance-created).
+// handleStarted starts a checker for a newly created or started instance.
 func (r *Runner) handleStarted(ctx context.Context, name string) {
 	r.mu.Lock()
 	_, tracked := r.tracked[name]
@@ -72,9 +68,7 @@ func (r *Runner) handleStarted(ctx context.Context, name string) {
 	r.spawn(ctx, name, cfg, true, false)
 }
 
-// handleUpdated re-reads user.healthcheck.* and, if the checker's params
-// changed, kills and replaces it (debounced). Self-caused updates (this
-// instance's own status write) are suppressed without a GetInstance call.
+// handleUpdated replaces the checker when its params changed; self-caused writes are skipped.
 func (r *Runner) handleUpdated(ctx context.Context, name string) {
 	r.mu.Lock()
 	if ti, ok := r.tracked[name]; ok && ti.selfWrites > 0 {
@@ -124,8 +118,7 @@ func (r *Runner) handleUpdated(ctx context.Context, name string) {
 	ti, ok := r.tracked[name]
 	if !ok {
 		r.mu.Unlock()
-		// Wasn't tracked before (e.g. a healthcheck was just added via
-		// `incus config set`); start fresh rather than debouncing nothing.
+		// Not tracked yet (healthcheck just added); start fresh, nothing to debounce.
 		r.spawn(ctx, name, cfg, true, false)
 		return
 	}
@@ -136,9 +129,7 @@ func (r *Runner) handleUpdated(ctx context.Context, name string) {
 	r.debounce(ctx, name, ti)
 }
 
-// handleDeleted marks the instance for removal through the same debounced
-// pipeline as instance-updated - a pending delete supersedes any pending
-// config update, then kills and drops the tracked instance.
+// handleDeleted marks the instance for removal; a pending delete supersedes an update.
 func (r *Runner) handleDeleted(ctx context.Context, name string) {
 	r.mu.Lock()
 
@@ -154,8 +145,7 @@ func (r *Runner) handleDeleted(ctx context.Context, name string) {
 	r.debounce(ctx, name, ti)
 }
 
-// handleStopped evaluates restart policy now, via the same path a
-// retries-exhausted checker uses.
+// handleStopped evaluates restart policy, the same path a retries-exhausted checker uses.
 func (r *Runner) handleStopped(ctx context.Context, name string) {
 	r.mu.Lock()
 	_, ok := r.tracked[name]
@@ -167,12 +157,8 @@ func (r *Runner) handleStopped(ctx context.Context, name string) {
 	r.evaluateBackoff(ctx, name)
 }
 
-// debounce applies the debounce policy shared by instance-updated and
-// instance-deleted: act immediately if we're outside the window and nothing
-// is already pending, otherwise let the existing timer (or a freshly
-// scheduled one) settle after the window - it always re-reads the current
-// pending state when it fires, so a second event inside the window doesn't
-// need to reschedule it. Must be called with r.mu held.
+// debounce acts at once when outside the window with nothing pending, else lets the
+// timer settle - it re-reads pending state when it fires, so bursts need no reschedule.
 func (r *Runner) debounce(ctx context.Context, name string, ti *trackedInstance) {
 	r.mu.Lock()
 
@@ -235,9 +221,7 @@ func (r *Runner) debounce(ctx context.Context, name string, ti *trackedInstance)
 	r.mu.Unlock()
 }
 
-// watch owns the receiving end of one checker generation's statusCh/exitCh,
-// on its own goroutine so a slow-to-exit checker never stalls the event
-// dispatch loop or another instance's watcher.
+// watch receives one checker generation's statusCh/exitCh on its own goroutine.
 func (r *Runner) watch(name string, statusCh <-chan string, exitCh <-chan error) {
 	for {
 		select {
@@ -250,10 +234,7 @@ func (r *Runner) watch(name string, statusCh <-chan string, exitCh <-chan error)
 	}
 }
 
-// handleCheckerStatus records a self-caused write (suppressing the resulting
-// instance-updated event once) and, on a healthy status, resets restart
-// backoff back to base - no separate signal needed, it rides the same
-// channel that already exists for the self-write suppression.
+// handleCheckerStatus suppresses the resulting self-caused event and resets backoff when healthy.
 func (r *Runner) handleCheckerStatus(name, status string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -269,11 +250,7 @@ func (r *Runner) handleCheckerStatus(name, status string) {
 	}
 }
 
-// handleCheckerExit reacts to a checker exiting on its own after exhausting
-// retries (see Backoff). A plain nil exit (the runner canceled it - a param
-// change, delete, or instance-stopped/-shutdown) needs no action here: that
-// decision and its consequence (drop or respawn) already happened
-// synchronously at cancellation time, in settleLocked/evaluateBackoff.
+// handleCheckerExit reacts only to a retries-exhausted exit; a nil exit was already handled.
 func (r *Runner) handleCheckerExit(name string, err error) {
 	if !errors.Is(err, ErrRetriesExhausted) {
 		return
@@ -289,11 +266,7 @@ func (r *Runner) handleCheckerExit(name string, err error) {
 	r.evaluateBackoff(context.Background(), name)
 }
 
-// evaluateBackoff runs the Backoff decision for name after its checker
-// exhausted retries or the instance stopped/shut down: read
-// serverParams.Restart (the freshest observed value, not knownParams which
-// only updates when the checker itself gets respawned) and either respawn
-// after a delay (doubling for next time) or drop tracking entirely.
+// evaluateBackoff respawns after a doubling delay or drops tracking, per restart policy.
 func (r *Runner) evaluateBackoff(ctx context.Context, name string) {
 	r.mu.Lock()
 	ti, ok := r.tracked[name]
@@ -332,9 +305,7 @@ func (r *Runner) evaluateBackoff(ctx context.Context, name string) {
 	})
 }
 
-// isMarkedStopped reports whether the instance carries
-// user.healthcheck.stopped=true, meaning it was intentionally stopped.
-// Returns true on API error (instance gone counts as stopped).
+// isMarkedStopped reports whether the instance was stopped on purpose; an API error counts as stopped.
 func (r *Runner) isMarkedStopped(name string) bool {
 	inst, _, err := r.conn.GetInstance(name)
 	if err != nil {
@@ -343,9 +314,7 @@ func (r *Runner) isMarkedStopped(name string) bool {
 	return inst.Config[shared.HealthStoppedKey] == "true"
 }
 
-// restartInstance brings the instance back to Running. If it's already
-// stopped we only start; otherwise we stop (force) and start. We avoid the
-// "restart" action because it errors on a stopped instance.
+// restartInstance starts the instance, force-stopping first unless it is already stopped.
 func (r *Runner) restartInstance(name string) error {
 	conn := r.conn
 
@@ -384,11 +353,7 @@ func (r *Runner) restartInstance(name string) error {
 	return op.Wait()
 }
 
-// spawn (re)starts a checker for name with cfg under ctx, launching a
-// dedicated goroutine to receive its statusCh/exitCh (see watch). When the
-// instance is already tracked this reuses its *trackedInstance so in-flight
-// events for name always find an entry; restartInstance restarts the
-// instance first (used for backoff/restart-policy respawns).
+// spawn (re)starts a checker for name, reusing any tracked entry so in-flight events find it.
 func (r *Runner) spawn(ctx context.Context, name string, cfg instanceConfig, inStart, restartInstance bool) {
 	if restartInstance {
 		if err := r.restartInstance(name); err != nil {
@@ -419,10 +384,7 @@ func (r *Runner) spawn(ctx context.Context, name string, cfg instanceConfig, inS
 	go r.watch(name, statusCh, exitCh)
 }
 
-// resync runs a full discover() and reconciles it against what's currently
-// tracked: start checkers for newly-discovered instances, kill checkers for
-// instances no longer there, leave everything else running untouched. Used
-// on (re)connect and by the manual reload trigger.
+// resync reconciles discover() against tracked: start new, kill gone, leave the rest.
 func (r *Runner) resync(ctx context.Context) error {
 	discovered, err := discover(r.conn)
 
