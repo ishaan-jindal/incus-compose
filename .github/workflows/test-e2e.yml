@@ -56,7 +56,6 @@ jobs:
       - name: Incus version
         run: |
           incus version
-          dpkg-query --status incus-base
 
       - name: Cleanup
         run: |
