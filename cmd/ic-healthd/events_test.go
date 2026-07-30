@@ -444,3 +444,82 @@ func TestE2ERepeatedCrashesBackoff(t *testing.T) {
 		wantDelay = min(wantDelay*2, maxRestartDelay)
 	}
 }
+
+// TestE2EIntentionalStopIsNotRestarted a stop through incus-compose marks
+// user.healthcheck.stopped, so "unless-stopped" must leave the instance down.
+func TestE2EIntentionalStopIsNotRestarted(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	projectName := strings.ToLower(t.Name())
+	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+
+	c, p := loadProject(ctx, t, compose, projectName)
+	err := c.Open()
+	require.NoError(t, err)
+
+	hCleanup, hRunner := prepareHealthd(t, c)
+	hReload := make(chan struct{}, 10)
+
+	go func() {
+		_ = hRunner.Run(ctx, hReload)
+	}()
+
+	t.Cleanup(func() {
+		_ = c.Done()
+
+		_, _, _ = runIncusCommand(context.Background(), t, projectName, "-f", compose, "down", "--project")
+		hCleanup()
+		cancel()
+	})
+
+	c.IgnoreError(client.ActionEnsure, client.ErrNotFound)
+
+	stack := client.NewStack(c, client.StackFailFast())
+	order, err := p.ServiceOrder(false)
+	require.NoError(t, err)
+
+	resources, err := p.Resources(c)
+	require.NoError(t, err)
+	stack.AddOrdered(order, resources)
+
+	err = stack.ForAction(client.ActionEnsure).Run(
+		ctx, client.ActionEnsure, client.OptionCreate(),
+	)
+	require.NoError(t, err)
+
+	err = stack.ForAction(client.ActionStart).Run(
+		ctx, client.ActionStart, client.OptionExternalHealthd(),
+	)
+	require.NoError(t, err)
+
+	// backend1 depends on nothing, so it is healthy as soon as its own check passes.
+	target := "backend1-1"
+
+	conn, err := c.Connection()
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		inst, _, err := conn.GetInstance(target)
+		return err == nil && inst.Config[shared.HealthStatusKey] == shared.HealthStatusHealthy
+	}, 30*time.Second, 500*time.Millisecond, "instance should become healthy before the stop")
+
+	instRes, err := c.Resource(client.KindInstance, target, &client.InstanceConfig{})
+	require.NoError(t, err)
+	require.NoError(t, client.RunAction(ctx, instRes, client.ActionEnsure))
+	require.NoError(t, client.RunAction(ctx, instRes, client.ActionStop,
+		client.OptionExternalHealthd(), client.OptionForce()))
+
+	inst, _, err := conn.GetInstance(target)
+	require.NoError(t, err)
+	require.Equal(t, "true", inst.Config[shared.HealthStoppedKey], "an incus-compose stop must look intentional")
+
+	// Outlast the restart backoff (interval 5s * retries 3 = 15s) to prove the
+	// runner never respawns it.
+	require.Never(t, func() bool {
+		state, _, err := conn.GetInstanceState(target)
+		return err == nil && state.StatusCode == incusApi.Running
+	}, 30*time.Second, time.Second, "an intentionally stopped instance must stay stopped")
+}

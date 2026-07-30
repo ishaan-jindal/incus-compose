@@ -34,7 +34,7 @@ func (r *Runner) handleEvent(ctx context.Context, event incusApi.Event) {
 	case incusApi.EventLifecycleInstanceDeleted:
 		slog.Debug("New lifecycle event", "instance", lc.Name, "action", lc.Action)
 		r.handleDeleted(ctx, lc.Name)
-	case incusApi.EventLifecycleInstanceStopped:
+	case incusApi.EventLifecycleInstanceStopped, incusApi.EventLifecycleInstanceShutdown:
 		slog.Debug("New lifecycle event", "instance", lc.Name, "action", lc.Action)
 		r.handleStopped(ctx, lc.Name)
 	}

@@ -1229,14 +1229,15 @@ func (r *Instance) Stop(ctx context.Context, opts ...Option) error {
 	stopCtx, cancel := context.WithTimeout(ctx, options.Timeout)
 	defer cancel()
 
-	err := r.stop(stopCtx, options)
-
+	// Mark before for ic-healthd.
 	if options.Healthd {
 		err := r.SetHealthCheckingStopped(ctx, true)
 		if err != nil {
 			return r.client.hookAfter(ctx, ActionStop, r, options, err)
 		}
 	}
+
+	err := r.stop(stopCtx, options)
 
 	return r.client.hookAfter(ctx, ActionStop, r, options, err)
 }
