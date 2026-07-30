@@ -869,7 +869,12 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 		return err
 	}
 
-	sftpConn, err := r.conn.GetInstanceFileSFTP(r.incusName)
+	sftpConn, err := retry.NewWithData[*sftp.Client](
+		retry.Attempts(3),
+		retry.Delay(10*time.Second),
+	).Do(func() (*sftp.Client, error) {
+		return r.conn.GetInstanceFileSFTP(r.incusName)
+	})
 	if err != nil {
 		return ErrCreate.WithText("connecting to instance SFTP").Wrap(err)
 	}
