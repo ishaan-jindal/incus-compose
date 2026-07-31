@@ -117,6 +117,40 @@ func healthdUp(ctx context.Context, p *project.Project, c *client.Client, args h
 		return errLogged.Wrap(err)
 	}
 
+	// If images don't match recreate the service
+	var wantAlias string
+	for _, r := range hResources {
+		if r.Kind() == client.KindImage {
+			wantAlias = r.IncusName()
+			break
+		}
+	}
+	if hInst.IsEnsured() && hInst.IncusInstance.Config["user.image_alias"] != wantAlias {
+		downStack := client.NewStack(c, client.StackSortDescending(), client.StackWorkers(params.workers))
+
+		for _, r := range hResources {
+			if r.Kind() != client.KindNetwork && r.Kind() != client.KindImage {
+				downStack.Add(r)
+			}
+		}
+		downStack.Add(hInst)
+
+		if err := downStack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionTimeout(params.timeout)); err != nil {
+			c.LogError("Stoping healthd resources for a new image", "error", err)
+			return errLogged.Wrap(err)
+		}
+
+		if err := downStack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, client.OptionTimeout(params.timeout)); err != nil {
+			c.LogError("Deleting healthd resources for a new image", "error", err)
+			return errLogged.Wrap(err)
+		}
+
+		if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, ensureOpts...); err != nil {
+			c.LogError("Creating healthd resources", "error", err)
+			return errLogged.Wrap(err)
+		}
+	}
+
 	if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, client.OptionTimeout(params.timeout)); err != nil {
 		c.LogError("Starting healthd resources", "error", err)
 		return errLogged.Wrap(err)
