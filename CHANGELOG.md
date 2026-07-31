@@ -9,7 +9,7 @@ Version numbering moved from `0.0.1` to `1.0.0` at beta11 (1.0.0 is the intended
 final version), and the beta suffix gained a dot (`beta.16`) from beta.16 onward
 for correct semver ordering. Headings below preserve each release's announced form.
 
-## [1.1.0] - unreleased
+## [1.1.0] - 2026-07-31
 
 ### Changed
 
@@ -22,11 +22,16 @@ for correct semver ordering. Headings below preserve each release's announced fo
   Builder detection also no longer shells out to `<builder> version` to
   distinguish Podman from Docker; it now checks the resolved binary name,
   and `buildah` is tried alongside `podman`/`docker`. (by @jochumdev)
-- Published ports (`ports:`) create a proxy device. On Incus 7.0+ the
-  device uses NAT mode (`nat=true`) with ARP/NDP-based instance IP
-  detection; on older servers it falls back to a userspace proxy
-  targeting the container loopback (`nat=false`, connect `127.0.0.1`).
-  (by @ishaan-jindal)
+- Published ports (`ports:`) create a proxy device. By default this is a
+  userspace proxy targeting the container loopback (`nat=false`, connect
+  `127.0.0.1`); per-port `x-incus-compose.nat: true` opts into NAT mode
+  instead, connecting via ARP/NDP-based instance IP detection (needs Incus
+  7.2 or 7.0.1 LTS) or the NIC's static IP directly if one is configured
+  (same version floor). Requesting `nat` on a server below that floor
+  skips the port with a warning instead of silently falling back. `nat`
+  was previously auto-enabled on Incus 7.0+; it's opt-in now because NAT
+  mode doesn't work for host-side `localhost:<port>` access — it routes to
+  the instance's real address, not the loopback interface. (by @ishaan-jindal)
 - `ic-healthd` is now event-driven instead of poll/SIGHUP-based: it discovers
   instances once, then reacts to the Incus lifecycle event stream (start,
   stop, shutdown, delete) to keep its tracked set in sync, spawning or
