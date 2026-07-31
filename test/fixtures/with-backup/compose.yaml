@@ -1,0 +1,16 @@
+x-incus-compose:
+  backup:
+    pool: default
+
+services:
+  app:
+    image: docker.io/library/nginx:alpine
+    environment:
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    volumes:
+      - type: volume
+        source: data
+        target: /data
+
+volumes:
+  data:
