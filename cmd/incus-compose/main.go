@@ -43,7 +43,6 @@ func buildLoadOptions(cmd *cli.Command) []project.LoadOption {
 
 	composeFileNames := []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"}
 
-	cfile := ""
 	if len(files) == 0 {
 		for _, name := range composeFileNames {
 			var candidate string
@@ -55,29 +54,27 @@ func buildLoadOptions(cmd *cli.Command) []project.LoadOption {
 			}
 			if err == nil {
 				if _, err := os.Stat(candidate); err == nil {
-					cfile = candidate
 					files = append(files, candidate)
 					break
 				}
 			}
 		}
-	} else {
-		for _, f := range files {
-			if slices.Contains(composeFileNames, filepath.Base(f)) {
-				cfile = f
-				break
-			}
-		}
 	}
 
-	if cfile != "" {
+	for _, f := range files {
+		absf, err := filepath.Abs(f)
+		if err != nil {
+			continue
+		}
+
+		ext := filepath.Ext(f)
 		incusCFile := filepath.Join(
-			filepath.Dir(cfile),
+			filepath.Dir(absf),
 			strings.TrimSuffix(
-				filepath.Base(cfile),
-				filepath.Ext(cfile))+".incus"+filepath.Ext(cfile),
+				filepath.Base(absf),
+				ext)+".incus"+ext,
 		)
-		_, err := os.Stat(incusCFile)
+		_, err = os.Stat(incusCFile)
 		if err == nil {
 			files = append(files, incusCFile)
 		}
