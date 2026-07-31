@@ -1,0 +1,22 @@
+project:
+  name: test-local-config
+  services:
+    a:
+      environment:
+        NGINX_WORKER_PROCESSES: "1"
+      image: docker.io/nginxinc/nginx-unprivileged:alpine
+      networks:
+        default: null
+      x-incus:
+        limits.cpu: 1
+    b:
+      environment:
+        NGINX_WORKER_PROCESSES: "1"
+      image: docker.io/nginxinc/nginx-unprivileged:alpine
+      networks:
+        default: null
+      x-incus:
+        limits.cpu: 1
+  networks:
+    default:
+      name: test-local-config_default

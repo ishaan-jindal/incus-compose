@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"net/url"
 	"os"
 	"time"
@@ -13,6 +14,150 @@ import (
 	"github.com/lxc/incus-compose/client"
 	"github.com/lxc/incus-compose/project"
 )
+
+// healthdUpArgs holds the healthdUp() options, mirroring the `healthd up` command's flags.
+type healthdUpArgs struct {
+	Binary  string
+	Image   string // raw --image flag value; resolved via resolveHealthdImage inside healthdUp.
+	Incus   string // raw --incus/--healthd-incus override; empty keeps the project default.
+	Network string // raw --network/--healthd-network override; empty keeps the project default.
+	Pull    string
+	Timeout time.Duration
+	Workers int
+	Debug   bool
+	Writer  io.Writer
+}
+
+// healthdUp creates or recreates the project's ic-healthd sidecar.
+func healthdUp(ctx context.Context, p *project.Project, c *client.Client, args healthdUpArgs) error {
+	if !healthdInUseByProject(c.Global(), p) {
+		c.LogError("No service in this project declares a healthcheck")
+		return errLogged.Wrap(errors.New("no service"))
+	}
+
+	noColor := noColor(ctx)
+
+	healthdIncus := p.ClientConfig.Healthd.Incus
+	healthdNetwork := p.ClientConfig.Healthd.Network
+	if args.Incus != "" {
+		healthdIncus = args.Incus
+	}
+	if args.Network != "" {
+		healthdNetwork = args.Network
+	}
+
+	var incus *url.URL
+	if healthdIncus != "" {
+		var err error
+		incus, err = url.Parse(healthdIncus)
+		if err != nil {
+			c.LogError("Parsing the healthd incus URL failed", "error", err)
+			return errLogged.Wrap(errors.New("parsing error"))
+		}
+	}
+
+	params := healthdParams{
+		projectName: p.Name,
+		binary:      args.Binary,
+		image:       resolveHealthdImage(args.Image),
+		pull:        args.Pull,
+		incus:       incus,
+		network:     healthdNetwork,
+		timeout:     args.Timeout,
+		workers:     args.Workers,
+	}
+
+	if !args.Debug {
+		progress := newProgressRenderer(args.Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+		progress.Start(c)
+		defer progress.Stop(c)
+	}
+
+	stack := client.NewStack(c, client.StackWorkers(params.workers))
+
+	// healthdGetResources needs its network configured.
+	{
+		pResources, err := p.Resources(c)
+		if err != nil {
+			c.LogError("Getting the service resources", "error", err)
+			return errLogged.Wrap(err)
+		}
+
+		filterArgs := filterResourcesArgs{
+			IncludeKinds: []client.Kind{client.KindNetwork},
+		}
+		myPResources := filterResources(p, pResources, filterArgs)
+
+		order, err := p.ServiceOrder(true)
+		if err != nil {
+			c.LogError("Getting the service dependency order", "error", err)
+			return errLogged.Wrap(err)
+		}
+		stack.AddOrdered(order, myPResources)
+	}
+
+	hInst, hResources, err := healthdGetResources(c, params)
+	if err != nil {
+		c.LogError("Creating healthd resources", "error", err)
+		return errLogged.Wrap(err)
+	}
+
+	stack.Add(hResources...)
+	stack.Add(hInst)
+
+	c.LogDebug("Ensure", "resources", stack.All())
+
+	ensureOpts := []client.Option{client.OptionCreate(), client.OptionTimeout(params.timeout)}
+	if params.pull == "always" {
+		ensureOpts = append(ensureOpts, client.OptionPull())
+	}
+
+	if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, ensureOpts...); err != nil {
+		c.LogError("Creating healthd resources", "error", err)
+		return errLogged.Wrap(err)
+	}
+
+	// If images don't match recreate the service
+	var wantAlias string
+	for _, r := range hResources {
+		if r.Kind() == client.KindImage {
+			wantAlias = r.IncusName()
+			break
+		}
+	}
+	if hInst.IsEnsured() && hInst.IncusInstance.Config["user.image_alias"] != wantAlias {
+		downStack := client.NewStack(c, client.StackSortDescending(), client.StackWorkers(params.workers))
+
+		for _, r := range hResources {
+			if r.Kind() != client.KindNetwork && r.Kind() != client.KindImage {
+				downStack.Add(r)
+			}
+		}
+		downStack.Add(hInst)
+
+		if err := downStack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionTimeout(params.timeout)); err != nil {
+			c.LogError("Stoping healthd resources for a new image", "error", err)
+			return errLogged.Wrap(err)
+		}
+
+		if err := downStack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, client.OptionTimeout(params.timeout)); err != nil {
+			c.LogError("Deleting healthd resources for a new image", "error", err)
+			return errLogged.Wrap(err)
+		}
+
+		if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, ensureOpts...); err != nil {
+			c.LogError("Creating healthd resources", "error", err)
+			return errLogged.Wrap(err)
+		}
+	}
+
+	if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, client.OptionTimeout(params.timeout)); err != nil {
+		c.LogError("Starting healthd resources", "error", err)
+		return errLogged.Wrap(err)
+	}
+
+	return nil
+}
 
 func newHealthdUpCommand() *cli.Command {
 	return &cli.Command{
@@ -48,14 +193,12 @@ func newHealthdUpCommand() *cli.Command {
 			},
 			&cli.DurationFlag{
 				Name:    "timeout",
-				Usage:   "Timeout for stopping",
+				Usage:   "Timeout for creating and starting",
 				Value:   10 * time.Second,
 				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_TIMEOUT"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			noColor := noColor(ctx)
-
 			globalClient, err := clientFromContext(ctx)
 			if err != nil {
 				return err
@@ -70,40 +213,6 @@ func newHealthdUpCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			if !healthdInUseByProject(globalClient, p) {
-				globalClient.LogError("No service in this project declares a healthcheck")
-				return errLogged.Wrap(errors.New("no service"))
-			}
-
-			healthdIncus := p.ClientConfig.Healthd.Incus
-			healthdNetwork := p.ClientConfig.Healthd.Network
-			if cmd.String("incus") != "" {
-				healthdIncus = cmd.String("incus")
-			}
-			if cmd.String("network") != "" {
-				healthdNetwork = cmd.String("network")
-			}
-
-			var incus *url.URL
-			if healthdIncus != "" {
-				incus, err = url.Parse(healthdIncus)
-				if err != nil {
-					globalClient.LogError("Parsing the URL given with `--incus` failed", "error", err)
-					return errLogged.Wrap(errors.New("parsing error"))
-				}
-			}
-
-			params := healthdParams{
-				projectName: p.Name,
-				binary:      cmd.String("binary"),
-				image:       resolveHealthdImage(cmd.String("image")),
-				pull:        cmd.String("pull"),
-				incus:       incus,
-				network:     healthdNetwork,
-				timeout:     cmd.Duration("timeout"),
-				workers:     cmd.Root().Int("workers"),
-			}
-
 			c, err := globalClient.EnsureProject(
 				p.Name,
 				client.EnsureProjectWithCreate(),
@@ -115,62 +224,17 @@ func newHealthdUpCommand() *cli.Command {
 			}
 			defer c.WarnError(c.Done, "Failure during Client.Done()")
 
-			if !cmd.Root().Bool("debug") {
-				progress := newProgressRenderer(cmd.Root().Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
-				progress.Start(c)
-				defer progress.Stop(c)
-			}
-
-			stack := client.NewStack(c, client.StackWorkers(params.workers))
-
-			// healthdGetResources needs it network configured.
-			{
-				pResources, err := p.Resources(c)
-				if err != nil {
-					c.LogError("Getting the service resources", "error", err)
-					return errLogged.Wrap(err)
-				}
-
-				args := filterResourcesArgs{
-					IncludeKinds: []client.Kind{client.KindNetwork},
-				}
-				myPResources := filterResources(p, pResources, args)
-
-				order, err := p.ServiceOrder(true)
-				if err != nil {
-					c.LogError("Getting the service dependency order", "error", err)
-					return errLogged.Wrap(err)
-				}
-				stack.AddOrdered(order, myPResources)
-			}
-
-			hInst, hResources, err := healthdGetResources(c, params)
-			if err != nil {
-				globalClient.LogError("Creating healthd resources", "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			stack.Add(hResources...)
-			stack.Add(hInst)
-
-			c.LogDebug("Ensure", "resources", stack.All())
-
-			ensureOpts := []client.Option{client.OptionCreate()}
-			if params.pull == "always" {
-				ensureOpts = append(ensureOpts, client.OptionPull())
-			}
-
-			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, ensureOpts...); err != nil {
-				c.LogError("Creating healthd resources", "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart); err != nil {
-				c.LogError("Starting healthd resources", "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			return nil
+			return healthdUp(ctx, p, c, healthdUpArgs{
+				Binary:  cmd.String("binary"),
+				Image:   cmd.String("image"),
+				Incus:   cmd.String("incus"),
+				Network: cmd.String("network"),
+				Pull:    cmd.String("pull"),
+				Timeout: cmd.Duration("timeout"),
+				Workers: cmd.Root().Int("workers"),
+				Debug:   cmd.Root().Bool("debug"),
+				Writer:  cmd.Root().Writer,
+			})
 		},
 	}
 }

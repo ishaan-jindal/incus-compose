@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"os"
 	"time"
 
@@ -11,6 +12,128 @@ import (
 	"github.com/lxc/incus-compose/client"
 	"github.com/lxc/incus-compose/project"
 )
+
+type downArgs struct {
+	Project    bool
+	Volumes    bool
+	Images     bool
+	Timeout    time.Duration
+	NoDeps     bool
+	NoNetworks bool
+	Services   []string
+	Workers    int
+	Debug      bool
+	Scale      map[string]int
+	Writer     io.Writer
+	Reverse    bool
+	NoHealthd  bool
+}
+
+// down stops and removes the project's resources.
+func down(ctx context.Context, p *project.Project, c *client.Client, args downArgs) error {
+	noColor := noColor(ctx)
+
+	// We start all resources, just ignore that warning but let progress know them (so add before - LIFO - progress runs before).
+	c.IgnoreError(client.ActionStop, client.ErrNotEnsured)
+	c.IgnoreError(client.ActionStop, client.ErrNotRunning)
+	c.IgnoreError(client.ActionEnsure, client.ErrNotFound)
+	c.IgnoreError(client.ActionDelete, client.ErrNotEnsured)
+	c.IgnoreError(client.ActionDelete, client.ErrNotFound)
+
+	if !args.Debug {
+		progress := newProgressRenderer(args.Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+		progress.Start(c)
+		defer progress.Stop(c)
+	}
+
+	// Register the DNS Watcher after the progress renderer so progress waits for the dns changes.
+	if err := c.RegisterDNSWatcher(); err != nil {
+		c.LogError("Registering the DNS watcher", "project", p.Name, "error", err)
+		return errLogged.Wrap(err)
+	}
+
+	resources, err := p.Resources(c, project.ResourcesScale(args.Scale))
+	if err != nil {
+		c.LogError("Getting project resources in reCreate", "error", err)
+		return errLogged.Wrap(err)
+	}
+
+	filterArgs := filterResourcesArgs{
+		OnlyServices:     args.Services,
+		WithDependencies: !args.NoDeps,
+		Reverse:          args.Reverse,
+	}
+
+	if !args.Volumes && !args.Project {
+		filterArgs.ExcludeKinds = append(filterArgs.ExcludeKinds, client.KindStorageVolume)
+	}
+
+	// Do not delete networks when we are not deleting all other resources.
+	if len(args.Services) > 0 || args.NoNetworks {
+		filterArgs.ExcludeKinds = append(filterArgs.ExcludeKinds, client.KindNetwork)
+	}
+
+	if !args.Images {
+		filterArgs.ExcludeKinds = append(filterArgs.ExcludeKinds, client.KindImage)
+	}
+
+	order, err := p.ServiceOrder(args.Reverse)
+	if err != nil {
+		c.LogError("Getting the service dependency order", "error", err)
+		return errLogged.Wrap(err)
+	}
+
+	myResources := filterResources(p, resources, filterArgs)
+
+	var stack *client.Stack
+	if args.Reverse {
+		stack = client.NewStack(c, client.StackSortDescending(), client.StackWorkers(args.Workers))
+	} else {
+		stack = client.NewStack(c, client.StackWorkers(args.Workers))
+	}
+	stack.AddOrdered(order, myResources)
+
+	if len(args.Services) == 0 && !args.NoHealthd {
+		h, err := healthdResolve(c)
+		if err == nil {
+			stack.Add(h)
+		}
+	}
+
+	if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
+		c.LogWarn("Getting resources", "error", err)
+	}
+
+	runOpts := []client.Option{
+		client.OptionForce(),
+		client.OptionTimeout(args.Timeout),
+	}
+
+	if !p.ClientConfig.Healthd.External || args.NoHealthd {
+		runOpts = append(runOpts, client.OptionNoHealthd())
+	}
+
+	errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, runOpts...)
+	if errStop != nil {
+		c.LogWarn("Stopping resources", "error", errStop)
+	}
+
+	errDel := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, runOpts...)
+	if errDel != nil {
+		c.LogWarn("Deleting resources", "error", errDel)
+	}
+
+	if args.Project {
+		c.LogDebug("Deleting the project")
+		err := c.Global().DeleteProject(c.Project(), true)
+		if err != nil {
+			c.LogError("Deleting the project", "error", err)
+			return errLogged.Wrap(err)
+		}
+	}
+
+	return nil
+}
 
 func newDownCommand() *cli.Command {
 	return &cli.Command{
@@ -49,6 +172,11 @@ func newDownCommand() *cli.Command {
 				Sources: cli.EnvVars("INCUS_COMPOSE_DOWN_NO_DEPS"),
 			},
 			&cli.BoolFlag{
+				Name:    "no-healthd",
+				Usage:   "Don't create healthd sidecar for healthchecks",
+				Sources: cli.EnvVars("INCUS_COMPOSE_NO_HEALTHD"),
+			},
+			&cli.BoolFlag{
 				Name:    "external-healthd",
 				Usage:   "Use healthd but do not try to lookup it",
 				Sources: cli.EnvVars("INCUS_COMPOSE_EXTERNAL_HEALTHD"),
@@ -58,10 +186,13 @@ func newDownCommand() *cli.Command {
 				Usage:   "Don't touch networks",
 				Sources: cli.EnvVars("INCUS_COMPOSE_DOWN_NO_NETWORKS"),
 			},
+			&cli.StringSliceFlag{
+				Name:    "scale",
+				Usage:   "Scale SERVICE to NUM instances (service=num)",
+				Sources: cli.EnvVars("INCUS_COMPOSE_SCALE"),
+			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			noColor := noColor(ctx)
-
 			globalClient, err := clientFromContext(ctx)
 			if err != nil {
 				return err
@@ -74,6 +205,11 @@ func newDownCommand() *cli.Command {
 			if err != nil {
 				globalClient.LogError("Configuring the project", "error", err)
 				return errLogged.Wrap(err)
+			}
+
+			usesHealthd := !cmd.Bool("no-healthd")
+			if usesHealthd && !healthdInUseByProject(globalClient, p) {
+				usesHealthd = false
 			}
 
 			// Get the per Project client early, gives early errors if the project does not exists
@@ -97,103 +233,21 @@ func newDownCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			// We start all resources, just ignore that warning but let progress know them (so add before - LIFO - progress runs before).
-			c.IgnoreError(client.ActionStop, client.ErrNotEnsured)
-			c.IgnoreError(client.ActionStop, client.ErrNotRunning)
-			c.IgnoreError(client.ActionEnsure, client.ErrNotFound)
-			c.IgnoreError(client.ActionDelete, client.ErrNotEnsured)
-			c.IgnoreError(client.ActionDelete, client.ErrNotFound)
-
-			if !cmd.Root().Bool("debug") {
-				progress := newProgressRenderer(cmd.Root().Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
-				progress.Start(c)
-				defer progress.Stop(c)
-			}
-
-			// Register the DNS Watcher after the progress renderer so progress waits for the dns changes.
-			if err := c.RegisterDNSWatcher(); err != nil {
-				globalClient.LogError("Registering the DNS watcher", "project", p.Name, "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			resources, err := p.Resources(c)
-			if err != nil {
-				c.LogError("Getting project resources in reCreate", "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			args := filterResourcesArgs{
-				OnlyServices:     cmd.Args().Slice(),
-				WithDependencies: !cmd.Bool("no-deps"),
-				Reverse:          true,
-			}
-
-			if !cmd.Bool("volumes") && !cmd.Bool("project") {
-				args.ExcludeKinds = append(args.ExcludeKinds, client.KindStorageVolume)
-			}
-
-			// Do not delete networks when we are not deleting all other resources.
-			if cmd.Args().Len() > 0 || cmd.Bool("no-networks") {
-				args.ExcludeKinds = append(args.ExcludeKinds, client.KindNetwork)
-			}
-
-			if !cmd.Bool("images") && cmd.String("rmi") != "local" && cmd.String("rmi") != "all" {
-				args.ExcludeKinds = append(args.ExcludeKinds, client.KindImage)
-			}
-
-			order, err := p.ServiceOrder(true)
-			if err != nil {
-				c.LogError("Getting the service dependency order", "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			myResources := filterResources(p, resources, args)
-
-			stack := client.NewStack(c, client.StackSortDescending(), client.StackWorkers(cmd.Root().Int("workers")))
-			stack.AddOrdered(order, myResources)
-
-			if cmd.Args().Len() == 0 {
-				if healthdInUseByProject(globalClient, p) {
-					h, err := healthdResolve(c)
-					if err == nil {
-						stack.Add(h)
-					}
-				}
-			}
-
-			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
-				c.LogWarn("Getting resources", "error", err)
-			}
-
-			runOpts := []client.Option{
-				client.OptionForce(),
-				client.OptionTimeout(cmd.Duration("timeout")),
-			}
-
-			if p.ClientConfig.Healthd.External {
-				runOpts = append(runOpts, client.OptionExternalHealthd())
-			}
-
-			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, runOpts...)
-			if errStop != nil {
-				c.LogWarn("Stopping resources", "error", errStop)
-			}
-
-			errDel := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, runOpts...)
-			if errDel != nil {
-				c.LogWarn("Deleting resources", "error", errDel)
-			}
-
-			if cmd.Bool("project") {
-				c.LogDebug("Deleting the project")
-				err := globalClient.DeleteProject(c.Project(), true)
-				if err != nil {
-					c.LogError("Deleting the project", "error", err)
-					return errLogged.Wrap(err)
-				}
-			}
-
-			return nil
+			return down(ctx, p, c, downArgs{
+				Project:    cmd.Bool("project"),
+				Volumes:    cmd.Bool("volumes"),
+				Images:     cmd.Bool("images") || cmd.String("rmi") == "local" || cmd.String("rmi") == "all",
+				Timeout:    cmd.Duration("timeout"),
+				NoDeps:     cmd.Bool("no-deps"),
+				NoNetworks: cmd.Bool("no-networks"),
+				Services:   cmd.Args().Slice(),
+				Workers:    cmd.Root().Int("workers"),
+				Debug:      cmd.Root().Bool("debug"),
+				Scale:      parseScale(cmd.StringSlice("scale")),
+				Writer:     cmd.Root().Writer,
+				Reverse:    true,
+				NoHealthd:  !usesHealthd,
+			})
 		},
 	}
 }

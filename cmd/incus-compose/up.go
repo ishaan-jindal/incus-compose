@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -47,7 +45,7 @@ func newUpCommand() *cli.Command {
 			&cli.StringSliceFlag{
 				Name:    "scale",
 				Usage:   "Scale SERVICE to NUM instances (service=num)",
-				Sources: cli.EnvVars("INCUS_COMPOSE_UP_SCALE"),
+				Sources: cli.EnvVars("INCUS_COMPOSE_SCALE"),
 			},
 			&cli.StringFlag{
 				Name:    "pull",
@@ -162,15 +160,13 @@ func newUpCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
+			// The recreate client has own errors it ignores and it registers
+			// its own hooks (DNSWatcher).
+			rc := c.Clone()
+
 			// We start all resources, just ignore that warning but let progress know them (so add before - LIFO - progress runs before).
 			c.IgnoreError(client.ActionStart, client.ErrRunning)
 			c.IgnoreError(client.ActionStop, client.ErrNotRunning)
-
-			// The recreate client has own errors it ignores.
-			rc := c.Clone()
-			rc.IgnoreError(client.ActionStop, client.ErrNotEnsured)
-			rc.IgnoreError(client.ActionDelete, client.ErrNotEnsured)
-			rc.IgnoreError(client.ActionDelete, client.ErrNotFound)
 
 			// Register the DNS Watcher after the progress renderer so progress waits for the dns changes.
 			err = c.RegisterDNSWatcher()
@@ -205,74 +201,40 @@ func newUpCommand() *cli.Command {
 			}
 
 			if cmd.Bool("recreate") {
-				var rprogress *progressRenderer
-				if !cmd.Bool("debug") {
-					rprogress = newProgressRenderer(cmd.Root().Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
-					rprogress.Start(rc)
-				}
-
-				scale := parseScale(cmd.StringSlice("scale"))
-				resources, err := p.Resources(rc, project.ResourcesScale(scale))
+				err = down(ctx, p, rc, downArgs{
+					Project:    cmd.Bool("project"),
+					Volumes:    false,
+					Images:     false,
+					Timeout:    cmd.Duration("timeout"),
+					NoDeps:     cmd.Bool("no-deps"),
+					NoNetworks: true,
+					Services:   cmd.Args().Slice(),
+					Workers:    cmd.Root().Int("workers"),
+					Debug:      cmd.Root().Bool("debug"),
+					Scale:      parseScale(cmd.StringSlice("scale")),
+					Writer:     cmd.Root().Writer,
+					Reverse:    false,
+					NoHealthd:  !usesHealthd,
+				})
 				if err != nil {
-					rc.LogError("Getting project resources in reCreate", "error", err)
-					if rprogress != nil {
-						rprogress.Stop(rc)
-					}
-					return errLogged.Wrap(err)
+					return err
 				}
+			}
 
-				order, err := p.ServiceOrder(true)
+			if usesHealthd && !cmd.Bool("external-healthd") {
+				err = healthdUp(ctx, p, c, healthdUpArgs{
+					Binary:  cmd.String("healthd-binary"),
+					Image:   cmd.String("healthd-image"),
+					Incus:   cmd.String("healthd-incus"),
+					Network: cmd.String("healthd-network"),
+					Pull:    cmd.String("pull"),
+					Timeout: cmd.Duration("timeout"),
+					Workers: cmd.Root().Int("workers"),
+					Debug:   cmd.Root().Bool("debug"),
+					Writer:  cmd.Root().Writer,
+				})
 				if err != nil {
-					rc.LogError("Getting the service dependency order", "error", err)
-					if rprogress != nil {
-						rprogress.Stop(rc)
-					}
-					return errLogged.Wrap(err)
-				}
-
-				// The client needs to know about all instances for DNSWatcher as well as networks for healthd, even those we filter out later.
-				ensureStack := client.NewStack(rc, client.StackSortDescending(), client.StackWorkers(cmd.Root().Int("workers")))
-				args := filterResourcesArgs{
-					ExcludeKinds: []client.Kind{client.KindImage, client.KindStorageVolume},
-				}
-				myResources := filterResources(p, resources, args)
-				ensureStack.AddOrdered(order, myResources)
-
-				args = filterResourcesArgs{
-					OnlyServices:     cmd.Args().Slice(),
-					WithDependencies: !cmd.Bool("no-deps"),
-					ExcludeKinds:     []client.Kind{client.KindImage, client.KindNetwork, client.KindStorageVolume},
-				}
-				myResources = filterResources(p, resources, args)
-
-				stack := client.NewStack(rc, client.StackSortDescending(), client.StackWorkers(cmd.Root().Int("workers")))
-				stack.AddOrdered(order, myResources)
-
-				rc.LogDebug("Ensure", "resources", stack.All())
-
-				recreateOptions := append(append([]client.Option{}, runOptions...), client.OptionForce())
-
-				// Ensure without create for "recreate" (resolution only, no progress).
-				if err := ensureStack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
-					rc.LogDebug("Ensuring for reCreate", "error", err)
-				} else {
-					// Stop
-					errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, recreateOptions...)
-					if errStop != nil {
-						rc.LogDebug("Stopping resources", "error", errStop)
-					}
-
-					// Delete
-					deleteStack := stack.ForAction(client.ActionDelete)
-					rc.LogDebug("Recreate delete", "resources", deleteStack.All())
-					errDel := deleteStack.Run(ctx, client.ActionDelete, recreateOptions...)
-					if errDel != nil {
-						rc.LogDebug("Deleting resources", "error", errDel)
-					}
-				}
-
-				if rprogress != nil {
-					rprogress.Stop(rc)
+					return err
 				}
 			}
 
@@ -303,49 +265,6 @@ func newUpCommand() *cli.Command {
 
 			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")), client.StackFailFast())
 			stack.AddOrdered(order, myResources)
-
-			if usesHealthd && !cmd.Bool("external-healthd") {
-				healthdIncus := p.ClientConfig.Healthd.Incus
-				healthdNetwork := p.ClientConfig.Healthd.Network
-				if cmd.String("healthd-incus") != "" {
-					healthdIncus = cmd.String("healthd-incus")
-				}
-				if cmd.String("healthd-network") != "" {
-					healthdNetwork = cmd.String("healthd-network")
-				}
-
-				var (
-					incus *url.URL
-					err   error
-				)
-				if healthdIncus != "" {
-					incus, err = url.Parse(healthdIncus)
-					if err != nil {
-						globalClient.LogError("Parsing the URL given with `--healthd-incus` failed", "error", err)
-						return errLogged.Wrap(errors.New("parsing error"))
-					}
-				}
-
-				hparams := healthdParams{
-					projectName: p.Name,
-					binary:      cmd.String("healthd-binary"),
-					image:       resolveHealthdImage(cmd.String("healthd-image")),
-					pull:        cmd.String("pull"),
-					incus:       incus,
-					network:     healthdNetwork,
-					timeout:     cmd.Duration("timeout"),
-					workers:     cmd.Root().Int("workers"),
-				}
-
-				hInst, hResources, err := healthdGetResources(c, hparams)
-				if err != nil {
-					globalClient.LogError("Creating healthd resources", "error", err)
-					return errLogged.Wrap(err)
-				}
-
-				stack.Add(hResources...)
-				stack.Add(hInst)
-			}
 
 			c.LogDebug("Ensure", "resources", stack.All())
 

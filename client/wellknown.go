@@ -17,6 +17,7 @@ var WellKnownRegistries = map[string]string{
 	"mcr.microsoft.com":   "https://mcr.microsoft.com",
 	"quay.io":             "https://quay.io",
 	"registry.gitlab.com": "https://registry.gitlab.com",
+	"codeberg.org":        "https://codeberg.org",
 }
 
 // AddWellKnownRegistriesHook registers a hook that transparently adds

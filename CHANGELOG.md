@@ -56,6 +56,11 @@ for correct semver ordering. Headings below preserve each release's announced fo
 
 ### Added
 
+- `healthd up` now recreates the ic-healthd sidecar when the running
+  instance's image no longer matches the configured one, instead of leaving
+  it on the stale image until a manual `healthd down` first. `up` shares the
+  same code path, so a plain `up` also picks up healthd image updates
+  automatically. (by @jochumdev)
 - `services.{name}.configs` / top-level `configs:`: mount config files into
   the container, sourced from a file, inline `content`, or an environment
   variable. `mode` defaults to `0444` (world-readable); the writable bit is

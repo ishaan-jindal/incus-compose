@@ -257,13 +257,7 @@ func newConfigCommand() *cli.Command {
 					return err
 				}
 
-				// Remove trailing newline to match docker-compose behavior
-				yamlBytes := buf.Bytes()
-				if len(yamlBytes) > 0 && yamlBytes[len(yamlBytes)-1] == '\n' {
-					yamlBytes = yamlBytes[:len(yamlBytes)-1]
-				}
-
-				_, err = writer.Write(yamlBytes)
+				_, err = writer.Write(buf.Bytes())
 				return err
 			default:
 				return fmt.Errorf("unsupported format: %s", cmd.String("format"))

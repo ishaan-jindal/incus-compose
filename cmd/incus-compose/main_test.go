@@ -218,103 +218,116 @@ func TestConfigCommand(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		args    []string
-		fixture string
-		wantErr bool
+		name     string
+		args     []string
+		fixtures []string
+		wantErr  bool
 	}{
 		{
-			name:    "simple-nginx yaml",
-			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "config"},
-			fixture: "../../test/fixtures/simple-nginx",
+			name:     "simple-nginx yaml",
+			args:     []string{"config"},
+			fixtures: []string{"../../test/fixtures/simple-nginx/compose.yaml"},
 		},
 		{
-			name:    "simple-nginx json",
-			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "config", "--format", "json"},
-			fixture: "../../test/fixtures/simple-nginx",
+			name:     "simple-nginx json",
+			args:     []string{"config", "--format", "json"},
+			fixtures: []string{"../../test/fixtures/simple-nginx/compose.yaml"},
 		},
 		{
-			name:    "two-services yaml",
-			args:    []string{"-f", "../../test/fixtures/two-services/compose.yaml", "config"},
-			fixture: "../../test/fixtures/two-services",
+			name:     "two-services yaml",
+			args:     []string{"config"},
+			fixtures: []string{"../../test/fixtures/two-services/compose.yaml"},
 		},
 		{
-			name:    "wordpress",
-			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config"},
-			fixture: "../../test/fixtures/wordpress",
+			name:     "wordpress",
+			args:     []string{"config"},
+			fixtures: []string{"../../test/fixtures/wordpress/compose.yaml"},
 		},
 		{
-			name:    "with-secrets",
-			args:    []string{"-f", "../../test/fixtures/with-secrets/compose.yaml", "config"},
-			fixture: "../../test/fixtures/with-secrets",
+			name:     "with-secrets",
+			args:     []string{"config"},
+			fixtures: []string{"../../test/fixtures/with-secrets/compose.yaml"},
 		},
 		{
-			name:    "with-configs",
-			args:    []string{"-f", "../../test/fixtures/with-configs/compose.yaml", "config"},
-			fixture: "../../test/fixtures/with-configs",
+			name:     "with-configs",
+			args:     []string{"config"},
+			fixtures: []string{"../../test/fixtures/with-configs/compose.yaml"},
 		},
 		{
-			name:    "with-restart",
-			args:    []string{"-f", "../../test/fixtures/with-restart/compose.yaml", "config"},
-			fixture: "../../test/fixtures/with-restart",
+			name:     "with-restart",
+			args:     []string{"config"},
+			fixtures: []string{"../../test/fixtures/with-restart/compose.yaml"},
 		},
 		{
-			name:    "with-incus-options",
-			args:    []string{"-f", "../../test/fixtures/with-incus-options/compose.yaml", "config"},
-			fixture: "../../test/fixtures/with-incus-options",
+			name:     "with-incus-options",
+			args:     []string{"config"},
+			fixtures: []string{"../../test/fixtures/with-incus-options/compose.yaml"},
 		},
 		{
-			name:    "with-project-options",
-			args:    []string{"-f", "../../test/fixtures/with-project-options/compose.yaml", "config"},
-			fixture: "../../test/fixtures/with-project-options",
+			name:     "with-project-options",
+			args:     []string{"config"},
+			fixtures: []string{"../../test/fixtures/with-project-options/compose.yaml"},
 		},
 		{
-			name:    "with-build",
-			args:    []string{"-f", "../../test/fixtures/with-build/compose.yaml", "config"},
-			fixture: "../../test/fixtures/with-build",
+			name:     "with-build",
+			args:     []string{"config"},
+			fixtures: []string{"../../test/fixtures/with-build/compose.yaml"},
 		},
 		{
-			name:    "project-directory simple-nginx",
-			args:    []string{"--project-directory", "../../test/fixtures/simple-nginx", "config"},
-			fixture: "../../test/fixtures/simple-nginx",
+			name:     "with-multi-files",
+			args:     []string{"config"},
+			fixtures: []string{"../../test/fixtures/with-multi-files/a.yaml", "../../test/fixtures/with-multi-files/b.yaml"},
 		},
 		{
-			name:    "project-directory docker-compose with incus overlay",
-			args:    []string{"--project-directory", "../../test/fixtures/with-docker-compose", "config"},
-			fixture: "../../test/fixtures/with-docker-compose",
+			name: "project-directory simple-nginx",
+			args: []string{"--project-directory", "../../test/fixtures/simple-nginx", "config"},
 		},
 		{
-			name:    "file docker-compose with incus overlay",
-			args:    []string{"-f", "../../test/fixtures/with-docker-compose/docker-compose.yaml", "config"},
-			fixture: "../../test/fixtures/with-docker-compose",
+			name: "project-directory docker-compose with incus overlay",
+			args: []string{"-P", "../../test/fixtures/with-docker-compose", "config"},
 		},
 		{
-			name:    "nonexistent file",
-			args:    []string{"-f", "nonexistent.yaml", "config"},
-			wantErr: true,
+			name: "file docker-compose with incus overlay",
+			args: []string{"-P", "../../test/fixtures/with-docker-compose", "config"},
 		},
 		{
-			name:    "invalid yaml",
-			args:    []string{"-f", "../../test/fixtures/invalid/compose.yaml", "config"},
-			wantErr: true,
+			name:     "nonexistent file",
+			args:     []string{"config"},
+			fixtures: []string{"../../test/fixtures/i-dont-exists/compose.yaml"},
+			wantErr:  true,
+		},
+		{
+			name:     "invalid yaml",
+			args:     []string{"config"},
+			fixtures: []string{"../../test/fixtures/invalid/compose.yaml"},
+			wantErr:  true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			stdout, err := runCommand(t.Context(), t, "test-local-config", tt.args...)
+			args := []string{}
+			for _, f := range tt.fixtures {
+				args = append(args, "-f", f)
+			}
+			args = append(args, tt.args...)
+
+			stdout, err := runCommand(t.Context(), t, "test-local-config", args...)
 
 			if tt.wantErr {
 				require.Error(t, err, "Stdout: %s", stdout.String())
 			} else {
 				require.NoError(t, err)
-			}
 
-			if tt.fixture != "" {
-				absFixturePath, _ := filepath.Abs(tt.fixture)
-				output := strings.ReplaceAll(stdout.String(), absFixturePath, "$FIXTURE_PATH")
-				snapshotter.SnapshotT(t, output)
+				output := ""
+				if len(tt.fixtures) > 0 {
+					absFixturePath, _ := filepath.Abs(filepath.Dir(tt.fixtures[0]))
+					output = strings.ReplaceAll(stdout.String(), absFixturePath, "$FIXTURE_PATH")
+				} else {
+					output = stdout.String()
+				}
+				snapshotter.SnapshotT(t, strings.Trim(output, "\n"))
 			}
 		})
 	}
@@ -364,7 +377,7 @@ func TestConfigFilterByService(t *testing.T) {
 			if tt.fixture != "" {
 				absFixturePath, _ := filepath.Abs(tt.fixture)
 				output := strings.ReplaceAll(stdout.String(), absFixturePath, "$FIXTURE_PATH")
-				snapshotter.SnapshotT(t, output)
+				snapshotter.SnapshotT(t, strings.Trim(output, "\n"))
 			}
 		})
 	}

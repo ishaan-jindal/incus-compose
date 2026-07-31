@@ -1,0 +1,4 @@
+services:
+  b:
+    x-incus:
+      limits.cpu: 1

@@ -3,14 +3,9 @@ package main
 import (
 	"context"
 	"errors"
-	"os"
 	"time"
 
-	"github.com/mattn/go-isatty"
 	"github.com/urfave/cli/v3"
-
-	"github.com/lxc/incus-compose/client"
-	"github.com/lxc/incus-compose/project"
 )
 
 func newRestartCommand() *cli.Command {
@@ -33,119 +28,39 @@ func newRestartCommand() *cli.Command {
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			noColor := noColor(ctx)
-
-			timeout := cmd.Duration("timeout")
-			withDeps := cmd.Bool("with-deps")
-
-			globalClient, err := clientFromContext(ctx)
+			p, c, err := loadProjectClient(ctx, cmd)
 			if err != nil {
 				return err
-			}
-			if err := globalClient.Connect(); err != nil {
-				return err
-			}
-
-			p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
-			if err != nil {
-				globalClient.LogError("Configuring the project", "error", err)
-				return err
-			}
-
-			c, err := globalClient.EnsureProject(p.Name)
-			if err != nil {
-				globalClient.LogError("Getting the incus project", "error", err)
-				return errLogged
 			}
 			defer func() { _ = c.Done() }()
 
-			if err := c.Open(); err != nil {
-				globalClient.LogError("Opening the project client", "error", err)
-				return errLogged.Wrap(err)
-			}
+			services := cmd.Args().Slice()
+			withDeps := cmd.Bool("with-deps")
+			timeout := cmd.Duration("timeout")
+			workers := cmd.Root().Int("workers")
+			debug := cmd.Root().Bool("debug")
+			writer := cmd.Root().Writer
 
-			// We start all resources, just ignore that warning but let progress know them (so add before - LIFO - progress runs before).
-			c.IgnoreError(client.ActionEnsure, client.ErrNotFound)
-			c.IgnoreError(client.ActionStart, client.ErrRunning)
-			c.IgnoreError(client.ActionStop, client.ErrNotRunning)
-			c.IgnoreError(client.ActionStop, client.ErrNotEnsured)
+			// Each phase registers its own DNSWatcher.
+			errStop := stop(ctx, p, c.Clone(), stopArgs{
+				Services: services,
+				WithDeps: withDeps,
+				Timeout:  timeout,
+				Workers:  workers,
+				Debug:    debug,
+				Writer:   writer,
+			})
 
-			if !cmd.Root().Bool("debug") {
-				progress := newProgressRenderer(cmd.Root().Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
-				progress.Start(c)
-				defer progress.Stop(c)
-			}
+			errStart := start(ctx, p, c.Clone(), startArgs{
+				Services: services,
+				WithDeps: withDeps,
+				Timeout:  timeout,
+				Workers:  workers,
+				Debug:    debug,
+				Writer:   writer,
+			})
 
-			// Register the DNS Watcher after the progress renderer so progress waits for the dns changes.
-			if err := c.RegisterDNSWatcher(); err != nil {
-				globalClient.LogError("Registering the DNS watcher", "project", p.Name, "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			resources, err := p.Resources(c)
-			if err != nil {
-				c.LogError("Getting project resources in reCreate", "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			order, err := p.ServiceOrder(true)
-			if err != nil {
-				c.LogError("Getting the service dependency order", "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			args := filterResourcesArgs{
-				OnlyServices:     cmd.Args().Slice(),
-				WithDependencies: cmd.Bool("with-deps"),
-				Reverse:          true,
-				ExcludeKinds:     []client.Kind{client.KindImage, client.KindNetwork, client.KindStorageVolume},
-			}
-			myResources := filterResources(p, resources, args)
-
-			stack := client.NewStack(c, client.StackSortDescending(), client.StackWorkers(cmd.Root().Int("workers")))
-			stack.AddOrdered(order, myResources)
-
-			var errs error
-			if err := stack.ForAction(client.ActionEnsure).Run(
-				ctx,
-				client.ActionEnsure,
-			); err != nil {
-				c.LogError("Getting resources", "error", err)
-				errs = errors.Join(errs, err)
-			}
-
-			// Without --with-deps the linked services are not in scope; skip the
-			// healthd interaction that targets out-of-scope dependencies.
-			opts := []client.Option{
-				client.OptionForce(),
-				client.OptionTimeout(timeout),
-			}
-
-			_, err = healthdResolve(c)
-			if err != nil || (!withDeps && cmd.Args().Len() > 0) {
-				opts = append(opts, client.OptionNoHealthd())
-			}
-
-			filter := func(r client.Resource) bool { return r.IsEnsured() }
-			errStop := stack.ForActionF(client.ActionStop, filter).Run(ctx, client.ActionStop, opts...)
-			if errStop != nil {
-				c.LogWarn("Stopping resources", "error", errStop)
-				errs = errors.Join(errs, errStop)
-			}
-
-			startStack := stack.ForActionF(client.ActionStart, filter)
-			startStack.SetOptions(client.StackFailFast())
-			errStart := startStack.Run(ctx, client.ActionStart, opts...)
-			if errStart != nil {
-				c.LogError("Starting resources", "error", errStart)
-				errs = errors.Join(errs, errStart)
-			}
-
-			if errs != nil {
-				return errLogged.Wrap(errs)
-			}
-
-			return nil
+			return errors.Join(errStop, errStart)
 		},
 	}
 }
