@@ -1,0 +1,408 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/lxc/incus-compose/client"
+)
+
+func TestUniqueVolumeNames(t *testing.T) {
+	t.Parallel()
+
+	makeVol := func(name string, hostPath string) client.Resource {
+		c := client.NewOfflineClient(t.Context(), "unique-test")
+		r, err := c.Resource(client.KindStorageVolume, name, &client.StorageVolumeConfig{HostPath: hostPath})
+		require.NoError(t, err)
+
+		return r
+	}
+
+	tests := []struct {
+		name         string
+		resources    map[string][]client.Resource
+		onlyServices []string
+		want         []string
+	}{
+		{
+			name: "all volumes",
+			resources: map[string][]client.Resource{
+				"db":  {makeVol("db-data", "")},
+				"app": {makeVol("app-data", "")},
+			},
+			want: []string{"app-data", "db-data"},
+		},
+		{
+			name: "filter by service",
+			resources: map[string][]client.Resource{
+				"db":  {makeVol("db-data", "")},
+				"app": {makeVol("app-data", "")},
+			},
+			onlyServices: []string{"db"},
+			want:         []string{"db-data"},
+		},
+		{
+			name: "host-path volume excluded",
+			resources: map[string][]client.Resource{
+				"app": {
+					makeVol("data", ""),
+					makeVol("bind", "/host/path"),
+				},
+			},
+			want: []string{"data"},
+		},
+		{
+			name: "deduplicates by name",
+			resources: map[string][]client.Resource{
+				"db1": {makeVol("shared-data", "")},
+				"db2": {makeVol("shared-data", "")},
+			},
+			want: []string{"shared-data"},
+		},
+		{
+			name:      "no resources",
+			resources: map[string][]client.Resource{},
+			want:      nil,
+		},
+		{
+			name: "no matching services",
+			resources: map[string][]client.Resource{
+				"web": {makeVol("data", "")},
+			},
+			onlyServices: []string{"nonexistent"},
+			want:         nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := uniqueVolumeNames(tt.resources, tt.onlyServices)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func writeTempCompose(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "compose.yaml")
+	err := os.WriteFile(path, []byte(content), 0o644)
+	require.NoError(t, err)
+
+	return path
+}
+
+func assertBackupVolumeExists(t *testing.T, c *client.Client, pool, name string) {
+	t.Helper()
+
+	conn, err := c.Connection()
+	require.NoError(t, err)
+
+	_, _, err = conn.GetStoragePoolVolume(pool, "custom", name)
+	require.NoError(t, err, "volume %s should exist in pool %s", name, pool)
+}
+
+func assertBackupSnapshotExists(t *testing.T, c *client.Client, pool, volumeName, snapshotName string) {
+	t.Helper()
+
+	conn, err := c.Connection()
+	require.NoError(t, err)
+
+	names, err := conn.GetStoragePoolVolumeSnapshotNames(pool, "custom", volumeName)
+	require.NoError(t, err)
+
+	for _, n := range names {
+		if n == snapshotName {
+			return
+		}
+	}
+
+	t.Errorf("snapshot %s not found on volume %s in pool %s", snapshotName, volumeName, pool)
+}
+
+func readBackupManifest(t *testing.T, projectDir string) []client.BackupEntry {
+	t.Helper()
+
+	manifestPath := filepath.Join(projectDir, ".incus-compose", "backups.json")
+	data, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+
+	var m struct {
+		Backups []client.BackupEntry `json:"backups"`
+	}
+	err = json.Unmarshal(data, &m)
+	require.NoError(t, err)
+
+	return m.Backups
+}
+
+func openBackupProject(ctx context.Context, t *testing.T, composeProject string) *client.Client {
+	t.Helper()
+
+	gc, err := client.NewTestClient(ctx)
+	require.NoError(t, err)
+
+	err = gc.Connect()
+	require.NoError(t, err)
+
+	backupProject := composeProject + "-backup"
+	c, err := gc.EnsureProject(backupProject)
+	require.NoError(t, err)
+
+	err = c.Open()
+	require.NoError(t, err)
+
+	return c
+}
+
+func deleteBackupProject(ctx context.Context, t *testing.T, composeProject string) {
+	gc, err := client.NewTestClient(ctx)
+	if err != nil {
+		return
+	}
+
+	_ = gc.Connect()
+	_ = gc.DeleteProject(composeProject+"-backup", true)
+}
+
+func TestE2EBackupCreate(t *testing.T) {
+	t.Parallel()
+
+	compose := "../../test/fixtures/with-backup/compose.yaml"
+	projectDir := t.TempDir()
+
+	ctx := t.Context()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+		deleteBackupProject(context.Background(), t, pn)
+	})
+
+	_, err := runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	stdout, err := runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create")
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "created with timestamp")
+
+	entries := readBackupManifest(t, projectDir)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "backup", entries[0].Name)
+	assert.NotEmpty(t, entries[0].Pool)
+	assert.Equal(t, []string{"data"}, entries[0].Volumes)
+
+	bp := openBackupProject(ctx, t, pn)
+	defer func() { _ = bp.Done() }()
+
+	pool := entries[0].Pool
+	assertBackupVolumeExists(t, bp, pool, "ic-backup-vol-data")
+	assertBackupSnapshotExists(t, bp, pool, "ic-backup-vol-data", entries[0].Timestamp)
+
+	c := projectClient(ctx, t, pn)
+	exists, err := c.InstanceExists("app-1")
+	require.NoError(t, err)
+	assert.True(t, exists, "service should be restarted after consistent backup")
+}
+
+func TestE2EBackupCreateLive(t *testing.T) {
+	t.Parallel()
+
+	compose := "../../test/fixtures/with-backup/compose.yaml"
+	projectDir := t.TempDir()
+
+	ctx := t.Context()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+		deleteBackupProject(context.Background(), t, pn)
+	})
+
+	_, err := runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create", "--live")
+	require.NoError(t, err)
+
+	entries := readBackupManifest(t, projectDir)
+	require.Len(t, entries, 1)
+
+	bp := openBackupProject(ctx, t, pn)
+	defer func() { _ = bp.Done() }()
+
+	pool := entries[0].Pool
+	assertBackupVolumeExists(t, bp, pool, "ic-backup-vol-data")
+	assertBackupSnapshotExists(t, bp, pool, "ic-backup-vol-data", entries[0].Timestamp)
+}
+
+func TestE2EBackupCreateNamed(t *testing.T) {
+	t.Parallel()
+
+	compose := "../../test/fixtures/with-backup/compose.yaml"
+	projectDir := t.TempDir()
+
+	ctx := t.Context()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+		deleteBackupProject(context.Background(), t, pn)
+	})
+
+	_, err := runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create", "--name", "daily")
+	require.NoError(t, err)
+
+	entries := readBackupManifest(t, projectDir)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "daily", entries[0].Name)
+}
+
+func TestE2EBackupCreateIncremental(t *testing.T) {
+	t.Parallel()
+
+	compose := "../../test/fixtures/with-backup/compose.yaml"
+	projectDir := t.TempDir()
+
+	ctx := t.Context()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+		deleteBackupProject(context.Background(), t, pn)
+	})
+
+	_, err := runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create", "--name", "first")
+	require.NoError(t, err)
+
+	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create", "--name", "second")
+	require.NoError(t, err)
+
+	entries := readBackupManifest(t, projectDir)
+	require.Len(t, entries, 2)
+	assert.Equal(t, "first", entries[0].Name)
+	assert.Equal(t, "second", entries[1].Name)
+	assert.NotEqual(t, entries[0].Timestamp, entries[1].Timestamp)
+}
+
+func TestE2EBackupCreateFiltered(t *testing.T) {
+	t.Parallel()
+
+	compose := writeTempCompose(t, `
+services:
+  db:
+    image: docker.io/library/nginx:alpine
+    volumes:
+      - type: volume
+        source: db-data
+        target: /data
+  app:
+    image: docker.io/library/nginx:alpine
+    volumes:
+      - type: volume
+        source: app-data
+        target: /data
+
+volumes:
+  db-data:
+  app-data:
+`)
+	projectDir := t.TempDir()
+
+	ctx := t.Context()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+		deleteBackupProject(context.Background(), t, pn)
+	})
+
+	_, err := runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create", "db")
+	require.NoError(t, err)
+
+	entries := readBackupManifest(t, projectDir)
+	require.Len(t, entries, 1)
+	assert.Equal(t, []string{"db-data"}, entries[0].Volumes)
+}
+
+func TestE2EBackupCreateNoVolumes(t *testing.T) {
+	t.Parallel()
+
+	compose := "../../test/fixtures/with-backup/compose.yaml"
+	projectDir := t.TempDir()
+
+	ctx := t.Context()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+		deleteBackupProject(context.Background(), t, pn)
+	})
+
+	_, err := runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create", "nonexistent")
+	require.NoError(t, err)
+
+	manifestPath := filepath.Join(projectDir, ".incus-compose", "backups.json")
+	_, err = os.Stat(manifestPath)
+	assert.True(t, os.IsNotExist(err), "manifest should not be created when no volumes are backed up")
+}
+
+func TestE2EBackupCreateDefaultPool(t *testing.T) {
+	t.Parallel()
+
+	compose := writeTempCompose(t, `
+services:
+  app:
+    image: docker.io/library/nginx:alpine
+    volumes:
+      - type: volume
+        source: data
+        target: /data
+
+volumes:
+  data:
+`)
+	projectDir := t.TempDir()
+
+	ctx := t.Context()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+		deleteBackupProject(context.Background(), t, pn)
+	})
+
+	_, err := runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create")
+	require.NoError(t, err)
+
+	entries := readBackupManifest(t, projectDir)
+	require.Len(t, entries, 1)
+
+	bp := openBackupProject(ctx, t, pn)
+	defer func() { _ = bp.Done() }()
+
+	pool := bp.Config().DefaultStoragePool
+	assertBackupVolumeExists(t, bp, pool, "ic-backup-vol-data")
+}

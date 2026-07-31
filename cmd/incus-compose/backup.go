@@ -121,7 +121,10 @@ func newBackupCreateCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			fmt.Printf("Backup %q created with timestamp %s\n", name, ts)
+			_, err = fmt.Fprintf(cmd.Root().Writer, "Backup %q created with timestamp %s\n", name, ts)
+			if err != nil {
+				c.LogWarn("Writing backup output", "error", err)
+			}
 
 			if !cmd.Bool("live") {
 				c.IgnoreError(client.ActionStart, client.ErrRunning)

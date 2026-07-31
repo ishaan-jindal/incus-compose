@@ -51,7 +51,7 @@ type BackupManager struct {
 func NewBackupManager(globalClient *GlobalClient, composeClient *Client, composePool string, backupConfig BackupConfig, projectDir string) (*BackupManager, error) {
 	backupProject := composeClient.Project() + "-backup"
 
-	backupClient, err := globalClient.EnsureProject(backupProject, EnsureProjectWithCreate())
+	backupClient, err := globalClient.EnsureProject(backupProject, EnsureProjectWithCreate(), EnsureProjectWithConfig(map[string]string{"restricted": "false"}))
 	if err != nil {
 		return nil, fmt.Errorf("ensure backup project: %w", err)
 	}

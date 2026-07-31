@@ -1,6 +1,5 @@
 x-incus-compose:
   backup:
-    pool: default
 
 services:
   app:
