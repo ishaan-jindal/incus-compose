@@ -2,9 +2,7 @@ name: with-container-name
 services:
   web:
     container_name: my-nginx
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
-    image: docker.io/nginx:alpine
+    image: docker.io/alpine:edge
     networks:
       default: null
     x-incus:

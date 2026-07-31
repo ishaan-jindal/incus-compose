@@ -3,9 +3,7 @@ services:
   web:
     deploy:
       replicas: 4
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
-    image: docker.io/nginx:alpine
+    image: docker.io/alpine:edge
     networks:
       default: null
     restart: unless-stopped

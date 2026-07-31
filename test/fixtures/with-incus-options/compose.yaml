@@ -1,8 +1,6 @@
 services:
   web:
-    image: docker.io/nginx:alpine
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    image: docker.io/alpine:edge
     dns:
       - 8.8.8.8
     x-incus:
@@ -12,9 +10,7 @@ services:
       oci.dns.nameservers: "9.9.9.9"
 
   database:
-    image: docker.io/nginx:alpine
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    image: docker.io/alpine:edge
     x-incus:
       limits.memory: 1GB
       limits.cpu: "4"

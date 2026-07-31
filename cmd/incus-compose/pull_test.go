@@ -82,8 +82,8 @@ func TestE2EPull(t *testing.T) {
 			require.NoError(t, err)
 
 			aliases := pulledImageAliases(ctx, t, pn, compose)
-			require.True(t, hasImage(aliases, "nginx"),
-				"expected the nginx image in the project, got %v", aliases)
+			require.True(t, hasImage(aliases, "alpine"),
+				"expected the alpine image in the project, got %v", aliases)
 		})
 	}
 }

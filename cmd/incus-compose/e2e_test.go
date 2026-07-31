@@ -874,7 +874,7 @@ func TestE2EDownImages(t *testing.T) {
 	require.NoError(t, err)
 
 	c := projectClient(ctx, t, pn)
-	r, err := c.Resource(client.KindImage, "docker.io/nginx:alpine", &client.ImageConfig{})
+	r, err := c.Resource(client.KindImage, "docker.io/alpine:edge", &client.ImageConfig{})
 	require.NoError(t, err)
 	require.NoError(t, client.RunAction(ctx, r, client.ActionEnsure), "image should survive plain down")
 

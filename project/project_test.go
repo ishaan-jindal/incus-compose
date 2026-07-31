@@ -47,7 +47,7 @@ func TestLoadBasicProject(t *testing.T) {
 	service, exists := proj.Services["web"]
 	assert.True(t, exists, "web service should exist")
 	assert.Equal(t, "web", service.Name)
-	assert.Equal(t, "docker.io/nginx:alpine", service.Image)
+	assert.Equal(t, "docker.io/alpine:edge", service.Image)
 }
 
 // TestLoadWordPressStack tests WordPress stack with volumes and dependencies.
@@ -622,11 +622,11 @@ func TestLoadWithXIncusOptions(t *testing.T) {
 	// Verify services loaded
 	web, exists := proj.Services["web"]
 	assert.True(t, exists, "web service should exist")
-	assert.Equal(t, "docker.io/nginx:alpine", web.Image)
+	assert.Equal(t, "docker.io/alpine:edge", web.Image)
 
 	database, exists := proj.Services["database"]
 	assert.True(t, exists, "database service should exist")
-	assert.Equal(t, "docker.io/nginx:alpine", database.Image)
+	assert.Equal(t, "docker.io/alpine:edge", database.Image)
 }
 
 // TestNewLoadOptionsAppliesOptions verifies the functional options set fields.

@@ -14,7 +14,7 @@
     "name": "web",
     "description": "incus-compose: teste2enatproxy:web-1",
     "incus_name": "web-1",
-    "image": "docker.io/nginx:alpine",
+    "image": "docker.io/caddy:latest",
     "status": "Running",
     "health": "-stripped-",
     "addresses": [
@@ -26,7 +26,7 @@
     "name": "web-nat",
     "description": "incus-compose: teste2enatproxy:web-nat-1",
     "incus_name": "web-nat-1",
-    "image": "docker.io/nginx:alpine",
+    "image": "docker.io/alpine:edge",
     "status": "Running",
     "health": "-stripped-",
     "addresses": [
