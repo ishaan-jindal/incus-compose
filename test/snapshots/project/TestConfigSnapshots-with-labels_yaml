@@ -1,7 +1,7 @@
 name: with-labels
 services:
   web:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
+    image: docker.io/alpine:edge
     labels:
       caddy: whoami.example.com
       caddy.reverse_proxy: '{{upstreams 80}}}'

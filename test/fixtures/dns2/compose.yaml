@@ -1,9 +1,7 @@
 services:
   service-db2:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
+    image: docker.io/alpine:edge
     container_name: my-db2
-    environment:
-      NGINX_WORKER_PROCESSES: 1
     x-incus:
       limits.cpu: 1
     networks:

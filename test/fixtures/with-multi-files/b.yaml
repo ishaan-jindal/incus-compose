@@ -1,5 +1,3 @@
 services:
   b:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
-    environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
+    image: docker.io/alpine:edge
