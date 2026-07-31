@@ -208,7 +208,7 @@ func TestE2EStartStopRestartWithDeps(t *testing.T) {
 	skipLocal(t)
 	skipE2E(t)
 
-	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+	compose := "../../test/fixtures/three-services/compose.yaml"
 
 	ctx := t.Context()
 	pn := t.Name()
@@ -226,7 +226,7 @@ func TestE2EStartStopRestartWithDeps(t *testing.T) {
 		},
 		{
 			name:            "restart",
-			args:            []string{"-f", compose, "restart", "--with-deps", "nginx"},
+			args:            []string{"-f", compose, "restart", "--with-deps", "frontend"},
 			snapshotList:    true,
 			snapStripHealth: false,
 		},
@@ -234,11 +234,11 @@ func TestE2EStartStopRestartWithDeps(t *testing.T) {
 			name:            "stop manually",
 			args:            []string{"-f", compose, "stop", "nginx", "backend1", "backend2"},
 			snapshotList:    true,
-			snapStripHealth: true,
+			snapStripHealth: false,
 		},
 		{
 			name:            "start deps",
-			args:            []string{"-f", compose, "start", "--with-deps", "nginx"},
+			args:            []string{"-f", compose, "start", "--with-deps", "frontend"},
 			snapshotList:    true,
 			snapStripHealth: false,
 		},
@@ -246,7 +246,7 @@ func TestE2EStartStopRestartWithDeps(t *testing.T) {
 			name:            "stop deps",
 			args:            []string{"-f", compose, "stop", "--with-deps", "backend1"},
 			snapshotList:    true,
-			snapStripHealth: true,
+			snapStripHealth: false,
 		},
 	}
 

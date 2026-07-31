@@ -1,6 +1,8 @@
 services:
   web:
     ports: !reset []
+    x-incus:
+      limits.cpu: 1
     networks:
       default:
         ipv4_address: 10.131.35.17

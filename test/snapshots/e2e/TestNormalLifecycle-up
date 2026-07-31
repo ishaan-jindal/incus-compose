@@ -26,9 +26,9 @@
     "name": "web1",
     "description": "incus-compose: testnormallifecycle:web1-1",
     "incus_name": "web1-1",
-    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "image": "docker.io/alpine:edge",
     "status": "Running",
-    "health": "Healthy",
+    "health": "Unknown",
     "addresses": [
       "-stripped-"
     ]
@@ -38,9 +38,9 @@
     "name": "web2",
     "description": "incus-compose: testnormallifecycle:web2-1",
     "incus_name": "web2-1",
-    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "image": "docker.io/alpine:edge",
     "status": "Running",
-    "health": "Healthy",
+    "health": "Unknown",
     "addresses": [
       "-stripped-"
     ]

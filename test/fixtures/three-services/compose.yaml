@@ -1,0 +1,25 @@
+services:
+  frontend:
+    image: docker.io/alpine:edge
+    restart: unless-stopped
+    x-incus:
+      limits.cpu: 1
+    depends_on:
+      backend1:
+        condition: service_started
+      backend2:
+        condition: service_started
+
+  backend1:
+    image: docker.io/alpine:edge
+    restart: unless-stopped
+    environment:
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    x-incus:
+      limits.cpu: 1
+
+  backend2:
+    image: docker.io/alpine:edge
+    restart: unless-stopped
+    x-incus:
+      limits.cpu: 1
