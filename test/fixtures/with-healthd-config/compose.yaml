@@ -6,4 +6,4 @@ x-incus-compose:
 
 services:
   web:
-    image: docker.io/nginx:alpine
+    image: docker.io/alpine:edge

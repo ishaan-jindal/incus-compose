@@ -1,21 +1,17 @@
 services:
   web:
-    image: docker.io/nginx:alpine
+    image: docker.io/caddy:latest
     ports:
       - "8080:80"
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
     x-incus:
       limits.cpu: 1
 
   web-nat:
-    image: docker.io/nginx:alpine
+    image: docker.io/alpine:edge
     ports:
       - published: "8081"
         target: "80"
         x-incus-compose:
           nat: true
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
     x-incus:
       limits.cpu: 1

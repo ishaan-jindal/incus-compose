@@ -3,54 +3,28 @@ name: healthd-debug
 # https://docs.docker.com/compose/how-tos/startup-order/
 services:
   web:
-    image: docker.io/nginx:alpine
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    image: docker.io/alpine:edge
     x-incus:
       limits.cpu: 1
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost"]
-      interval: 10s # Run every 10s after start.
-
-      retries: 3 # After x retries the service is considered as unhealthy.
-      timeout: 5s # timeout for a single test/check (retry).
+    restart: unless-stopped
 
   web-restart:
-    image: docker.io/nginx:alpine
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    image: docker.io/alpine:edge
     x-incus:
       limits.cpu: 1
     restart: always
 
   web-always:
-    image: docker.io/nginx:alpine
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    image: docker.io/alpine:edge
     x-incus:
       limits.cpu: 1
     restart: always
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost"]
-      interval: 10s # Run every 10s after start.
-
-      retries: 3 # After x retries the service is considered as unhealthy.
-      timeout: 5s # timeout for a single test/check (retry).
 
   web-on-failure:
-    image: docker.io/nginx:alpine
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    image: docker.io/alpine:edge
     x-incus:
       limits.cpu: 1
     restart: on-failure
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost"]
-      interval: 10s # Run every 10s after start.
-
-      retries: 3 # After x retries the service is considered as unhealthy.
-      timeout: 5s # timeout for a single test/check (retry).
-
 
   #   depends_on:
   #     db:

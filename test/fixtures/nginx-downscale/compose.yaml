@@ -1,8 +1,6 @@
 services:
   web:
-    image: docker.io/nginx:alpine
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    image: docker.io/alpine:edge
     x-incus:
       limits.cpu: 1
     deploy:

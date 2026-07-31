@@ -1,9 +1,7 @@
 name: with-ports
 services:
   web:
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
-    image: docker.io/nginx:alpine
+    image: docker.io/caddy:latest
     networks:
       default: null
     ports:
@@ -14,9 +12,7 @@ services:
     x-incus:
       limits.cpu: 1
   web-nat:
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
-    image: docker.io/nginx:alpine
+    image: docker.io/alpine:edge
     networks:
       default: null
     ports:

@@ -2,9 +2,7 @@ project:
   name: test-local-config
   services:
     database:
-      environment:
-        NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
-      image: docker.io/nginx:alpine
+      image: docker.io/alpine:edge
       networks:
         default: null
       x-incus:
@@ -13,9 +11,7 @@ project:
     web:
       dns:
         - 8.8.8.8
-      environment:
-        NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
-      image: docker.io/nginx:alpine
+      image: docker.io/alpine:edge
       networks:
         default: null
       x-incus:

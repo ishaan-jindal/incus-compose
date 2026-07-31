@@ -4,10 +4,7 @@
     "web": {
       "command": null,
       "entrypoint": null,
-      "environment": {
-        "NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE": "1"
-      },
-      "image": "docker.io/nginx:alpine",
+      "image": "docker.io/alpine:edge",
       "networks": {
         "default": null
       }
