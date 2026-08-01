@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"os"
 	"slices"
 
 	"github.com/urfave/cli/v3"
@@ -70,19 +69,12 @@ func newBackupCreateCommand() *cli.Command {
 			defer func() { _ = c.Done() }()
 
 			composePool := c.Config().DefaultStoragePool
-			projectDir := cmd.Root().String("project-directory")
-			if projectDir == "" {
-				projectDir = p.WorkingDir
-			}
-			if projectDir == "" {
-				projectDir, _ = os.Getwd()
-			}
 
 			backupConfig := client.BackupConfig{
 				Pool: p.ClientConfig.Backup.Pool,
 			}
 
-			bm, err := client.NewBackupManager(globalClient, c, composePool, backupConfig, projectDir)
+			bm, err := client.NewBackupManager(globalClient, c, composePool, backupConfig)
 			if err != nil {
 				c.LogError("Creating backup manager", "error", err)
 				return errLogged.Wrap(err)

@@ -62,68 +62,45 @@ func TestTimestamp(t *testing.T) {
 	assert.True(t, parsed.UTC().Equal(parsed))
 }
 
-func TestManifestReadWrite(t *testing.T) {
+func TestManifestFromJSON(t *testing.T) {
 	t.Parallel()
 
-	bm := &BackupManager{projectDir: t.TempDir()}
-
-	entry := BackupEntry{
-		Timestamp: "2024-01-01T00:00:00Z",
-		Name:      "daily",
-		Pool:      "default",
-		Volumes:   []string{"vol-db-data", "vol-cache-data"},
+	tests := []struct {
+		name    string
+		data    []byte
+		wantErr bool
+	}{
+		{
+			name: "nil data",
+		},
+		{
+			name: "empty data",
+			data: []byte{},
+		},
+		{
+			name: "valid manifest",
+			data: []byte(`{"backups":[{"timestamp":"2024-01-01T00:00:00Z","name":"daily","pool":"default","volumes":["vol-db-data"]}]}`),
+		},
+		{
+			name:    "invalid json",
+			data:    []byte(`{"backups":`),
+			wantErr: true,
+		},
 	}
 
-	m := &manifest{Backups: []BackupEntry{entry}}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := manifestFromJSON(tt.data)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
 
-	err := bm.writeManifest(m)
-	require.NoError(t, err)
-
-	got, err := bm.readManifest()
-	require.NoError(t, err)
-	require.Len(t, got.Backups, 1)
-	assert.Equal(t, entry.Timestamp, got.Backups[0].Timestamp)
-	assert.Equal(t, entry.Name, got.Backups[0].Name)
-	assert.Equal(t, entry.Pool, got.Backups[0].Pool)
-	assert.Equal(t, entry.Volumes, got.Backups[0].Volumes)
-}
-
-func TestManifestEmptyOnMissing(t *testing.T) {
-	t.Parallel()
-
-	bm := &BackupManager{projectDir: t.TempDir()}
-
-	got, err := bm.readManifest()
-	require.NoError(t, err)
-	assert.NotNil(t, got.Backups)
-	assert.Len(t, got.Backups, 0)
-}
-
-func TestManifestAppendMultiple(t *testing.T) {
-	t.Parallel()
-
-	bm := &BackupManager{projectDir: t.TempDir()}
-
-	e1 := BackupEntry{Timestamp: "2024-01-01T00:00:00Z", Name: "first", Pool: "default", Volumes: []string{"vol-a"}}
-	e2 := BackupEntry{Timestamp: "2024-01-02T00:00:00Z", Name: "second", Pool: "default", Volumes: []string{"vol-b"}}
-
-	m, err := bm.readManifest()
-	require.NoError(t, err)
-	m.Backups = append(m.Backups, e1)
-	err = bm.writeManifest(m)
-	require.NoError(t, err)
-
-	m, err = bm.readManifest()
-	require.NoError(t, err)
-	m.Backups = append(m.Backups, e2)
-	err = bm.writeManifest(m)
-	require.NoError(t, err)
-
-	got, err := bm.readManifest()
-	require.NoError(t, err)
-	require.Len(t, got.Backups, 2)
-	assert.Equal(t, "first", got.Backups[0].Name)
-	assert.Equal(t, "second", got.Backups[1].Name)
+			require.NoError(t, err)
+			assert.NotNil(t, got.Backups)
+		})
+	}
 }
 
 func TestBackupEntryJSON(t *testing.T) {
@@ -148,17 +125,15 @@ func TestBackupEntryJSON(t *testing.T) {
 func TestManifestJSONRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	bm := &BackupManager{projectDir: t.TempDir()}
-
 	m := &manifest{Backups: []BackupEntry{
 		{Timestamp: "2024-01-01T00:00:00Z", Name: "daily", Pool: "default", Volumes: []string{"vol-db-data"}},
 		{Timestamp: "2024-01-02T00:00:00Z", Name: "hourly", Pool: "default", Volumes: []string{"vol-db-data", "vol-cache-data"}},
 	}}
 
-	err := bm.writeManifest(m)
+	data, err := json.Marshal(m)
 	require.NoError(t, err)
 
-	got, err := bm.readManifest()
+	got, err := manifestFromJSON(data)
 	require.NoError(t, err)
 	assert.Equal(t, m.Backups, got.Backups)
 }

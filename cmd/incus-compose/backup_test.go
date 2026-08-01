@@ -3,12 +3,16 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	incusApi "github.com/lxc/incus/v7/shared/api"
 
 	"github.com/lxc/incus-compose/client"
 )
@@ -127,17 +131,26 @@ func assertBackupSnapshotExists(t *testing.T, c *client.Client, pool, volumeName
 	t.Errorf("snapshot %s not found on volume %s in pool %s", snapshotName, volumeName, pool)
 }
 
-func readBackupManifest(t *testing.T, projectDir string) []client.BackupEntry {
+func readBackupManifest(t *testing.T, bp *client.Client) []client.BackupEntry {
 	t.Helper()
 
-	manifestPath := filepath.Join(projectDir, ".incus-compose", "backups.json")
-	data, err := os.ReadFile(manifestPath)
+	conn, err := bp.Connection()
+	require.NoError(t, err)
+
+	data, _, err := conn.GetStorageVolumeFile(bp.Config().DefaultStoragePool, "custom", "ic-backup-manifest", "backups.json")
+	if incusApi.StatusErrorCheck(err, http.StatusNotFound) {
+		return nil
+	}
+	require.NoError(t, err)
+	defer data.Close()
+
+	content, err := io.ReadAll(data)
 	require.NoError(t, err)
 
 	var m struct {
 		Backups []client.BackupEntry `json:"backups"`
 	}
-	err = json.Unmarshal(data, &m)
+	err = json.Unmarshal(content, &m)
 	require.NoError(t, err)
 
 	return m.Backups
@@ -193,14 +206,14 @@ func TestE2EBackupCreate(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "created with timestamp")
 
-	entries := readBackupManifest(t, projectDir)
+	bp := openBackupProject(ctx, t, pn)
+	defer func() { _ = bp.Done() }()
+
+	entries := readBackupManifest(t, bp)
 	require.Len(t, entries, 1)
 	assert.Equal(t, "backup", entries[0].Name)
 	assert.NotEmpty(t, entries[0].Pool)
 	assert.Equal(t, []string{"data"}, entries[0].Volumes)
-
-	bp := openBackupProject(ctx, t, pn)
-	defer func() { _ = bp.Done() }()
 
 	pool := entries[0].Pool
 	assertBackupVolumeExists(t, bp, pool, "ic-backup-vol-data")
@@ -232,11 +245,11 @@ func TestE2EBackupCreateLive(t *testing.T) {
 	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create", "--live")
 	require.NoError(t, err)
 
-	entries := readBackupManifest(t, projectDir)
-	require.Len(t, entries, 1)
-
 	bp := openBackupProject(ctx, t, pn)
 	defer func() { _ = bp.Done() }()
+
+	entries := readBackupManifest(t, bp)
+	require.Len(t, entries, 1)
 
 	pool := entries[0].Pool
 	assertBackupVolumeExists(t, bp, pool, "ic-backup-vol-data")
@@ -263,7 +276,10 @@ func TestE2EBackupCreateNamed(t *testing.T) {
 	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create", "--name", "daily")
 	require.NoError(t, err)
 
-	entries := readBackupManifest(t, projectDir)
+	bp := openBackupProject(ctx, t, pn)
+	defer func() { _ = bp.Done() }()
+
+	entries := readBackupManifest(t, bp)
 	require.Len(t, entries, 1)
 	assert.Equal(t, "daily", entries[0].Name)
 }
@@ -291,7 +307,10 @@ func TestE2EBackupCreateIncremental(t *testing.T) {
 	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create", "--name", "second")
 	require.NoError(t, err)
 
-	entries := readBackupManifest(t, projectDir)
+	bp := openBackupProject(ctx, t, pn)
+	defer func() { _ = bp.Done() }()
+
+	entries := readBackupManifest(t, bp)
 	require.Len(t, entries, 2)
 	assert.Equal(t, "first", entries[0].Name)
 	assert.Equal(t, "second", entries[1].Name)
@@ -336,7 +355,10 @@ volumes:
 	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create", "db")
 	require.NoError(t, err)
 
-	entries := readBackupManifest(t, projectDir)
+	bp := openBackupProject(ctx, t, pn)
+	defer func() { _ = bp.Done() }()
+
+	entries := readBackupManifest(t, bp)
 	require.Len(t, entries, 1)
 	assert.Equal(t, []string{"db-data"}, entries[0].Volumes)
 }
@@ -361,9 +383,12 @@ func TestE2EBackupCreateNoVolumes(t *testing.T) {
 	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create", "nonexistent")
 	require.NoError(t, err)
 
-	manifestPath := filepath.Join(projectDir, ".incus-compose", "backups.json")
-	_, err = os.Stat(manifestPath)
-	assert.True(t, os.IsNotExist(err), "manifest should not be created when no volumes are backed up")
+	bp := openBackupProject(ctx, t, pn)
+	defer func() { _ = bp.Done() }()
+
+	assertBackupVolumeExists(t, bp, bp.Config().DefaultStoragePool, "ic-backup-manifest")
+	entries := readBackupManifest(t, bp)
+	require.Len(t, entries, 0)
 }
 
 func TestE2EBackupCreateDefaultPool(t *testing.T) {
@@ -397,11 +422,11 @@ volumes:
 	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create")
 	require.NoError(t, err)
 
-	entries := readBackupManifest(t, projectDir)
-	require.Len(t, entries, 1)
-
 	bp := openBackupProject(ctx, t, pn)
 	defer func() { _ = bp.Done() }()
+
+	entries := readBackupManifest(t, bp)
+	require.Len(t, entries, 1)
 
 	pool := bp.Config().DefaultStoragePool
 	assertBackupVolumeExists(t, bp, pool, "ic-backup-vol-data")

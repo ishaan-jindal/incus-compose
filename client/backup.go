@@ -1,12 +1,12 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io"
+	"net/http"
 	"time"
 
 	incusClient "github.com/lxc/incus/v7/client"
@@ -32,9 +32,9 @@ type manifest struct {
 }
 
 const (
-	backupManifestDir  = ".incus-compose"
-	backupManifestFile = "backups.json"
-	backupVolumePrefix = "ic-backup-"
+	backupManifestFile   = "backups.json"
+	backupManifestVolume = backupVolumePrefix + "manifest"
+	backupVolumePrefix   = "ic-backup-"
 )
 
 // BackupManager manages volume backups for a compose project.
@@ -44,11 +44,10 @@ type BackupManager struct {
 	backupClient  *Client
 	composePool   string
 	backupPool    string
-	projectDir    string
 }
 
-// NewBackupManager creates a new BackupManager and ensures the backup project exists.
-func NewBackupManager(globalClient *GlobalClient, composeClient *Client, composePool string, backupConfig BackupConfig, projectDir string) (*BackupManager, error) {
+// NewBackupManager creates a new BackupManager and ensures the backup project and manifest volume exist.
+func NewBackupManager(globalClient *GlobalClient, composeClient *Client, composePool string, backupConfig BackupConfig) (*BackupManager, error) {
 	backupProject := composeClient.Project() + "-backup"
 
 	backupClient, err := globalClient.EnsureProject(backupProject, EnsureProjectWithCreate(), EnsureProjectWithConfig(map[string]string{"restricted": "false"}))
@@ -66,13 +65,35 @@ func NewBackupManager(globalClient *GlobalClient, composeClient *Client, compose
 		pool = composePool
 	}
 
+	conn, err := backupClient.Connection()
+	if err != nil {
+		return nil, err
+	}
+
+	_, _, err = conn.GetStoragePoolVolume(pool, "custom", backupManifestVolume)
+	if err != nil {
+		if !incusApi.StatusErrorCheck(err, http.StatusNotFound) {
+			return nil, fmt.Errorf("get manifest volume: %w", err)
+		}
+
+		volReq := incusApi.StorageVolumesPost{
+			Name:        backupManifestVolume,
+			Type:        "custom",
+			ContentType: "filesystem",
+		}
+
+		err = conn.CreateStoragePoolVolume(pool, volReq)
+		if err != nil {
+			return nil, fmt.Errorf("create manifest volume: %w", err)
+		}
+	}
+
 	return &BackupManager{
 		globalClient:  globalClient,
 		composeClient: composeClient,
 		backupClient:  backupClient,
 		composePool:   composePool,
 		backupPool:    pool,
-		projectDir:    projectDir,
 	}, nil
 }
 
@@ -85,23 +106,14 @@ func incusVolumeName(name string) string {
 	return "vol-" + SanitizeIncusName(name, MaxIncusNameLen-4)
 }
 
-func (bm *BackupManager) manifestPath() string {
-	return filepath.Join(bm.projectDir, backupManifestDir, backupManifestFile)
-}
-
-func (bm *BackupManager) readManifest() (*manifest, error) {
+func manifestFromJSON(data []byte) (*manifest, error) {
 	m := &manifest{Backups: []BackupEntry{}}
 
-	data, err := os.ReadFile(bm.manifestPath())
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return m, nil
-		}
-
-		return nil, fmt.Errorf("read manifest: %w", err)
+	if len(data) == 0 {
+		return m, nil
 	}
 
-	err = json.Unmarshal(data, m)
+	err := json.Unmarshal(data, m)
 	if err != nil {
 		return nil, fmt.Errorf("parse manifest: %w", err)
 	}
@@ -109,20 +121,48 @@ func (bm *BackupManager) readManifest() (*manifest, error) {
 	return m, nil
 }
 
-func (bm *BackupManager) writeManifest(m *manifest) error {
-	dir := filepath.Join(bm.projectDir, backupManifestDir)
-
-	err := os.MkdirAll(dir, 0o750)
+func (bm *BackupManager) readManifest() (*manifest, error) {
+	conn, err := bm.backupClient.Connection()
 	if err != nil {
-		return fmt.Errorf("create manifest directory: %w", err)
+		return nil, err
 	}
 
+	data, _, err := conn.GetStorageVolumeFile(bm.backupPool, "custom", backupManifestVolume, backupManifestFile)
+	if err != nil {
+		if incusApi.StatusErrorCheck(err, http.StatusNotFound) {
+			return &manifest{Backups: []BackupEntry{}}, nil
+		}
+
+		return nil, fmt.Errorf("read manifest: %w", err)
+	}
+	defer data.Close()
+
+	content, err := io.ReadAll(data)
+	if err != nil {
+		return nil, fmt.Errorf("read manifest: %w", err)
+	}
+
+	return manifestFromJSON(content)
+}
+
+func (bm *BackupManager) writeManifest(m *manifest) error {
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal manifest: %w", err)
 	}
 
-	err = os.WriteFile(bm.manifestPath(), data, 0o600)
+	conn, err := bm.backupClient.Connection()
+	if err != nil {
+		return err
+	}
+
+	args := incusClient.InstanceFileArgs{
+		Content:   bytes.NewReader(data),
+		WriteMode: "overwrite",
+		Mode:      0o600,
+	}
+
+	err = conn.CreateStorageVolumeFile(bm.backupPool, "custom", backupManifestVolume, backupManifestFile, args)
 	if err != nil {
 		return fmt.Errorf("write manifest: %w", err)
 	}
