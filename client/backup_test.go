@@ -137,3 +137,48 @@ func TestManifestJSONRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, m.Backups, got.Backups)
 }
+
+func TestLockEntryJSON(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	entry := lockEntry{
+		Token:   "abc123",
+		Host:    "test-host",
+		Created: now,
+	}
+
+	data, err := json.Marshal(entry)
+	require.NoError(t, err)
+
+	var got lockEntry
+	err = json.Unmarshal(data, &got)
+	require.NoError(t, err)
+	assert.Equal(t, entry.Token, got.Token)
+	assert.Equal(t, entry.Host, got.Host)
+	assert.True(t, entry.Created.Equal(got.Created))
+}
+
+func TestIsLockExpired(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		age   time.Duration
+		stale bool
+	}{
+		{"fresh", 1 * time.Minute, false},
+		{"just under threshold", backupLockStaleDuration - 1*time.Second, false},
+		{"at threshold", backupLockStaleDuration + 1*time.Second, true},
+		{"very old", 1 * time.Hour, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			entry := &lockEntry{Created: time.Now().Add(-tt.age)}
+			got := isLockExpired(entry)
+			assert.Equal(t, tt.stale, got)
+		})
+	}
+}

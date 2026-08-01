@@ -185,6 +185,20 @@ func deleteBackupProject(ctx context.Context, t *testing.T, composeProject strin
 	_ = gc.DeleteProject(composeProject+"-backup", true)
 }
 
+func assertNoLockFile(t *testing.T, c *client.Client) {
+	t.Helper()
+
+	conn, err := c.Connection()
+	require.NoError(t, err)
+
+	_, _, err = conn.GetStorageVolumeFile(c.Config().DefaultStoragePool, "custom", "ic-backup-manifest", "backup.lock")
+	if incusApi.StatusErrorCheck(err, http.StatusNotFound) {
+		return
+	}
+
+	t.Errorf("lock file should not exist after backup completes, but it was found")
+}
+
 func TestE2EBackupCreate(t *testing.T) {
 	t.Parallel()
 
@@ -218,6 +232,7 @@ func TestE2EBackupCreate(t *testing.T) {
 	pool := entries[0].Pool
 	assertBackupVolumeExists(t, bp, pool, "ic-backup-vol-data")
 	assertBackupSnapshotExists(t, bp, pool, "ic-backup-vol-data", entries[0].Timestamp)
+	assertNoLockFile(t, bp)
 
 	c := projectClient(ctx, t, pn)
 	exists, err := c.InstanceExists("app-1")
@@ -254,6 +269,7 @@ func TestE2EBackupCreateLive(t *testing.T) {
 	pool := entries[0].Pool
 	assertBackupVolumeExists(t, bp, pool, "ic-backup-vol-data")
 	assertBackupSnapshotExists(t, bp, pool, "ic-backup-vol-data", entries[0].Timestamp)
+	assertNoLockFile(t, bp)
 }
 
 func TestE2EBackupCreateNamed(t *testing.T) {
@@ -282,6 +298,7 @@ func TestE2EBackupCreateNamed(t *testing.T) {
 	entries := readBackupManifest(t, bp)
 	require.Len(t, entries, 1)
 	assert.Equal(t, "daily", entries[0].Name)
+	assertNoLockFile(t, bp)
 }
 
 func TestE2EBackupCreateIncremental(t *testing.T) {
@@ -315,6 +332,7 @@ func TestE2EBackupCreateIncremental(t *testing.T) {
 	assert.Equal(t, "first", entries[0].Name)
 	assert.Equal(t, "second", entries[1].Name)
 	assert.NotEqual(t, entries[0].Timestamp, entries[1].Timestamp)
+	assertNoLockFile(t, bp)
 }
 
 func TestE2EBackupCreateFiltered(t *testing.T) {
@@ -361,6 +379,7 @@ volumes:
 	entries := readBackupManifest(t, bp)
 	require.Len(t, entries, 1)
 	assert.Equal(t, []string{"db-data"}, entries[0].Volumes)
+	assertNoLockFile(t, bp)
 }
 
 func TestE2EBackupCreateNoVolumes(t *testing.T) {
@@ -430,4 +449,5 @@ volumes:
 
 	pool := bp.Config().DefaultStoragePool
 	assertBackupVolumeExists(t, bp, pool, "ic-backup-vol-data")
+	assertNoLockFile(t, bp)
 }
