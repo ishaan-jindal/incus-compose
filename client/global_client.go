@@ -411,8 +411,19 @@ func (c *GlobalClient) Connection() (*incusClient.ProtocolIncus, error) {
 	return incus, nil
 }
 
-// detectStoragePool gets the first storage pool from the incus server.
+// detectStoragePool prefers the storage pool used by the default profile's
+// root disk device, falling back to the first storage pool on the server.
 func (c *GlobalClient) detectStoragePool() error {
+	profile, _, err := c.incus.GetProfile("default")
+	if err == nil {
+		for _, device := range profile.Devices {
+			if device["type"] == "disk" && device["path"] == "/" && device["pool"] != "" {
+				c.config.DefaultStoragePool = device["pool"]
+				return nil
+			}
+		}
+	}
+
 	names, err := c.incus.GetStoragePoolNames()
 	if err != nil {
 		return fmt.Errorf("detecting storage pool: %w", err)
