@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"time"
 
-	"github.com/google/uuid"
 	incusClient "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 )
@@ -33,28 +31,28 @@ type manifest struct {
 	Backups []BackupEntry `json:"backups"`
 }
 
-// lockEntry represents a backup lock file content.
-type lockEntry struct {
-	Token   string    `json:"token"`
-	Host    string    `json:"host"`
-	Created time.Time `json:"created"`
-}
-
 const (
-	backupManifestFile      = "backups.json"
-	backupManifestVolume    = backupVolumePrefix + "manifest"
-	backupVolumePrefix      = "ic-backup-"
-	backupLockFile          = "backup.lock"
-	backupLockStaleDuration = 5 * time.Minute
+	backupManifestFile   = "backups.json"
+	backupManifestVolume = backupVolumePrefix + "manifest"
+	backupVolumePrefix   = "ic-backup-"
+	backupLockFile       = "backup.lock"
 )
 
 // BackupManager manages volume backups for a compose project.
 type BackupManager struct {
-	globalClient  *GlobalClient
 	composeClient *Client
 	backupClient  *Client
 	composePool   string
 	backupPool    string
+
+	// Lock parameters, overridable in tests.
+	lockTimeout time.Duration
+	lockStale   time.Duration
+	lockRefresh time.Duration
+
+	// lockCtx/lockCancel keep the lock refresh goroutine alive until the lock is released.
+	lockCtx    context.Context
+	lockCancel context.CancelFunc
 }
 
 // NewBackupManager creates a new BackupManager and ensures the backup project and manifest volume exist.
@@ -95,41 +93,32 @@ func NewBackupManager(globalClient *GlobalClient, composeClient *Client, compose
 
 		err = conn.CreateStoragePoolVolume(pool, volReq)
 		if err != nil {
-			return nil, fmt.Errorf("create manifest volume: %w", err)
+			// Another backup may have created the volume in the meantime.
+			_, _, getErr := conn.GetStoragePoolVolume(pool, "custom", backupManifestVolume)
+			if getErr != nil {
+				return nil, fmt.Errorf("create manifest volume: %w", err)
+			}
 		}
 	}
 
 	return &BackupManager{
-		globalClient:  globalClient,
 		composeClient: composeClient,
 		backupClient:  backupClient,
 		composePool:   composePool,
 		backupPool:    pool,
+		lockTimeout:   10 * time.Minute,
+		lockStale:     time.Minute,
+		lockRefresh:   time.Minute,
 	}, nil
 }
 
-// Done returns any accumulated error from the backup client.
+// Done fires the done hooks on the backup client.
 func (bm *BackupManager) Done() error {
 	return bm.backupClient.Done()
 }
 
 func incusVolumeName(name string) string {
 	return "vol-" + SanitizeIncusName(name, MaxIncusNameLen-4)
-}
-
-func manifestFromJSON(data []byte) (*manifest, error) {
-	m := &manifest{Backups: []BackupEntry{}}
-
-	if len(data) == 0 {
-		return m, nil
-	}
-
-	err := json.Unmarshal(data, m)
-	if err != nil {
-		return nil, fmt.Errorf("parse manifest: %w", err)
-	}
-
-	return m, nil
 }
 
 func (bm *BackupManager) readManifest() (*manifest, error) {
@@ -153,7 +142,17 @@ func (bm *BackupManager) readManifest() (*manifest, error) {
 		return nil, fmt.Errorf("read manifest: %w", err)
 	}
 
-	return manifestFromJSON(content)
+	m := &manifest{Backups: []BackupEntry{}}
+	if len(content) == 0 {
+		return m, nil
+	}
+
+	err = json.Unmarshal(content, m)
+	if err != nil {
+		return nil, fmt.Errorf("parse manifest: %w", err)
+	}
+
+	return m, nil
 }
 
 func (bm *BackupManager) writeManifest(m *manifest) error {
@@ -182,90 +181,80 @@ func (bm *BackupManager) writeManifest(m *manifest) error {
 }
 
 func (bm *BackupManager) acquireLock(ctx context.Context) error {
-	lockCtx, cancel := context.WithTimeout(ctx, backupLockStaleDuration)
+	lockCtx, cancel := context.WithTimeout(ctx, bm.lockTimeout)
 	defer cancel()
 
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
 	for {
-		acquired, err := bm.tryAcquireLock()
+		existing, err := bm.readLock()
 		if err != nil {
 			return fmt.Errorf("acquire backup lock: %w", err)
 		}
 
-		if acquired {
-			return nil
+		if existing == nil || time.Since(*existing) > bm.lockStale {
+			now := time.Now().UTC()
+			err = bm.writeLock(now)
+			if err != nil {
+				return fmt.Errorf("acquire backup lock: %w", err)
+			}
+
+			// Give concurrent writers time to land before confirming ownership.
+			time.Sleep(100 * time.Millisecond)
+
+			current, err := bm.readLock()
+			if err != nil {
+				return fmt.Errorf("acquire backup lock: %w", err)
+			}
+
+			if current != nil && current.Equal(now) {
+				bm.lockCtx, bm.lockCancel = context.WithCancel(ctx)
+				go bm.refreshLock()
+
+				return nil
+			}
 		}
 
 		select {
 		case <-lockCtx.Done():
-			entry, readErr := bm.readLock()
-			if readErr == nil && entry != nil {
-				return fmt.Errorf("timed out waiting for backup lock (held by %s since %s)", entry.Host, entry.Created.Format(time.RFC3339))
-			}
-
 			return fmt.Errorf("timed out waiting for backup lock: %w", lockCtx.Err())
 		case <-ticker.C:
 		}
 	}
 }
 
-func (bm *BackupManager) tryAcquireLock() (bool, error) {
-	existing, err := bm.readLock()
-	if err != nil {
-		return false, fmt.Errorf("read existing lock: %w", err)
+// refreshLock keeps the lock fresh while a backup is running so long backups don't go stale.
+func (bm *BackupManager) refreshLock() {
+	ticker := time.NewTicker(bm.lockRefresh)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-bm.lockCtx.Done():
+			return
+		case <-ticker.C:
+			// Keep refreshing on transient errors; the lock only goes stale when the process dies.
+			_ = bm.writeLock(time.Now().UTC())
+		}
 	}
-
-	if existing != nil && !isLockExpired(existing) {
-		return false, nil
-	}
-
-	host, err := os.Hostname()
-	if err != nil {
-		host = "unknown"
-	}
-
-	entry := lockEntry{
-		Token:   uuid.New().String(),
-		Host:    host,
-		Created: time.Now().UTC(),
-	}
-
-	err = bm.writeLock(&entry)
-	if err != nil {
-		return false, fmt.Errorf("write lock: %w", err)
-	}
-
-	time.Sleep(100 * time.Millisecond)
-
-	current, err := bm.readLock()
-	if err != nil {
-		return false, fmt.Errorf("read lock after write: %w", err)
-	}
-
-	if current == nil || current.Token != entry.Token {
-		return false, nil
-	}
-
-	return true, nil
 }
 
-func (bm *BackupManager) releaseLock() error {
+func (bm *BackupManager) releaseLock() {
+	if bm.lockCancel != nil {
+		bm.lockCancel()
+		bm.lockCancel = nil
+	}
+
 	conn, err := bm.backupClient.Connection()
 	if err != nil {
-		return err
+		return
 	}
 
-	err = conn.DeleteStorageVolumeFile(bm.backupPool, "custom", backupManifestVolume, backupLockFile)
-	if err != nil {
-		return fmt.Errorf("release lock: %w", err)
-	}
-
-	return nil
+	_ = conn.DeleteStorageVolumeFile(bm.backupPool, "custom", backupManifestVolume, backupLockFile)
 }
 
-func (bm *BackupManager) readLock() (*lockEntry, error) {
+func (bm *BackupManager) readLock() (*time.Time, error) {
 	conn, err := bm.backupClient.Connection()
 	if err != nil {
 		return nil, err
@@ -286,28 +275,22 @@ func (bm *BackupManager) readLock() (*lockEntry, error) {
 		return nil, fmt.Errorf("read lock content: %w", err)
 	}
 
-	entry := &lockEntry{}
-	err = json.Unmarshal(content, entry)
+	ts, err := time.Parse(time.RFC3339Nano, string(content))
 	if err != nil {
-		return nil, fmt.Errorf("parse lock entry: %w", err)
+		return nil, fmt.Errorf("backup.lock on volume %s in pool %s is corrupted; delete it with: incus storage volume file delete %s %s backup.lock --project %s", backupManifestVolume, bm.backupPool, bm.backupPool, backupManifestVolume, bm.backupClient.Project())
 	}
 
-	return entry, nil
+	return &ts, nil
 }
 
-func (bm *BackupManager) writeLock(entry *lockEntry) error {
-	data, err := json.Marshal(entry)
-	if err != nil {
-		return fmt.Errorf("marshal lock entry: %w", err)
-	}
-
+func (bm *BackupManager) writeLock(ts time.Time) error {
 	conn, err := bm.backupClient.Connection()
 	if err != nil {
 		return err
 	}
 
 	args := incusClient.InstanceFileArgs{
-		Content:   bytes.NewReader(data),
+		Content:   bytes.NewReader([]byte(ts.UTC().Format(time.RFC3339Nano))),
 		WriteMode: "overwrite",
 		Mode:      0o600,
 	}
@@ -320,25 +303,21 @@ func (bm *BackupManager) writeLock(entry *lockEntry) error {
 	return nil
 }
 
-func isLockExpired(entry *lockEntry) bool {
-	return time.Since(entry.Created) > backupLockStaleDuration
-}
-
 func timestamp() string {
-	return time.Now().UTC().Format(time.RFC3339)
+	return time.Now().UTC().Format(time.RFC3339Nano)
 }
 
 func backupIncusVolumeName(incusName string) string {
 	return backupVolumePrefix + incusName
 }
 
-// CreateBackup copies volumes to the backup project and snapshots the mirrors.
-func (bm *BackupManager) CreateBackup(ctx context.Context, name string, volumes []string) (string, error) {
+// Create copies volumes to the backup project and snapshots the mirrors.
+func (bm *BackupManager) Create(ctx context.Context, name string, volumes []string) (string, error) {
 	err := bm.acquireLock(ctx)
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = bm.releaseLock() }()
+	defer bm.releaseLock()
 
 	ts := timestamp()
 
@@ -381,13 +360,9 @@ func (bm *BackupManager) CreateBackup(ctx context.Context, name string, volumes 
 		}
 
 		copyOp, err := conn.CopyStoragePoolVolume(bm.backupPool, sourceConn, bm.composePool, srcVol, &copyArgs)
+		err = bm.backupClient.hookRemoteOperation(ctx, ActionEnsure, nil, NewOptions(), copyOp, err)
 		if err != nil {
 			return "", fmt.Errorf("copy volume %s: %w", volName, err)
-		}
-
-		err = copyOp.Wait()
-		if err != nil {
-			return "", fmt.Errorf("wait for volume copy %s: %w", volName, err)
 		}
 
 		snap := incusApi.StorageVolumeSnapshotsPost{
@@ -395,13 +370,9 @@ func (bm *BackupManager) CreateBackup(ctx context.Context, name string, volumes 
 		}
 
 		snapOp, err := conn.CreateStoragePoolVolumeSnapshot(bm.backupPool, "custom", bkpName, snap)
+		err = bm.backupClient.hookOperation(ctx, ActionEnsure, nil, NewOptions(), snapOp, err)
 		if err != nil {
 			return "", fmt.Errorf("snapshot volume %s: %w", volName, err)
-		}
-
-		err = snapOp.Wait()
-		if err != nil {
-			return "", fmt.Errorf("wait for snapshot %s: %w", volName, err)
 		}
 
 		entry.Volumes = append(entry.Volumes, volName)

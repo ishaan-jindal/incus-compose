@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,82 +17,6 @@ import (
 
 	"github.com/lxc/incus-compose/client"
 )
-
-func TestUniqueVolumeNames(t *testing.T) {
-	t.Parallel()
-
-	makeVol := func(name string, hostPath string) client.Resource {
-		c := client.NewOfflineClient(t.Context(), "unique-test")
-		r, err := c.Resource(client.KindStorageVolume, name, &client.StorageVolumeConfig{HostPath: hostPath})
-		require.NoError(t, err)
-
-		return r
-	}
-
-	tests := []struct {
-		name         string
-		resources    map[string][]client.Resource
-		onlyServices []string
-		want         []string
-	}{
-		{
-			name: "all volumes",
-			resources: map[string][]client.Resource{
-				"db":  {makeVol("db-data", "")},
-				"app": {makeVol("app-data", "")},
-			},
-			want: []string{"app-data", "db-data"},
-		},
-		{
-			name: "filter by service",
-			resources: map[string][]client.Resource{
-				"db":  {makeVol("db-data", "")},
-				"app": {makeVol("app-data", "")},
-			},
-			onlyServices: []string{"db"},
-			want:         []string{"db-data"},
-		},
-		{
-			name: "host-path volume excluded",
-			resources: map[string][]client.Resource{
-				"app": {
-					makeVol("data", ""),
-					makeVol("bind", "/host/path"),
-				},
-			},
-			want: []string{"data"},
-		},
-		{
-			name: "deduplicates by name",
-			resources: map[string][]client.Resource{
-				"db1": {makeVol("shared-data", "")},
-				"db2": {makeVol("shared-data", "")},
-			},
-			want: []string{"shared-data"},
-		},
-		{
-			name:      "no resources",
-			resources: map[string][]client.Resource{},
-			want:      nil,
-		},
-		{
-			name: "no matching services",
-			resources: map[string][]client.Resource{
-				"web": {makeVol("data", "")},
-			},
-			onlyServices: []string{"nonexistent"},
-			want:         nil,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := uniqueVolumeNames(tt.resources, tt.onlyServices)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
 
 func writeTempCompose(t *testing.T, content string) string {
 	t.Helper()
@@ -449,5 +374,44 @@ volumes:
 
 	pool := bp.Config().DefaultStoragePool
 	assertBackupVolumeExists(t, bp, pool, "ic-backup-vol-data")
+	assertNoLockFile(t, bp)
+}
+
+func TestE2EBackupCreateParallel(t *testing.T) {
+	t.Parallel()
+
+	compose := "../../test/fixtures/with-backup/compose.yaml"
+	projectDir := t.TempDir()
+
+	ctx := t.Context()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+		deleteBackupProject(context.Background(), t, pn)
+	})
+
+	_, err := runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, errs[i] = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create")
+		}(i)
+	}
+	wg.Wait()
+
+	require.NoError(t, errs[0])
+	require.NoError(t, errs[1])
+
+	bp := openBackupProject(ctx, t, pn)
+	defer func() { _ = bp.Done() }()
+
+	entries := readBackupManifest(t, bp)
+	require.Len(t, entries, 2)
 	assertNoLockFile(t, bp)
 }

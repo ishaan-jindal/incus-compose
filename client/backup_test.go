@@ -62,47 +62,6 @@ func TestTimestamp(t *testing.T) {
 	assert.True(t, parsed.UTC().Equal(parsed))
 }
 
-func TestManifestFromJSON(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		data    []byte
-		wantErr bool
-	}{
-		{
-			name: "nil data",
-		},
-		{
-			name: "empty data",
-			data: []byte{},
-		},
-		{
-			name: "valid manifest",
-			data: []byte(`{"backups":[{"timestamp":"2024-01-01T00:00:00Z","name":"daily","pool":"default","volumes":["vol-db-data"]}]}`),
-		},
-		{
-			name:    "invalid json",
-			data:    []byte(`{"backups":`),
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := manifestFromJSON(tt.data)
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
-
-			require.NoError(t, err)
-			assert.NotNil(t, got.Backups)
-		})
-	}
-}
-
 func TestBackupEntryJSON(t *testing.T) {
 	t.Parallel()
 
@@ -133,52 +92,71 @@ func TestManifestJSONRoundTrip(t *testing.T) {
 	data, err := json.Marshal(m)
 	require.NoError(t, err)
 
-	got, err := manifestFromJSON(data)
+	got := &manifest{}
+	err = json.Unmarshal(data, got)
 	require.NoError(t, err)
 	assert.Equal(t, m.Backups, got.Backups)
 }
 
-func TestLockEntryJSON(t *testing.T) {
-	t.Parallel()
+// newLockTestBackupManager creates a BackupManager on a fresh project and
+// cleans up the backup project on teardown.
+func newLockTestBackupManager(t *testing.T) (*GlobalClient, *Client, *BackupManager) {
+	t.Helper()
+	skipLocal(t)
 
-	now := time.Now().UTC().Truncate(time.Second)
-	entry := lockEntry{
-		Token:   "abc123",
-		Host:    "test-host",
-		Created: now,
-	}
-
-	data, err := json.Marshal(entry)
+	gc, err := NewTestClient(t.Context())
 	require.NoError(t, err)
 
-	var got lockEntry
-	err = json.Unmarshal(data, &got)
+	c := newRandomTestClient(t.Context(), t, "lock-")
+	pool := c.Config().DefaultStoragePool
+
+	bm, err := NewBackupManager(gc, c, pool, BackupConfig{})
 	require.NoError(t, err)
-	assert.Equal(t, entry.Token, got.Token)
-	assert.Equal(t, entry.Host, got.Host)
-	assert.True(t, entry.Created.Equal(got.Created))
+
+	t.Cleanup(func() {
+		_ = bm.Done()
+		_ = gc.DeleteProject(c.Project()+"-backup", true)
+	})
+
+	return gc, c, bm
 }
 
-func TestIsLockExpired(t *testing.T) {
+func TestBackupLockExclusive(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name  string
-		age   time.Duration
-		stale bool
-	}{
-		{"fresh", 1 * time.Minute, false},
-		{"just under threshold", backupLockStaleDuration - 1*time.Second, false},
-		{"at threshold", backupLockStaleDuration + 1*time.Second, true},
-		{"very old", 1 * time.Hour, true},
-	}
+	gc, c, bmA := newLockTestBackupManager(t)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			entry := &lockEntry{Created: time.Now().Add(-tt.age)}
-			got := isLockExpired(entry)
-			assert.Equal(t, tt.stale, got)
-		})
-	}
+	bmB, err := NewBackupManager(gc, c, c.Config().DefaultStoragePool, BackupConfig{})
+	require.NoError(t, err)
+	bmB.lockTimeout = 2 * time.Second
+	t.Cleanup(func() { _ = bmB.Done() })
+
+	ctx := t.Context()
+
+	err = bmA.acquireLock(ctx)
+	require.NoError(t, err)
+
+	start := time.Now()
+	err = bmB.acquireLock(ctx)
+	require.Error(t, err)
+	assert.Greater(t, time.Since(start), time.Second)
+
+	bmA.releaseLock()
+
+	err = bmB.acquireLock(ctx)
+	require.NoError(t, err)
+	bmB.releaseLock()
+}
+
+func TestBackupLockStaleTakeover(t *testing.T) {
+	t.Parallel()
+
+	_, _, bm := newLockTestBackupManager(t)
+
+	err := bm.writeLock(time.Now().UTC().Add(-10 * time.Minute))
+	require.NoError(t, err)
+
+	err = bm.acquireLock(t.Context())
+	require.NoError(t, err)
+	bm.releaseLock()
 }
