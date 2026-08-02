@@ -9,6 +9,13 @@ Version numbering moved from `0.0.1` to `1.0.0` at beta11 (1.0.0 is the intended
 final version), and the beta suffix gained a dot (`beta.16`) from beta.16 onward
 for correct semver ordering. Headings below preserve each release's announced form.
 
+## [1.1.1] - unreleased
+
+### Changed
+
+- `up` without `--detach` no behaves the same as `docker compose`, it creates
+  and starts the resources, then runs logs and on interrupt `down`. (by @jochumdev)
+
 ## [1.1.0] - 2026-07-31
 
 ### Changed

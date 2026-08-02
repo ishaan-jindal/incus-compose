@@ -166,6 +166,107 @@ func (f *logHandler) stopStreams() {
 	})
 }
 
+// logsArgs holds the logs() options, mirroring the logs command's flags.
+type logsArgs struct {
+	Follow bool
+	Writer io.Writer
+}
+
+// logs streams or dumps the project's container logs.
+func logs(ctx context.Context, p *project.Project, c *client.Client, args logsArgs) error {
+	noColor := noColor(ctx)
+
+	formatter := newLogFormatter(args.Writer, noColor)
+	c.Global().SetOutputHandler(formatter.write)
+
+	knownNames := p.InstanceNames()
+	knownInstances := make(map[string]*client.Instance, len(knownNames))
+	for _, name := range knownNames {
+		r, err := c.Resource(client.KindInstance, name, &client.InstanceConfig{})
+		if err != nil {
+			continue
+		}
+
+		inst, ok := r.(*client.Instance)
+		if !ok {
+			continue
+		}
+
+		knownInstances[inst.IncusName()] = inst
+	}
+
+	if !args.Follow {
+		for _, inst := range knownInstances {
+			formatter.registerService(inst.Name())
+			_ = inst.Log(ctx)
+		}
+
+		formatter.flush()
+		return nil
+	}
+
+	conn, err := c.Connection()
+	if err != nil {
+		c.LogError("Getting connection for events", "error", err)
+		return errLogged.Wrap(err)
+	}
+
+	listener, err := conn.GetEventsByType([]string{incusApi.EventTypeLifecycle})
+	if err != nil {
+		c.LogError("Subscribing to events", "error", err)
+		return errLogged.Wrap(err)
+	}
+	defer listener.Disconnect()
+
+	defer formatter.stopStreams()
+
+	projectGone := make(chan struct{})
+	incusProject := c.IncusProject()
+
+	_, err = listener.AddHandler([]string{incusApi.EventTypeLifecycle}, func(event incusApi.Event) {
+		var lifecycle incusApi.EventLifecycle
+		if err := json.Unmarshal(event.Metadata, &lifecycle); err != nil {
+			return
+		}
+
+		if lifecycle.Action == incusApi.EventLifecycleProjectDeleted && lifecycle.Name == incusProject {
+			close(projectGone)
+			return
+		}
+
+		inst, known := knownInstances[lifecycle.Name]
+		if !known {
+			return
+		}
+
+		switch lifecycle.Action {
+		case incusApi.EventLifecycleInstanceStarted:
+			formatter.startStream(ctx, inst)
+		case incusApi.EventLifecycleInstanceStopped, incusApi.EventLifecycleInstanceDeleted, incusApi.EventLifecycleInstanceShutdown:
+			formatter.stopStream(lifecycle.Name)
+		}
+	})
+	if err != nil {
+		c.LogError("Adding event handler", "error", err)
+		return errLogged.Wrap(err)
+	}
+
+	for _, inst := range knownInstances {
+		formatter.startStream(ctx, inst)
+	}
+
+	select {
+	case <-ctx.Done():
+	case <-projectGone:
+		c.LogError("Project deleted")
+		formatter.flush()
+		return errLogged
+	}
+
+	formatter.flush()
+	return nil
+}
+
 func newLogsCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "logs",
@@ -181,8 +282,6 @@ func newLogsCommand() *cli.Command {
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			noColor := noColor(ctx)
-
 			globalClient, err := clientFromContext(ctx)
 			if err != nil {
 				return err
@@ -208,95 +307,10 @@ func newLogsCommand() *cli.Command {
 			}
 			defer func() { _ = c.Done() }()
 
-			formatter := newLogFormatter(cmd.Root().Writer, noColor)
-			globalClient.SetOutputHandler(formatter.write)
-
-			knownNames := p.InstanceNames()
-			knownInstances := make(map[string]*client.Instance, len(knownNames))
-			for _, name := range knownNames {
-				r, err := c.Resource(client.KindInstance, name, &client.InstanceConfig{})
-				if err != nil {
-					continue
-				}
-
-				inst, ok := r.(*client.Instance)
-				if !ok {
-					continue
-				}
-
-				knownInstances[inst.IncusName()] = inst
-			}
-
-			if !cmd.Bool("follow") {
-				for _, inst := range knownInstances {
-					formatter.registerService(inst.Name())
-					_ = inst.Log(ctx)
-				}
-
-				formatter.flush()
-				return nil
-			}
-
-			conn, err := c.Connection()
-			if err != nil {
-				c.LogError("Getting connection for events", "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			listener, err := conn.GetEventsByType([]string{incusApi.EventTypeLifecycle})
-			if err != nil {
-				c.LogError("Subscribing to events", "error", err)
-				return errLogged.Wrap(err)
-			}
-			defer listener.Disconnect()
-
-			defer formatter.stopStreams()
-
-			projectGone := make(chan struct{})
-			incusProject := c.IncusProject()
-
-			_, err = listener.AddHandler([]string{incusApi.EventTypeLifecycle}, func(event incusApi.Event) {
-				var lifecycle incusApi.EventLifecycle
-				if err := json.Unmarshal(event.Metadata, &lifecycle); err != nil {
-					return
-				}
-
-				if lifecycle.Action == incusApi.EventLifecycleProjectDeleted && lifecycle.Name == incusProject {
-					close(projectGone)
-					return
-				}
-
-				inst, known := knownInstances[lifecycle.Name]
-				if !known {
-					return
-				}
-
-				switch lifecycle.Action {
-				case incusApi.EventLifecycleInstanceStarted:
-					formatter.startStream(ctx, inst)
-				case incusApi.EventLifecycleInstanceStopped, incusApi.EventLifecycleInstanceDeleted, incusApi.EventLifecycleInstanceShutdown:
-					formatter.stopStream(lifecycle.Name)
-				}
+			return logs(ctx, p, c, logsArgs{
+				Follow: cmd.Bool("follow"),
+				Writer: cmd.Root().Writer,
 			})
-			if err != nil {
-				c.LogError("Adding event handler", "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			for _, inst := range knownInstances {
-				formatter.startStream(ctx, inst)
-			}
-
-			select {
-			case <-ctx.Done():
-			case <-projectGone:
-				c.LogError("Project deleted")
-				formatter.flush()
-				return errLogged
-			}
-
-			formatter.flush()
-			return nil
 		},
 	}
 }
