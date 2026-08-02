@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/mattn/go-isatty"
@@ -238,8 +240,9 @@ func newUpCommand() *cli.Command {
 				}
 			}
 
+			var progress *progressRenderer
 			if !cmd.Root().Bool("debug") {
-				progress := newProgressRenderer(cmd.Root().Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
+				progress = newProgressRenderer(cmd.Root().Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
 				progress.Start(c)
 				defer progress.Stop(c)
 			}
@@ -298,9 +301,39 @@ func newUpCommand() *cli.Command {
 				}
 			}
 
-			_ = c.Done()
+			if cmd.Bool("detach") {
+				_ = c.Done()
+				return nil
+			}
 
-			return nil
+			// Stop rendering progress before streaming logs; it is idempotent so
+			// the deferred call above becomes a no-op.
+			if progress != nil {
+				progress.Stop(c)
+			}
+
+			logsCtx, stopNotify := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+			defer stopNotify()
+
+			_ = logs(logsCtx, p, c, logsArgs{
+				Follow: true,
+				Writer: cmd.Root().Writer,
+			})
+
+			// The interrupt that ended the log stream should also tear down
+			// what up started, mirroring the `down` command.
+			return down(ctx, p, rc, downArgs{
+				Timeout:    cmd.Duration("timeout"),
+				NoDeps:     cmd.Bool("no-deps"),
+				NoNetworks: true,
+				Services:   cmd.Args().Slice(),
+				Workers:    cmd.Root().Int("workers"),
+				Debug:      cmd.Root().Bool("debug"),
+				Scale:      scale,
+				Writer:     cmd.Root().Writer,
+				Reverse:    true,
+				NoHealthd:  !usesHealthd,
+			})
 		},
 	}
 }
