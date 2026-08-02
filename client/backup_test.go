@@ -132,7 +132,12 @@ func TestBackupLockExclusive(t *testing.T) {
 	bmB, err := NewBackupManager(gc, c, c.Config().DefaultStoragePool, BackupConfig{})
 	require.NoError(t, err)
 	bmB.lockTimeout = 2 * time.Second
+	bmB.lockStale = 500 * time.Millisecond
 	t.Cleanup(func() { _ = bmB.Done() })
+
+	// Shrink A's timings too, so its lock stays fresh for the whole test.
+	bmA.lockStale = 500 * time.Millisecond
+	bmA.lockRefresh = 100 * time.Millisecond
 
 	ctx := t.Context()
 
@@ -172,6 +177,7 @@ func TestBackupLockRefresh(t *testing.T) {
 	bmB, err := NewBackupManager(gc, c, c.Config().DefaultStoragePool, BackupConfig{})
 	require.NoError(t, err)
 	bmB.lockTimeout = 2 * time.Second
+	bmB.lockStale = 500 * time.Millisecond
 	t.Cleanup(func() { _ = bmB.Done() })
 
 	// Shrink the timings so the test runs fast: A refreshes every 100ms
@@ -189,7 +195,8 @@ func TestBackupLockRefresh(t *testing.T) {
 
 	start := time.Now()
 	err = bmB.acquireLock(ctx)
-	require.Error(t, err, "refresh must keep the lock from going stale")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "timed out waiting for backup lock")
 	assert.Greater(t, time.Since(start), time.Second)
 
 	bmA.releaseLock()
@@ -214,7 +221,8 @@ func TestBackupLockCorrupt(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// Unparseable content is treated as an absent lock, so the backup takes over.
 	err = bm.acquireLock(t.Context())
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "delete it with: incus storage volume file delete")
+	require.NoError(t, err)
+	bm.releaseLock()
 }

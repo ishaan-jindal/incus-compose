@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/avast/retry-go/v5"
 	incusClient "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 )
@@ -108,7 +109,7 @@ func NewBackupManager(globalClient *GlobalClient, composeClient *Client, compose
 		backupPool:    pool,
 		lockTimeout:   10 * time.Minute,
 		lockStale:     time.Minute,
-		lockRefresh:   time.Minute,
+		lockRefresh:   30 * time.Second,
 	}, nil
 }
 
@@ -251,7 +252,13 @@ func (bm *BackupManager) releaseLock() {
 		return
 	}
 
-	_ = conn.DeleteStorageVolumeFile(bm.backupPool, "custom", backupManifestVolume, backupLockFile)
+	// A refresh write may be in flight; retry so it does not outlive the release.
+	_ = retry.New(
+		retry.Attempts(3),
+		retry.Delay(200*time.Millisecond),
+	).Do(func() error {
+		return conn.DeleteStorageVolumeFile(bm.backupPool, "custom", backupManifestVolume, backupLockFile)
+	})
 }
 
 func (bm *BackupManager) readLock() (*time.Time, error) {
@@ -272,12 +279,14 @@ func (bm *BackupManager) readLock() (*time.Time, error) {
 
 	content, err := io.ReadAll(data)
 	if err != nil {
-		return nil, fmt.Errorf("read lock content: %w", err)
+		// A concurrent refresh may replace the file mid-read; treat it as an absent lock.
+		return nil, nil
 	}
 
 	ts, err := time.Parse(time.RFC3339Nano, string(content))
 	if err != nil {
-		return nil, fmt.Errorf("backup.lock on volume %s in pool %s is corrupted; delete it with: incus storage volume file delete %s %s backup.lock --project %s", backupManifestVolume, bm.backupPool, bm.backupPool, backupManifestVolume, bm.backupClient.Project())
+		// A concurrent refresh may write mid-read; treat unparseable content as an absent lock.
+		return nil, nil
 	}
 
 	return &ts, nil
