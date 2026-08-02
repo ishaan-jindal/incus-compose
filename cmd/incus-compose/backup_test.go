@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	incusClient "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 
 	"github.com/lxc/incus-compose/client"
@@ -258,6 +260,11 @@ func TestE2EBackupCreateIncremental(t *testing.T) {
 	assert.Equal(t, "second", entries[1].Name)
 	assert.NotEqual(t, entries[0].Timestamp, entries[1].Timestamp)
 	assertNoLockFile(t, bp)
+
+	pool := entries[0].Pool
+	assertBackupVolumeExists(t, bp, pool, "ic-backup-vol-data")
+	assertBackupSnapshotExists(t, bp, pool, "ic-backup-vol-data", entries[0].Timestamp)
+	assertBackupSnapshotExists(t, bp, pool, "ic-backup-vol-data", entries[1].Timestamp)
 }
 
 func TestE2EBackupCreateFiltered(t *testing.T) {
@@ -414,4 +421,52 @@ func TestE2EBackupCreateParallel(t *testing.T) {
 	entries := readBackupManifest(t, bp)
 	require.Len(t, entries, 2)
 	assertNoLockFile(t, bp)
+}
+
+func TestE2EBackupCreateDataIntegrity(t *testing.T) {
+	t.Parallel()
+
+	compose := "../../test/fixtures/with-backup/compose.yaml"
+	projectDir := t.TempDir()
+
+	ctx := t.Context()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+		deleteBackupProject(context.Background(), t, pn)
+	})
+
+	_, err := runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	// Seed a file into the compose volume.
+	c := projectClient(ctx, t, pn)
+	conn, err := c.Connection()
+	require.NoError(t, err)
+
+	err = conn.CreateStorageVolumeFile(c.Config().DefaultStoragePool, "custom", "vol-data", "backup-test.txt", incusClient.InstanceFileArgs{
+		Content:   bytes.NewReader([]byte("hello-backup")),
+		WriteMode: "overwrite",
+		Mode:      0o644,
+	})
+	require.NoError(t, err)
+
+	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create", "--live")
+	require.NoError(t, err)
+
+	bp := openBackupProject(ctx, t, pn)
+	defer func() { _ = bp.Done() }()
+
+	// The file must be present in the backup mirror.
+	bConn, err := bp.Connection()
+	require.NoError(t, err)
+
+	data, _, err := bConn.GetStorageVolumeFile(bp.Config().DefaultStoragePool, "custom", "ic-backup-vol-data", "backup-test.txt")
+	require.NoError(t, err)
+	defer data.Close()
+
+	content, err := io.ReadAll(data)
+	require.NoError(t, err)
+	assert.Equal(t, "hello-backup", string(content))
 }

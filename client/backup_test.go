@@ -1,12 +1,15 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	incusClient "github.com/lxc/incus/v7/client"
 )
 
 func TestIncusVolumeName(t *testing.T) {
@@ -159,4 +162,59 @@ func TestBackupLockStaleTakeover(t *testing.T) {
 	err = bm.acquireLock(t.Context())
 	require.NoError(t, err)
 	bm.releaseLock()
+}
+
+func TestBackupLockRefresh(t *testing.T) {
+	t.Parallel()
+
+	gc, c, bmA := newLockTestBackupManager(t)
+
+	bmB, err := NewBackupManager(gc, c, c.Config().DefaultStoragePool, BackupConfig{})
+	require.NoError(t, err)
+	bmB.lockTimeout = 2 * time.Second
+	t.Cleanup(func() { _ = bmB.Done() })
+
+	// Shrink the timings so the test runs fast: A refreshes every 100ms
+	// against a 500ms stale window, so its lock never expires.
+	bmA.lockStale = 500 * time.Millisecond
+	bmA.lockRefresh = 100 * time.Millisecond
+
+	ctx := t.Context()
+
+	err = bmA.acquireLock(ctx)
+	require.NoError(t, err)
+
+	// Wait past the stale window; refresh must keep the lock alive.
+	time.Sleep(1200 * time.Millisecond)
+
+	start := time.Now()
+	err = bmB.acquireLock(ctx)
+	require.Error(t, err, "refresh must keep the lock from going stale")
+	assert.Greater(t, time.Since(start), time.Second)
+
+	bmA.releaseLock()
+
+	err = bmB.acquireLock(ctx)
+	require.NoError(t, err)
+	bmB.releaseLock()
+}
+
+func TestBackupLockCorrupt(t *testing.T) {
+	t.Parallel()
+
+	_, _, bm := newLockTestBackupManager(t)
+
+	conn, err := bm.backupClient.Connection()
+	require.NoError(t, err)
+
+	err = conn.CreateStorageVolumeFile(bm.backupPool, "custom", backupManifestVolume, backupLockFile, incusClient.InstanceFileArgs{
+		Content:   bytes.NewReader([]byte("not-a-timestamp")),
+		WriteMode: "overwrite",
+		Mode:      0o600,
+	})
+	require.NoError(t, err)
+
+	err = bm.acquireLock(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "delete it with: incus storage volume file delete")
 }
