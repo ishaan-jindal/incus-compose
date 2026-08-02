@@ -316,6 +316,11 @@ if [[ $OVN == "true" ]]; then
     incus exec "${CONTAINER_NAME}" -- incus network create ic-ovn-seed --type=ovn network=none
 fi
 
+if [[ $STORAGE_POOL != "default" ]]; then
+  echo "==> Setting the default profiles root device storage pool"
+  incus exec "${CONTAINER_NAME}" -- incus profile device set default root "pool=${STORAGE_POOL}"
+fi
+
 # Inject client certificate into trust store
 echo "==> Adding client certificate to nested Incus trust store"
 incus file push -- "${CLIENT_CERT}" "${CONTAINER_NAME}/root/client.crt"

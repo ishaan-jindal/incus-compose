@@ -16,6 +16,11 @@ for correct semver ordering. Headings below preserve each release's announced fo
 - `up` without `--detach` no behaves the same as `docker compose`, it creates
   and starts the resources, then runs logs and on interrupt `down`. (by @jochumdev)
 
+### Fixed
+
+- default pool detection now checks the "root" device of the "default" profile first,
+  if not found falls back to first pool found. (by @jochumdev)
+
 ## [1.1.0] - 2026-07-31
 
 ### Changed
