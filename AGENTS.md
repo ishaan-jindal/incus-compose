@@ -29,7 +29,9 @@ discussable - always ask before guessing.
 
 - Code comments should be no longer than one line, unless they are required to cover complex unintuitive logic.
 - Commit messages should similarly be kept as short and to the point as possible, no need to summarize the whole issue. Keep the conventional `<type>(<scope>): <description>` format from CONTRIBUTING.md.
-- It is always save to use `gofmt` within this project.
+- Never hand-edit imports or formatting. Run `just fix` and let it do that -
+  it applies `gofmt` and `goimports` via the formatters in `.golangci.yml`.
+  It is always save to run `just fix` within this project.
 - We don't use the define and test one line `if` syntax, instead splitting definition and testing across two lines:
 
   ```go
