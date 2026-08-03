@@ -407,7 +407,23 @@ func (r *Network) updateDNSAliases(ownedServices []string, newIPs map[string][]s
 	}
 
 	if userFound {
-		s.WriteString(userRaw)
+		existing := map[string]struct{}{}
+		for _, line := range strings.Split(cExtra, "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				existing[line] = struct{}{}
+			}
+		}
+		for _, line := range strings.Split(userRaw, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			if _, ok := existing[line]; ok {
+				continue
+			}
+			fmt.Fprintf(&s, "%s\n", line)
+		}
 	}
 
 	raw := s.String()
