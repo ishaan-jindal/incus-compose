@@ -725,6 +725,45 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		assert.Empty(t, devices)
 		assert.Empty(t, resources)
 	})
+
+	t.Run("network address none or auto does not error", func(t *testing.T) {
+		t.Parallel()
+
+		p := &types.Project{Networks: types.Networks{
+			"frontend": {Extensions: types.Extensions{"x-incus": map[string]any{
+				"ipv4.address": "10.0.1.1/24",
+				"ipv6.address": "none",
+			}}},
+			"backend": {Extensions: types.Extensions{"x-incus": map[string]any{
+				"ipv4.address": "auto",
+			}}},
+		}}
+		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
+			"frontend": {},
+			"backend":  {},
+		}}
+
+		devices, _, err := instanceNetworkDevices(c, p, service, "")
+		require.NoError(t, err)
+		assert.Len(t, devices, 2)
+	})
+
+	t.Run("static ip on auto address network errors", func(t *testing.T) {
+		t.Parallel()
+
+		p := &types.Project{Networks: types.Networks{
+			"frontend": {Extensions: types.Extensions{"x-incus": map[string]any{
+				"ipv4.address": "auto",
+			}}},
+		}}
+		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
+			"frontend": {Ipv4Address: "10.0.0.5"},
+		}}
+
+		_, _, err := instanceNetworkDevices(c, p, service, "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "\"auto\"")
+	})
 }
 
 func TestInstanceProxyDevices(t *testing.T) {
