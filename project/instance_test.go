@@ -677,6 +677,45 @@ func TestInstanceImage(t *testing.T) {
 		assert.Contains(t, img.IncusName(), "web")
 	})
 
+	t.Run("relative dockerfile resolves against the context", func(t *testing.T) {
+		t.Parallel()
+		res, err := instanceImage(c, types.ServiceConfig{
+			Name:  "dfrel",
+			Build: &types.BuildConfig{Context: "/ctx", Dockerfile: "Dockerfile"},
+		})
+		require.NoError(t, err)
+		img, ok := res.(*client.Image)
+		require.True(t, ok)
+		require.NotNil(t, img.Config.Build)
+		assert.Equal(t, "/ctx/Dockerfile", img.Config.Build.Dockerfile)
+	})
+
+	t.Run("absolute dockerfile is left alone", func(t *testing.T) {
+		t.Parallel()
+		res, err := instanceImage(c, types.ServiceConfig{
+			Name:  "dfabs",
+			Build: &types.BuildConfig{Context: "/ctx", Dockerfile: "/elsewhere/Dockerfile"},
+		})
+		require.NoError(t, err)
+		img, ok := res.(*client.Image)
+		require.True(t, ok)
+		require.NotNil(t, img.Config.Build)
+		assert.Equal(t, "/elsewhere/Dockerfile", img.Config.Build.Dockerfile)
+	})
+
+	t.Run("empty dockerfile stays empty", func(t *testing.T) {
+		t.Parallel()
+		res, err := instanceImage(c, types.ServiceConfig{
+			Name:  "dfnone",
+			Build: &types.BuildConfig{Context: "/ctx"},
+		})
+		require.NoError(t, err)
+		img, ok := res.(*client.Image)
+		require.True(t, ok)
+		require.NotNil(t, img.Config.Build)
+		assert.Empty(t, img.Config.Build.Dockerfile)
+	})
+
 	t.Run("build with multiple platforms errors but still builds image", func(t *testing.T) {
 		t.Parallel()
 		res, err := instanceImage(c, types.ServiceConfig{

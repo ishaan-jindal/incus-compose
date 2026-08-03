@@ -7,6 +7,7 @@ import (
 	"maps"
 	"net"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -266,9 +267,17 @@ func instanceImage(c *client.Client, service types.ServiceConfig) (client.Resour
 		if err != nil {
 			errs = errors.Join(errs, err)
 		}
+		// compose-go resolves build.context to an absolute path but leaves
+		// build.dockerfile untouched, and the builder resolves a relative
+		// --file against its own working directory instead of the context.
+		dockerfile := service.Build.Dockerfile
+		if dockerfile != "" && !filepath.IsAbs(dockerfile) {
+			dockerfile = filepath.Join(service.Build.Context, dockerfile)
+		}
+
 		buildCfg := &client.BuildConfig{
 			Context:          service.Build.Context,
-			Dockerfile:       service.Build.Dockerfile,
+			Dockerfile:       dockerfile,
 			DockerfileInline: service.Build.DockerfileInline,
 			Target:           service.Build.Target,
 			Platform:         platform,
