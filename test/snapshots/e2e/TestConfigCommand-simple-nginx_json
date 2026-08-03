@@ -1,19 +1,19 @@
 {
   "name": "test-local-config",
+  "networks": {
+    "default": {
+      "name": "test-local-config_default"
+    }
+  },
   "services": {
     "web": {
-      "command": null,
-      "entrypoint": null,
       "image": "docker.io/alpine:edge",
       "networks": {
         "default": null
+      },
+      "x-incus": {
+        "limits.cpu": 1
       }
-    }
-  },
-  "networks": {
-    "default": {
-      "name": "test-local-config_default",
-      "ipam": {}
     }
   }
 }
