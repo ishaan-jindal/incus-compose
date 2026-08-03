@@ -30,7 +30,7 @@ cleanup:
 [env("INCUS_COMPOSE_IMAGE_CACHE", "incus-compose-tests-cache")]
 test folder="./..." *args:
     export DATE=`date +%Y%m%d-%H%M%S`; \
-      gotestsum --hide-summary=skipped --format dots-v2 --jsonfile=test/logs/${DATE}.json --packages={{ folder }} \
+      gotestsum --hide-summary=skipped --format testname --jsonfile=test/logs/${DATE}.json --packages={{ folder }} \
         --post-run-command "bash -c 'echo; echo Slowest tests; gotestsum tool slowest --num 10 --jsonfile test/logs/${DATE}.json'" \
         -- -parallel {{ v_test_procs }} -timeout 20m -covermode atomic -coverprofile test/logs/${DATE}-cover.out -v "${@:2}"; \
 
@@ -230,6 +230,26 @@ purge-tokens:
         echo "  Revoking: ${token}"
         incus config trust revoke-token "${remote}:${token}"
     done <<< "${tokens}"
+    echo "Done."
+
+# Removes all trusted client certificates, except the one named "client.crt"
+purge-certs:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    remote="${INCUS_REMOTE:-local}"
+    certs=$(incus config trust list "${remote}:" -f json | jq -r '.[] | select(.name != "client.crt") | .fingerprint')
+
+    if [[ -z "${certs}" ]]; then
+        echo "No certificates found."
+        exit 1
+    fi
+
+    echo "Removing certificates on remote '${remote}':"
+    while IFS= read -r cert; do
+        echo "  Removing: ${cert}"
+        incus config trust remove "${remote}:${cert}"
+    done <<< "${certs}"
     echo "Done."
 
 # Run this before you commit/push.
