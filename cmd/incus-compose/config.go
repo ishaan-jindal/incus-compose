@@ -227,11 +227,24 @@ func newConfigCommand() *cli.Command {
 			// Output full config in requested format
 			switch cmd.String("format") {
 			case "json":
+				// Render via YAML: compose-go tags every Extensions field
+				// json:"-", so marshaling the project directly drops all
+				// x-incus/x-incus-compose blocks from the JSON output.
+				yamlBytes, err := yaml.Marshal(p)
+				if err != nil {
+					return err
+				}
+				var tree map[string]any
+				err = yaml.Unmarshal(yamlBytes, &tree)
+				if err != nil {
+					return err
+				}
+
 				// Use a buffer to capture JSON output and remove trailing newline
 				var buf bytes.Buffer
 				encoder := json.NewEncoder(&buf)
 				encoder.SetIndent("", "  ")
-				err := encoder.Encode(p)
+				err = encoder.Encode(tree)
 				if err != nil {
 					return err
 				}

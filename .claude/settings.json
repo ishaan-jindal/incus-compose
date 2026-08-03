@@ -12,7 +12,6 @@
       "Bash(fd:*)",
       "Bash(grep:*)",
       "Bash(rg:*)",
-      "Bash(gofmt:*)",
       "Bash(go doc:*)",
       "Bash(go vet:*)",
       "Bash(go mod:*)",

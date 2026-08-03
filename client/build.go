@@ -44,8 +44,10 @@ type BuildConfig struct {
 	// Context is the build context directory (absolute path).
 	Context string
 
-	// Dockerfile is an optional path to the Containerfile/Dockerfile.
-	// Empty means the builder uses its default (Containerfile or Dockerfile in Context).
+	// Dockerfile is an optional path to the Containerfile/Dockerfile, passed to
+	// the builder verbatim, so a relative path resolves against the process
+	// working directory rather than Context. Empty means the builder uses its
+	// default (Containerfile or Dockerfile in Context).
 	Dockerfile string
 
 	// DockerfileInline is inline Dockerfile content from compose build.dockerfile_inline.

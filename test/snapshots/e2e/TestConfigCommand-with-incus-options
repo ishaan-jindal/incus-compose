@@ -1,24 +1,23 @@
-project:
-  name: test-local-config
-  services:
-    database:
-      image: docker.io/alpine:edge
-      networks:
-        default: null
-      x-incus:
-        limits.cpu: "4"
-        limits.memory: 1GB
-    web:
-      dns:
-        - 8.8.8.8
-      image: docker.io/alpine:edge
-      networks:
-        default: null
-      x-incus:
-        limits.cpu: "2"
-        limits.memory: 1024MB
-        oci.dns.nameservers: 9.9.9.9
-        security.nesting: "false"
-  networks:
-    default:
-      name: test-local-config_default
+name: test-local-config
+services:
+  database:
+    image: docker.io/alpine:edge
+    networks:
+      default: null
+    x-incus:
+      limits.cpu: "4"
+      limits.memory: 1GB
+  web:
+    dns:
+      - 8.8.8.8
+    image: docker.io/alpine:edge
+    networks:
+      default: null
+    x-incus:
+      limits.cpu: "2"
+      limits.memory: 1024MB
+      oci.dns.nameservers: 9.9.9.9
+      security.nesting: "false"
+networks:
+  default:
+    name: test-local-config_default

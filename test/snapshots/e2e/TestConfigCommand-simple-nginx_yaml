@@ -1,12 +1,11 @@
-project:
-  name: test-local-config
-  services:
-    web:
-      image: docker.io/alpine:edge
-      networks:
-        default: null
-      x-incus:
-        limits.cpu: 1
-  networks:
-    default:
-      name: test-local-config_default
+name: test-local-config
+services:
+  web:
+    image: docker.io/alpine:edge
+    networks:
+      default: null
+    x-incus:
+      limits.cpu: 1
+networks:
+  default:
+    name: test-local-config_default

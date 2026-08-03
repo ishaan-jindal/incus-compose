@@ -318,8 +318,6 @@ func (r *StorageVolume) pushDirectoryContent() error {
 		if err != nil {
 			return err
 		}
-		defer r.client.WarnError(f.Close, "Failure during close")
-
 		args.Type = "file"
 		args.Content = f
 		return r.conn.CreateStorageVolumeFile(r.Config.Pool, "custom", r.incusName, rel, args)

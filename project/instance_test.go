@@ -677,6 +677,45 @@ func TestInstanceImage(t *testing.T) {
 		assert.Contains(t, img.IncusName(), "web")
 	})
 
+	t.Run("relative dockerfile resolves against the context", func(t *testing.T) {
+		t.Parallel()
+		res, err := instanceImage(c, types.ServiceConfig{
+			Name:  "dfrel",
+			Build: &types.BuildConfig{Context: "/ctx", Dockerfile: "Dockerfile"},
+		})
+		require.NoError(t, err)
+		img, ok := res.(*client.Image)
+		require.True(t, ok)
+		require.NotNil(t, img.Config.Build)
+		assert.Equal(t, "/ctx/Dockerfile", img.Config.Build.Dockerfile)
+	})
+
+	t.Run("absolute dockerfile is left alone", func(t *testing.T) {
+		t.Parallel()
+		res, err := instanceImage(c, types.ServiceConfig{
+			Name:  "dfabs",
+			Build: &types.BuildConfig{Context: "/ctx", Dockerfile: "/elsewhere/Dockerfile"},
+		})
+		require.NoError(t, err)
+		img, ok := res.(*client.Image)
+		require.True(t, ok)
+		require.NotNil(t, img.Config.Build)
+		assert.Equal(t, "/elsewhere/Dockerfile", img.Config.Build.Dockerfile)
+	})
+
+	t.Run("empty dockerfile stays empty", func(t *testing.T) {
+		t.Parallel()
+		res, err := instanceImage(c, types.ServiceConfig{
+			Name:  "dfnone",
+			Build: &types.BuildConfig{Context: "/ctx"},
+		})
+		require.NoError(t, err)
+		img, ok := res.(*client.Image)
+		require.True(t, ok)
+		require.NotNil(t, img.Config.Build)
+		assert.Empty(t, img.Config.Build.Dockerfile)
+	})
+
 	t.Run("build with multiple platforms errors but still builds image", func(t *testing.T) {
 		t.Parallel()
 		res, err := instanceImage(c, types.ServiceConfig{
@@ -724,6 +763,45 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, devices)
 		assert.Empty(t, resources)
+	})
+
+	t.Run("network address none or auto does not error", func(t *testing.T) {
+		t.Parallel()
+
+		p := &types.Project{Networks: types.Networks{
+			"frontend": {Extensions: types.Extensions{"x-incus": map[string]any{
+				"ipv4.address": "10.0.1.1/24",
+				"ipv6.address": "none",
+			}}},
+			"backend": {Extensions: types.Extensions{"x-incus": map[string]any{
+				"ipv4.address": "auto",
+			}}},
+		}}
+		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
+			"frontend": {},
+			"backend":  {},
+		}}
+
+		devices, _, err := instanceNetworkDevices(c, p, service, "")
+		require.NoError(t, err)
+		assert.Len(t, devices, 2)
+	})
+
+	t.Run("static ip on auto address network errors", func(t *testing.T) {
+		t.Parallel()
+
+		p := &types.Project{Networks: types.Networks{
+			"frontend": {Extensions: types.Extensions{"x-incus": map[string]any{
+				"ipv4.address": "auto",
+			}}},
+		}}
+		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
+			"frontend": {Ipv4Address: "10.0.0.5"},
+		}}
+
+		_, _, err := instanceNetworkDevices(c, p, service, "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "\"auto\"")
 	})
 }
 

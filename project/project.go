@@ -128,7 +128,10 @@ func LoadModel(ctx context.Context, opts ...LoadOption) (map[string]any, error) 
 
 // Project wraps a Docker Compose project with Incus client integration.
 type Project struct {
-	*types.Project
+	// encoding/json promotes an embedded struct's fields automatically, yaml
+	// needs ",inline" to match - without it the YAML output nests everything
+	// under a "project" key that docker compose does not emit.
+	*types.Project `yaml:",inline"`
 
 	ClientConfig XICProject `json:"-" yaml:"-"`
 }

@@ -1,23 +1,15 @@
-project:
-  name: test-local-config
-  services:
-    web:
-      deploy:
-        replicas: 4
-      image: docker.io/alpine:edge
-      networks:
-        default: null
-      restart: unless-stopped
-      x-incus:
-        limits.cpu: "1"
-        limits.memory: 512MB
-  networks:
-    default:
-      name: test-local-config_default
-  x-incus:
-    limits.cpu: "5"
-    limits.memory: 2149MB
-    limits.virtual-machines: 0
-  x-incus-compose:
-    healthd:
-      external: true
+name: test-local-config
+services:
+  web:
+    deploy:
+      replicas: 4
+    image: docker.io/alpine:edge
+    networks:
+      default: null
+    restart: unless-stopped
+    x-incus:
+      limits.cpu: "1"
+      limits.memory: 512MB
+networks:
+  default:
+    name: test-local-config_default
