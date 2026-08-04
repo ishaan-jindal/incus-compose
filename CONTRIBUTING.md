@@ -202,6 +202,27 @@ feat(cmd): add --timeout flag to up command
 chore(client): rename Resource interface method
 ```
 
+### Changelog
+
+[CHANGELOG.md](CHANGELOG.md) follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Add the entry in the same commit as the change, under the unreleased heading, in
+`Added`/`Changed`/`Fixed`, ending with `(by @handle)`.
+
+An entry is needed when a user or a library consumer can observe the difference:
+
+- behaviour, CLI flags, or command output
+- a bug they could have hit, even when the cause was internal
+- anything exported from `client/` or `project/`; prefix those with `**library**:`
+  and spell out breaking changes
+
+No entry for contributor docs (`AGENTS.md`, `CONTRIBUTING.md`, `docs/`), dev
+tooling (`justfile`, `scripts/`), tests, or refactors with no observable
+difference.
+
+Write what changed for the reader, not what you did to the code - "concurrent
+`up` runs no longer fail creating the same network", not "added a retry to
+Ensure".
+
 ## Testing
 
 For comprehensive testing documentation including patterns, fixtures, and best practices, see [testing on docs.incus-compose.org](https://docs.incus-compose.org/architecture/testing).
