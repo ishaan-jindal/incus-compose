@@ -329,6 +329,10 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 			netConfig.Extensions = networkExtensions(networkDef)
 			netConfig.OverrideName = xICInstanceNetwork(networkDef)
 
+			// Incus documents "auto" for ipv4.address/ipv6.address, but it is
+			// broken upstream (fix pending), so leave the key unset instead.
+			// Keep treating the empty value as the auto case afterwards too,
+			// for backward compatibility.
 			if !networkDef.Internal {
 				v, ok := netConfig.Extensions["ipv4.address"]
 				if ok && v != "none" && v != "" {
