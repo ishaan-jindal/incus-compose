@@ -119,22 +119,28 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	}
 	files = append(files, configs...)
 
+	err = checkEntrypoint(service)
+	if err != nil {
+		errs = errors.Join(errs, err)
+	}
+
 	if errs != nil {
 		return nil, nil, errs
 	}
 
 	instCfg := &client.InstanceConfig{
-		ServiceName:      service.Name,
-		Image:            image.Name(),
-		Full:             options.Full,
-		Resources:        slices.Clone(resources),
-		Extensions:       config,
-		Devices:          devices,
-		Files:            files,
-		Dependencies:     instanceDependencyWaits(p, service, options),
-		AppendEntrypoint: formatCommand(service.Command),
-		UID:              uid,
-		GID:              gid,
+		ServiceName:  service.Name,
+		Image:        image.Name(),
+		Full:         options.Full,
+		Resources:    slices.Clone(resources),
+		Extensions:   config,
+		Devices:      devices,
+		Files:        files,
+		Dependencies: instanceDependencyWaits(p, service, options),
+		Entrypoint:   service.Entrypoint,
+		Command:      service.Command,
+		UID:          uid,
+		GID:          gid,
 	}
 
 	ir, err := c.Resource(client.KindInstance, instanceName, instCfg)
@@ -1144,20 +1150,12 @@ func serviceExtraDevices(service types.ServiceConfig) ([]client.InstanceDevice, 
 	return devices, nil
 }
 
-// formatCommand shell-quotes a command slice for appending to oci.entrypoint.
-// Every element is an argument (the binary comes from the image entrypoint), so
-// all are quoted; Incus splits the result back with shellquote.Split.
-func formatCommand(cmd []string) string {
-	if len(cmd) == 0 {
-		return ""
-	}
-	if len(cmd) == 1 {
-		return cmd[0]
+// checkEntrypoint rejects a service whose entrypoint and command are both
+// explicitly empty, which would leave nothing to exec.
+func checkEntrypoint(service types.ServiceConfig) error {
+	if service.Entrypoint == nil || len(service.Entrypoint)+len(service.Command) > 0 {
+		return nil
 	}
 
-	quoted := make([]string, len(cmd))
-	for i := range cmd {
-		quoted[i] = `"` + cmd[i] + `"`
-	}
-	return strings.Join(quoted, " ")
+	return fmt.Errorf("service %q sets an empty entrypoint and no command, leaving nothing to run", service.Name)
 }

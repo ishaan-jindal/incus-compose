@@ -1,9 +1,14 @@
 name: with-seeded-bind-mounts
 services:
   dir-web:
-    command:
-      - -c
-      - httpd -f -v -p 8080 -h /www
+    entrypoint:
+      - httpd
+      - -f
+      - -v
+      - -p
+      - "8080"
+      - -h
+      - /www
     image: docker.io/library/busybox:glibc
     networks:
       default: null
@@ -17,9 +22,14 @@ services:
     x-incus:
       limits.cpu: 1
   file-web:
-    command:
-      - -c
-      - httpd -f -v -p 8080 -h /www
+    entrypoint:
+      - httpd
+      - -f
+      - -v
+      - -p
+      - "8080"
+      - -h
+      - /www
     image: docker.io/library/busybox:glibc
     networks:
       default: null

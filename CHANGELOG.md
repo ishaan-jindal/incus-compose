@@ -20,6 +20,16 @@ for correct semver ordering. Headings below preserve each release's announced fo
   volume over SFTP and provide an advisory lock on it, with optional stale
   takeover and heartbeat. Lock names may contain slashes; missing parent
   directories are created. (by @jochumdev)
+- `entrypoint:` is supported and follows the compose spec: it replaces the
+  image's entrypoint, and the image's default command is discarded, so the
+  container runs exactly `entrypoint:` plus `command:`. `command:` on its own is
+  unchanged - it is still appended to the image entrypoint, because Incus
+  reports that with the image command already merged in. Use `entrypoint:` when
+  you need the command to be exactly what you wrote. (by @jochumdev)
+- **library**: `InstanceConfig.AppendEntrypoint` (a pre-quoted string) became
+  `InstanceConfig.Entrypoint` and `InstanceConfig.Command`, both `[]string`.
+  Quoting and the merge with the image entrypoint now happen at instance
+  creation, when the image is known. (by @jochumdev)
 
 ### Changed
 
@@ -69,6 +79,10 @@ for correct semver ordering. Headings below preserve each release's announced fo
 - a `configs:` or `secrets:` entry whose target already exists in the image is
   written instead of being silently skipped, so a config can replace a file the
   image ships (e.g. an application's own default config). (by @jochumdev)
+- `command:` arguments containing spaces, quotes or `$` are shell-quoted
+  correctly. They were wrapped in double quotes with no escaping, and a
+  single-argument command was passed through unquoted, so either could be
+  re-split into the wrong arguments. (by @jochumdev)
 
 ## [1.1.0] - 2026-07-31
 

@@ -1,7 +1,7 @@
 services:
   web:
     image: docker.io/library/busybox:glibc
-    command: ["-c", "httpd -f -v -p 8080 -h /www"]
+    entrypoint: ["httpd", "-f", "-v", "-p", "8080", "-h", "/www"]
     x-incus:
       limits.cpu: 1
     volumes:

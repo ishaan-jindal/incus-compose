@@ -322,7 +322,7 @@ func TestE2ERepeatedCrashesBackoff(t *testing.T) {
   frontend:
     image: docker.io/library/busybox:glibc
     restart: unless-stopped
-    command: ["-c", "mkdir -p /www && echo frontend-ok > /www/index.html && httpd -f -v -p 8080 -h /www"]
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /www && echo frontend-ok > /www/index.html && httpd -f -v -p 8080 -h /www"]
     x-incus:
       limits.cpu: 1
     depends_on:
@@ -339,7 +339,7 @@ func TestE2ERepeatedCrashesBackoff(t *testing.T) {
   backend1:
     image: docker.io/library/busybox:glibc
     restart: unless-stopped
-    command: ["-c", "mkdir -p /www && echo backend1-ok > /www/index.html && httpd -f -v -p 8080 -h /www"]
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /www && echo backend1-ok > /www/index.html && httpd -f -v -p 8080 -h /www"]
     x-incus:
       limits.cpu: 1
     healthcheck:
@@ -351,7 +351,7 @@ func TestE2ERepeatedCrashesBackoff(t *testing.T) {
   backend2:
     image: docker.io/library/busybox:glibc
     restart: unless-stopped
-    command: ["-c", "mkdir -p /www && echo backend2-ok > /www/index.html && httpd -f -v -p 8080 -h /www"]
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /www && echo backend2-ok > /www/index.html && httpd -f -v -p 8080 -h /www"]
     x-incus:
       limits.cpu: 1
     healthcheck:

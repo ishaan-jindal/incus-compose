@@ -1,7 +1,8 @@
 name: proxy
 services:
   backend1:
-    command:
+    entrypoint:
+      - /bin/sh
       - -c
       - mkdir -p /www && echo backend1-ok > /www/index.html && httpd -f -v -p 8080
         -h /www
@@ -22,7 +23,8 @@ services:
     x-incus:
       limits.cpu: 1
   backend2:
-    command:
+    entrypoint:
+      - /bin/sh
       - -c
       - mkdir -p /www && echo backend2-ok > /www/index.html && httpd -f -v -p 8080
         -h /www
@@ -43,10 +45,6 @@ services:
     x-incus:
       limits.cpu: 1
   frontend:
-    command:
-      - -c
-      - mkdir -p /www && echo frontend-ok > /www/index.html && httpd -f -v -p 8080
-        -h /www
     depends_on:
       backend1:
         condition: service_healthy
@@ -54,6 +52,11 @@ services:
       backend2:
         condition: service_healthy
         required: true
+    entrypoint:
+      - /bin/sh
+      - -c
+      - mkdir -p /www && echo frontend-ok > /www/index.html && httpd -f -v -p 8080
+        -h /www
     healthcheck:
       test:
         - CMD

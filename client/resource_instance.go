@@ -18,6 +18,7 @@ import (
 
 	"github.com/avast/retry-go/v5"
 	"github.com/gorilla/websocket"
+	"github.com/kballard/go-shellquote"
 	incusClient "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/pkg/sftp"
@@ -92,9 +93,12 @@ type InstanceConfig struct {
 	// Priority if set sets the instance priority to this instead PriorityInstance.
 	Priority int
 
-	// AppendEntrypoint will be with a space appended to "oci.entrypoint".
-	// This is here cause at configuration time we don't know what `oci.entrypoint` is.
-	AppendEntrypoint string
+	// Entrypoint overrides the image entrypoint (compose `entrypoint:`). Nil
+	// means unset; a non-nil value discards the image's default command.
+	Entrypoint []string
+
+	// Command overrides the image command (compose `command:`).
+	Command []string
 
 	// UID if not 0 use that value else use the user id from the image.
 	UID uint64
@@ -454,8 +458,9 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 		}
 	}
 
-	if r.Config.AppendEntrypoint != "" {
-		config["oci.entrypoint"] = r.image.Entrypoint + " " + r.Config.AppendEntrypoint
+	entrypoint := resolveEntrypoint(r.image.Entrypoint, r.Config.Entrypoint, r.Config.Command)
+	if entrypoint != "" {
+		config["oci.entrypoint"] = entrypoint
 	}
 
 	// Store UID/GID.
@@ -1510,6 +1515,26 @@ func (t *logTerminal) Read(_ []byte) (int, error) {
 // Close implements io.Closer.
 func (t *logTerminal) Close() error {
 	return nil
+}
+
+// resolveEntrypoint builds oci.entrypoint from a compose entrypoint and command.
+// Incus splits the value back with shellquote.Split, so Join is its inverse.
+//
+// A non-nil entrypoint replaces the image's argv outright: the compose spec
+// discards the image's default command in that case, so nothing from the image
+// is needed. With no entrypoint the command can only be appended to the image
+// entrypoint, because Incus reports it with the image command already merged in
+// and never exposes the two separately.
+func resolveEntrypoint(imageEntrypoint string, entrypoint, command []string) string {
+	if entrypoint != nil {
+		return shellquote.Join(slices.Concat(entrypoint, command)...)
+	}
+
+	if len(command) == 0 {
+		return ""
+	}
+
+	return imageEntrypoint + " " + shellquote.Join(command...)
 }
 
 // extractUIDGID extracts UID and GID from a container instance.
