@@ -89,14 +89,32 @@ Prefer Go-style concise names over Java-style verbose names:
 | `Copied()` | `IsCopiedToProject()` |
 | `Status()` | `GetCurrentStatus()`  |
 | `Valid()`  | `IsValidInstance()`   |
+| `Backuper` | `BackupManager`       |
+| `mu`       | `wellKnownMu`         |
 | `err`      | `errorResult`         |
 
 Go code reads better when names are short and context provides meaning.
+
+Name a type for what it *is*, not for the role it plays: `Backuper`, not
+`BackupManager`. `-Manager`, `-Handler`, `-Service` and `-Helper` suffixes carry
+no information.
+
+Don't qualify a variable with what it guards or holds when the scope already
+says it - a mutex in a struct with one lock is `mu`.
+
+### Helpers
+
+Avoid single-purpose helpers. A function with one caller is usually better
+inlined: the indirection costs the reader a jump and hides the flow. The
+exception is when extracting it makes the caller *much* easier to read - a
+noisy block reduced to one named line.
 
 ### Comments
 
 - All exported functions and types need doc comments ending with a period
 - No misleading comments - if code is self-explanatory, don't comment
+- Comments are code: keep them as short as what they explain, and delete them
+  when the code already says it
 
 ### Use of `any`
 
@@ -184,6 +202,27 @@ feat(cmd): add --timeout flag to up command
 chore(client): rename Resource interface method
 ```
 
+### Changelog
+
+[CHANGELOG.md](CHANGELOG.md) follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Add the entry in the same commit as the change, under the unreleased heading, in
+`Added`/`Changed`/`Fixed`, ending with `(by @handle)`.
+
+An entry is needed when a user or a library consumer can observe the difference:
+
+- behaviour, CLI flags, or command output
+- a bug they could have hit, even when the cause was internal
+- anything exported from `client/` or `project/`; prefix those with `**library**:`
+  and spell out breaking changes
+
+No entry for contributor docs (`AGENTS.md`, `CONTRIBUTING.md`, `docs/`), dev
+tooling (`justfile`, `scripts/`), tests, or refactors with no observable
+difference.
+
+Write what changed for the reader, not what you did to the code - "concurrent
+`up` runs no longer fail creating the same network", not "added a retry to
+Ensure".
+
 ## Testing
 
 For comprehensive testing documentation including patterns, fixtures, and best practices, see [testing on docs.incus-compose.org](https://docs.incus-compose.org/architecture/testing).
@@ -197,6 +236,9 @@ Output should match `docker compose config` where possible.
 **Intentional differences**:
 
 - OS env vars not included by default (use `--os-env` for compatibility)
+- `config --format=json` keeps `x-incus`/`x-incus-compose` (compose-go tags
+  extensions `json:"-"`, so docker drops them); it therefore omits docker's
+  explicit `command`/`entrypoint`/`ipam` nulls. `--format=yaml` matches exactly.
 
 ## Questions?
 

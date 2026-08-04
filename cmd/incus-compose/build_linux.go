@@ -127,9 +127,16 @@ func newBuildCommand() *cli.Command {
 				client.OptionCreate(),
 				client.OptionBuild(buildInfo),
 			}
-			if pull == "always" {
-				ensureOpts = append(ensureOpts, client.OptionPull())
+			// "missing" and the legacy "policy" are the default, as is anything unknown.
+			pullMode := client.PullMissing
+			switch pull {
+			case "always":
+				pullMode = client.PullAlways
+			case "never":
+				pullMode = client.PullNever
 			}
+
+			ensureOpts = append(ensureOpts, client.OptionPullMode(pullMode))
 
 			err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, ensureOpts...)
 			if err != nil {

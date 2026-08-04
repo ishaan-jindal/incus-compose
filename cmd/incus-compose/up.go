@@ -78,7 +78,7 @@ func newUpCommand() *cli.Command {
 			&cli.BoolFlag{
 				Name:    "detach",
 				Aliases: []string{"d"},
-				Usage:   "Detached mode: run containers in the background (a WIP)",
+				Usage:   "Detached mode: run containers in the background",
 				Sources: cli.EnvVars("INCUS_COMPOSE_UP_DETACH"),
 			},
 			&cli.BoolFlag{
@@ -271,12 +271,16 @@ func newUpCommand() *cli.Command {
 
 			c.LogDebug("Ensure", "resources", stack.All())
 
-			// Ensure with create. --pull=always refreshes cached images from registry.
-			// policy and missing only use the local cache (pull if not present).
-			startOptions := append(append([]client.Option{}, runOptions...), client.OptionCreate())
-			if cmd.String("pull") == "always" {
-				startOptions = append(startOptions, client.OptionPull())
+			// "missing" and the legacy "policy" are the default, as is anything unknown.
+			pull := client.PullMissing
+			switch cmd.String("pull") {
+			case "always":
+				pull = client.PullAlways
+			case "never":
+				pull = client.PullNever
 			}
+
+			startOptions := append(append([]client.Option{}, runOptions...), client.OptionCreate(), client.OptionPullMode(pull))
 			if buildInfo.Mode != client.BuildAuto || buildInfo.PreferredBuilder != "" {
 				startOptions = append(startOptions, client.OptionBuild(buildInfo))
 			}

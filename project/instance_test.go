@@ -765,7 +765,7 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		assert.Empty(t, resources)
 	})
 
-	t.Run("network address none or auto does not error", func(t *testing.T) {
+	t.Run("network address none or unset does not error", func(t *testing.T) {
 		t.Parallel()
 
 		p := &types.Project{Networks: types.Networks{
@@ -773,9 +773,7 @@ func TestInstanceNetworkDevices(t *testing.T) {
 				"ipv4.address": "10.0.1.1/24",
 				"ipv6.address": "none",
 			}}},
-			"backend": {Extensions: types.Extensions{"x-incus": map[string]any{
-				"ipv4.address": "auto",
-			}}},
+			"backend": {},
 		}}
 		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
 			"frontend": {},
@@ -787,13 +785,11 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		assert.Len(t, devices, 2)
 	})
 
-	t.Run("static ip on auto address network errors", func(t *testing.T) {
+	t.Run("static ip on a network with no address errors", func(t *testing.T) {
 		t.Parallel()
 
 		p := &types.Project{Networks: types.Networks{
-			"frontend": {Extensions: types.Extensions{"x-incus": map[string]any{
-				"ipv4.address": "auto",
-			}}},
+			"frontend": {},
 		}}
 		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
 			"frontend": {Ipv4Address: "10.0.0.5"},
@@ -801,7 +797,32 @@ func TestInstanceNetworkDevices(t *testing.T) {
 
 		_, _, err := instanceNetworkDevices(c, p, service, "")
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "\"auto\"")
+		assert.Contains(t, err.Error(), "with no address")
+	})
+
+	t.Run("static ip on an address-less network is allowed with an explicit nic gateway", func(t *testing.T) {
+		t.Parallel()
+		skipNo73(t, c)
+
+		p := &types.Project{Networks: types.Networks{
+			"frontend": {},
+		}}
+		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
+			"frontend": {
+				Ipv4Address: "10.0.0.5",
+				Ipv6Address: "fd42::5",
+				Extensions: types.Extensions{"x-incus": map[string]any{
+					"ipv4.gateway": "10.0.0.1",
+					"ipv6.gateway": "fd42::1",
+				}},
+			},
+		}}
+
+		devices, _, err := instanceNetworkDevices(c, p, service, "")
+		require.NoError(t, err)
+		require.Len(t, devices, 1)
+		assert.Equal(t, "10.0.0.5", devices[0].Config.Extensions["ipv4.address"])
+		assert.Equal(t, "fd42::5", devices[0].Config.Extensions["ipv6.address"])
 	})
 }
 

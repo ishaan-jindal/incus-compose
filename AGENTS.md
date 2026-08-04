@@ -61,6 +61,10 @@ commands instead of raw `go` (see `just --list`).
 - Think through framework/library behavior before coding.
 - Keep code direct - no unnecessary intermediate variables; use `_` for unused parameters.
 - If cycling (same approach, no progress), stop and ask.
+- Removing user-visible output or an exported symbol is its own announced change, never folded into a cleanup.
+- Run long commands (test suites, builds, `up`) in the background so the terminal stays usable, and report when they exit.
+- Never chain edit -> test -> restore in one shell invocation. Interrupted or denied mid-chain the edit lands and the restore never runs; keep each step separately reversible.
+- Before changing behaviour that contradicts the upstream docs, check them (`~/vendor/go/incus/doc/`). If we deviate anyway, record why in the code - the next reader will otherwise "fix" it back.
 
 ## Claude agents
 

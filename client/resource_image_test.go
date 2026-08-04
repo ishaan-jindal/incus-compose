@@ -2,7 +2,11 @@ package client
 
 import (
 	"context"
+	"fmt"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -409,6 +413,445 @@ func TestImageFromCache(t *testing.T) {
 	// Create should work without a source (no panic) as we have the image in cache.
 	img.source = nil
 	require.NoError(t, img.create(ctx, NewOptions()))
+}
+
+func TestImagePullNever_StoreHit(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := t.Context()
+	c := newRandomTestClient(ctx, t, "image-pull-never-hit-")
+
+	r, err := c.Resource(KindImage, "docker.io/library/alpine:3.21", &ImageConfig{})
+	require.NoError(t, err)
+
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+	require.NoError(t, RunAction(ctx, r, ActionDelete))
+
+	img, ok := r.(*Image)
+	require.True(t, ok)
+	require.Error(t, img.get())
+
+	// Served from the cache without ever consulting the source.
+	img.source = nil
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate(), OptionPullMode(PullNever)))
+}
+
+func TestImagePullNever_StoreMiss(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := t.Context()
+	c := newRandomTestClient(ctx, t, "image-pull-never-miss-")
+
+	// A name the shared test cache cannot already hold; never is expected to
+	// fail without contacting the registry at all.
+	name := "docker.io/library/ic-absent-" + strings.ToLower(RandString(8)) + ":latest"
+	r, err := c.Resource(KindImage, name, &ImageConfig{})
+	require.NoError(t, err)
+
+	err = RunAction(ctx, r, ActionEnsure, OptionCreate(), OptionPullMode(PullNever))
+	require.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestImageBuild_StoreHitSkipsBuilder(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := t.Context()
+
+	// Seed the cache under the alias the build would produce.
+	seed := newRandomTestClient(ctx, t, "image-build-seed-")
+	r, err := seed.Resource(KindImage, "docker.io/library/alpine:3.20", &ImageConfig{})
+	require.NoError(t, err)
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+
+	// Another project wanting the same alias must copy from the cache. The
+	// context does not exist, so invoking the builder would fail.
+	c := newRandomTestClient(ctx, t, "image-build-cachehit-")
+	b, err := c.Resource(KindImage, "docker.io/library/alpine:3.20", &ImageConfig{
+		Build: &BuildConfig{Context: "/nonexistent-build-context"},
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, RunAction(ctx, b, ActionEnsure, OptionCreate()))
+	require.True(t, b.IsEnsured())
+}
+
+// lockableImage returns an Image with its cache resolved, ready for lockStore.
+func lockableImage(t *testing.T, c *Client, name string) *Image {
+	t.Helper()
+
+	r, err := c.Resource(KindImage, name, &ImageConfig{})
+	require.NoError(t, err)
+
+	img, ok := r.(*Image)
+	require.True(t, ok)
+	require.NoError(t, img.setupCacheAndSource())
+
+	return img
+}
+
+func TestImageLockStore_SameAliasSerializes(t *testing.T) {
+	skipLocal(t)
+	ctx := t.Context()
+
+	name := "docker.io/library/ic-lock-" + strings.ToLower(RandString(8)) + ":latest"
+	a := lockableImage(t, newRandomTestClient(ctx, t, "image-lock-same-a-"), name)
+	b := lockableImage(t, newRandomTestClient(ctx, t, "image-lock-same-b-"), name)
+
+	release, err := a.lockStore(ctx)
+	require.NoError(t, err)
+
+	acquired := make(chan error, 1)
+	go func() {
+		releaseB, err := b.lockStore(ctx)
+		if releaseB != nil {
+			releaseB()
+		}
+		acquired <- err
+	}()
+
+	select {
+	case <-acquired:
+		t.Fatal("second lock acquired while the first was held")
+	case <-time.After(time.Second):
+	}
+
+	release()
+
+	select {
+	case err := <-acquired:
+		require.NoError(t, err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("second lock never acquired after release")
+	}
+}
+
+func TestImageLockStore_DifferentAliasesDoNotBlock(t *testing.T) {
+	skipLocal(t)
+	ctx := t.Context()
+
+	suffix := strings.ToLower(RandString(8))
+	a := lockableImage(t, newRandomTestClient(ctx, t, "image-lock-diff-a-"), "docker.io/library/ic-locka-"+suffix+":latest")
+	b := lockableImage(t, newRandomTestClient(ctx, t, "image-lock-diff-b-"), "docker.io/library/ic-lockb-"+suffix+":latest")
+
+	release, err := a.lockStore(ctx)
+	require.NoError(t, err)
+	defer release()
+
+	acquired := make(chan error, 1)
+	go func() {
+		releaseB, err := b.lockStore(ctx)
+		if releaseB != nil {
+			releaseB()
+		}
+		acquired <- err
+	}()
+
+	select {
+	case err := <-acquired:
+		require.NoError(t, err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("a different alias blocked on an unrelated lock")
+	}
+}
+
+func TestImageEnsure_ConcurrentSameImage(t *testing.T) {
+	skipLocal(t)
+	ctx := t.Context()
+
+	const workers = 4
+	images := make([]*Image, workers)
+	for i := range images {
+		c := newRandomTestClient(ctx, t, "image-concurrent-same-")
+		r, err := c.Resource(KindImage, "docker.io/library/alpine:3.21", &ImageConfig{})
+		require.NoError(t, err)
+
+		img, ok := r.(*Image)
+		require.True(t, ok)
+		images[i] = img
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, workers)
+
+	for i, img := range images {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = RunAction(ctx, img, ActionEnsure, OptionCreate())
+		}()
+	}
+	wg.Wait()
+
+	// One alias, so every worker must end up on the same fingerprint.
+	for i, err := range errs {
+		require.NoError(t, err, i)
+		require.True(t, images[i].IsEnsured(), i)
+		require.Equal(t, images[0].IncusAlias.Target, images[i].IncusAlias.Target, i)
+	}
+}
+
+func TestImageEnsure_ConcurrentDifferentImages(t *testing.T) {
+	skipLocal(t)
+	ctx := t.Context()
+
+	names := []string{
+		"docker.io/library/alpine:3.21",
+		"docker.io/library/alpine:3.20",
+		"docker.io/library/busybox:latest",
+	}
+
+	images := make([]*Image, len(names))
+	for i, name := range names {
+		c := newRandomTestClient(ctx, t, "image-concurrent-diff-")
+		r, err := c.Resource(KindImage, name, &ImageConfig{})
+		require.NoError(t, err)
+
+		img, ok := r.(*Image)
+		require.True(t, ok)
+		images[i] = img
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, len(names))
+
+	for i, img := range images {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = RunAction(ctx, img, ActionEnsure, OptionCreate())
+		}()
+	}
+	wg.Wait()
+
+	seen := map[string]bool{}
+	for i, err := range errs {
+		require.NoError(t, err, names[i])
+		require.True(t, images[i].IsEnsured(), names[i])
+
+		target := images[i].IncusAlias.Target
+		require.False(t, seen[target], "distinct images share a fingerprint")
+		seen[target] = true
+	}
+}
+
+func TestImageEnsure_ProjectCopySurvivesCacheDeletion(t *testing.T) {
+	skipLocal(t)
+	ctx := t.Context()
+	c := newRandomTestClient(ctx, t, "image-cache-pruned-")
+
+	r, err := c.Resource(KindImage, "docker.io/library/busybox:1.33", &ImageConfig{})
+	require.NoError(t, err)
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+
+	img, ok := r.(*Image)
+	require.True(t, ok)
+	require.NotNil(t, img.cache)
+
+	// Another project prunes the cache entry out from under us.
+	cacheAlias, _, err := img.cache.incus.GetImageAlias(img.incusName)
+	require.NoError(t, err)
+
+	op, err := img.cache.incus.DeleteImage(cacheAlias.Target)
+	require.NoError(t, err)
+	require.NoError(t, op.Wait())
+
+	_, _, err = img.cache.incus.GetImageAlias(img.incusName)
+	require.Error(t, err)
+
+	// The project still holds it, so Ensure must answer from there.
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+	require.True(t, r.IsEnsured())
+
+	// A refill would mean it went looking past its own project.
+	_, _, err = img.cache.incus.GetImageAlias(img.incusName)
+	require.Error(t, err, "ensure repopulated the cache instead of using the project copy")
+}
+
+func TestImagePullNever_NoCacheStoreMiss(t *testing.T) {
+	skipLocal(t)
+	ctx := t.Context()
+	c := newRandomTestClient(ctx, t, "image-never-nocache-")
+	c.imageCache = nil
+
+	r, err := c.Resource(KindImage, "docker.io/library/alpine:3.21", &ImageConfig{})
+	require.NoError(t, err)
+
+	// Without a cache the project is the store, and it is empty.
+	err = RunAction(ctx, r, ActionEnsure, OptionCreate(), OptionPullMode(PullNever))
+	require.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestImageCreateDirect_NoSource(t *testing.T) {
+	skipLocal(t)
+	ctx := t.Context()
+	c := newRandomTestClient(ctx, t, "image-nosource-")
+	c.imageCache = nil
+
+	img := lockableImage(t, c, "docker.io/library/alpine:3.21")
+	img.source = nil
+
+	err := img.createDirect(ctx, NewOptions(OptionCreate()))
+	require.ErrorIs(t, err, ErrImageSource)
+}
+
+func TestImageLockStore_NoCacheIsNoop(t *testing.T) {
+	skipLocal(t)
+	ctx := t.Context()
+	c := newRandomTestClient(ctx, t, "image-lock-nocache-")
+	c.imageCache = nil
+
+	img := lockableImage(t, c, "docker.io/library/alpine:3.21")
+	require.Nil(t, img.cache)
+
+	release, err := img.lockStore(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, release)
+	release()
+}
+
+func TestImageLockStore_CustomVolumeIsSeparate(t *testing.T) {
+	skipLocal(t)
+	ctx := t.Context()
+
+	name := "docker.io/library/ic-lockvol-" + strings.ToLower(RandString(8)) + ":latest"
+
+	def := lockableImage(t, newRandomTestClient(ctx, t, "image-lockvol-def-"), name)
+
+	other, err := newRandomTestClient(ctx, t, "image-lockvol-alt-").Resource(KindImage, name, &ImageConfig{
+		LockVolume: "ic-lock-" + strings.ToLower(RandString(6)),
+	})
+	require.NoError(t, err)
+
+	alt, ok := other.(*Image)
+	require.True(t, ok)
+	require.NoError(t, alt.setupCacheAndSource())
+
+	release, err := def.lockStore(ctx)
+	require.NoError(t, err)
+	defer release()
+
+	// Same alias, different lock volume, so the lock files cannot collide.
+	acquired := make(chan error, 1)
+	go func() {
+		releaseAlt, err := alt.lockStore(ctx)
+		if releaseAlt != nil {
+			releaseAlt()
+		}
+		acquired <- err
+	}()
+
+	select {
+	case err := <-acquired:
+		require.NoError(t, err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("a custom lock volume blocked on the default one")
+	}
+}
+
+func TestImageLockStore_ConcurrentVolumeCreate(t *testing.T) {
+	skipLocal(t)
+	ctx := t.Context()
+
+	// A volume name nothing has created yet, so every worker races to make it.
+	// Distinct aliases keep the per-alias lock from serializing them and
+	// hiding the race.
+	volume := "ic-lock-" + strings.ToLower(RandString(8))
+	suffix := strings.ToLower(RandString(8))
+
+	const workers = 6
+	images := make([]*Image, workers)
+	for i := range images {
+		c := newRandomTestClient(ctx, t, "image-lockvol-race-")
+		r, err := c.Resource(KindImage, fmt.Sprintf("docker.io/library/ic-race%d-%s:latest", i, suffix), &ImageConfig{
+			LockVolume: volume,
+		})
+		require.NoError(t, err)
+
+		img, ok := r.(*Image)
+		require.True(t, ok)
+		require.NoError(t, img.setupCacheAndSource())
+		images[i] = img
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, workers)
+	start := make(chan struct{})
+
+	for i, img := range images {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			<-start
+
+			release, err := img.lockStore(ctx)
+			if release != nil {
+				release()
+			}
+			errs[i] = err
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		require.NoError(t, err, i)
+	}
+}
+
+func TestImageBuild_NeverErrors(t *testing.T) {
+	skipLocal(t)
+	ctx := t.Context()
+	c := newRandomTestClient(ctx, t, "image-build-never-")
+
+	r, err := c.Resource(KindImage, "localhost/ic-build-never-"+strings.ToLower(RandString(8))+":latest", &ImageConfig{
+		Build: &BuildConfig{Context: "/nonexistent-build-context"},
+	})
+	require.NoError(t, err)
+
+	err = RunAction(ctx, r, ActionEnsure, OptionCreate(), OptionBuild(BuildInfo{Mode: BuildNever}))
+	require.Error(t, err)
+	require.False(t, r.IsEnsured())
+}
+
+func TestImageBuild_WithoutCreateDoesNotBuild(t *testing.T) {
+	skipLocal(t)
+	ctx := t.Context()
+	c := newRandomTestClient(ctx, t, "image-build-nocreate-")
+
+	// The context does not exist, so a build attempt would fail differently.
+	r, err := c.Resource(KindImage, "localhost/ic-build-nocreate-"+strings.ToLower(RandString(8))+":latest", &ImageConfig{
+		Build: &BuildConfig{Context: "/nonexistent-build-context"},
+	})
+	require.NoError(t, err)
+
+	err = RunAction(ctx, r, ActionEnsure)
+	require.ErrorIs(t, err, ErrNotFound)
+	require.False(t, r.IsEnsured())
+}
+
+func TestImageBuild_ForceIgnoresStoreHit(t *testing.T) {
+	skipLocal(t)
+	ctx := t.Context()
+
+	// Seed the cache under the alias a build would produce.
+	seed := newRandomTestClient(ctx, t, "image-build-force-seed-")
+	s, err := seed.Resource(KindImage, "docker.io/library/alpine:3.20", &ImageConfig{})
+	require.NoError(t, err)
+	require.NoError(t, RunAction(ctx, s, ActionEnsure, OptionCreate()))
+
+	// BuildForce must reach the builder despite the store hit, and the
+	// context does not exist, so it has to fail.
+	c := newRandomTestClient(ctx, t, "image-build-force-")
+	b, err := c.Resource(KindImage, "docker.io/library/alpine:3.20", &ImageConfig{
+		Build: &BuildConfig{Context: "/nonexistent-build-context"},
+	})
+	require.NoError(t, err)
+
+	err = RunAction(ctx, b, ActionEnsure, OptionCreate(), OptionBuild(BuildInfo{Mode: BuildForce}))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "building container image")
 }
 
 func TestImageNoCache(t *testing.T) {

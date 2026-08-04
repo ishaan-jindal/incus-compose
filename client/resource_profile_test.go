@@ -2,6 +2,8 @@ package client
 
 import (
 	"context"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -378,5 +380,45 @@ func TestProfileHooks(t *testing.T) {
 			c := newRandomTestClient(ctx, t, "profile-hook-")
 			tt.run(t, c)
 		})
+	}
+}
+
+func TestProfileEnsure_ConcurrentCreate(t *testing.T) {
+	skipLocal(t)
+	ctx := t.Context()
+
+	// One project, so every worker races for the same profile.
+	c := newRandomTestClient(ctx, t, "profile-race-")
+	name := "ic-prof-" + strings.ToLower(RandString(6))
+
+	const workers = 6
+	profiles := make([]Resource, workers)
+	for i := range profiles {
+		r, err := newProfile(c, name, &ProfileConfig{})
+		require.NoError(t, err)
+		profiles[i] = r
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, workers)
+	start := make(chan struct{})
+
+	for i, r := range profiles {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			<-start
+
+			errs[i] = RunAction(ctx, r, ActionEnsure, OptionCreate())
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		require.NoError(t, err, i)
+		require.True(t, profiles[i].IsEnsured(), i)
 	}
 }

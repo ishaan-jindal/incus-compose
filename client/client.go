@@ -26,7 +26,7 @@ type Client struct {
 	created      bool
 
 	incus      *incusClient.ProtocolIncus
-	imageCache incusClient.InstanceServer
+	imageCache *Client
 	logger     *slog.Logger
 
 	// Cache for FindHealthd

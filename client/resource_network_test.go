@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -799,5 +800,52 @@ func TestCalcIPv6DHCPRange(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
 		})
+	}
+}
+
+func TestNetworkEnsure_ConcurrentCreate(t *testing.T) {
+	skipLocal(t)
+	ctx := t.Context()
+
+	// OverrideName skips the per-project prefix, so every worker resolves to
+	// the same global network and actually races.
+	name := "icnet" + strings.ToLower(RandString(6))
+
+	const workers = 6
+	nets := make([]Resource, workers)
+	for i := range nets {
+		c := newRandomTestClient(ctx, t, "network-race-")
+		r, err := c.Resource(KindNetwork, name, &NetworkConfig{OverrideName: name})
+		require.NoError(t, err)
+		nets[i] = r
+	}
+
+	require.Equal(t, nets[0].IncusName(), nets[workers-1].IncusName())
+
+	t.Cleanup(func() {
+		_ = RunAction(context.WithoutCancel(ctx), nets[0], ActionDelete)
+	})
+
+	var wg sync.WaitGroup
+	errs := make([]error, workers)
+	start := make(chan struct{})
+
+	for i, r := range nets {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			<-start
+
+			errs[i] = RunAction(ctx, r, ActionEnsure, OptionCreate())
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		require.NoError(t, err, i)
+		require.True(t, nets[i].IsEnsured(), i)
 	}
 }

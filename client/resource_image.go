@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"maps"
@@ -15,16 +16,39 @@ import (
 	incusApi "github.com/lxc/incus/v7/shared/api"
 )
 
+// PullMode controls when an image is refreshed from its source.
+type PullMode int
+
+const (
+	// PullMissing contacts the source only when the store has no copy (default).
+	PullMissing PullMode = iota
+	// PullAlways refreshes from the source even when the store has a copy.
+	PullAlways
+	// PullNever never contacts the source; a store miss is an error.
+	PullNever
+)
+
+// DefaultLockVolume is the storage volume holding the per-alias image locks.
+const DefaultLockVolume = "ic-image-lock"
+
+// imageLockStale is how long an image lock may go unrefreshed before another
+// caller reaps it; the holder heartbeats at a third of it.
+const imageLockStale = 2 * time.Minute
+
 // ImageConfig contains the source and cache configuration for an image.
 type ImageConfig struct {
-	// CacheServer is an image server to use as cache (for library users).
-	// Takes precedence over CacheProject.
-	CacheServer incusClient.InstanceServer
+	// CacheClient is the project-scoped client to use as cache (for library
+	// users). Takes precedence over CacheProject.
+	CacheClient *Client
 
 	// CacheProject is the project name to use as cache (for CLI users).
 	// The project will be created if it doesn't exist.
-	// Ignored if CacheServer is set.
+	// Ignored if CacheClient is set.
 	CacheProject string
+
+	// LockVolume names the storage volume in the cache project holding the
+	// per-alias locks. Empty means DefaultLockVolume.
+	LockVolume string
 
 	// Build, when set, marks this image as locally built rather than pulled
 	// from a registry. Ensure will shell out to podman/docker instead of
@@ -62,8 +86,8 @@ type Image struct {
 	// image is the image reference without the remote prefix
 	image string
 
-	// cache is the resolved instance server for caching
-	cache incusClient.InstanceServer
+	// cache is the resolved client for caching, nil when caching is off
+	cache *Client
 
 	// source is the resolved image server for this image.
 	source incusClient.ImageServer
@@ -212,24 +236,22 @@ func (r *Image) Ensure(ctx context.Context, opts ...Option) error {
 		return r.ensureBuild(ctx, args)
 	}
 
-	// Just run refresh (with create) if pulling.
-	if args.Pull {
+	// Refreshing takes the same path, create() drops the stale copy under the lock.
+	if args.Pull == PullAlways {
 		_ = r.get()
-		err = r.deleteCached(ctx, args)
+
+		err = r.client.hookBefore(ctx, ActionEnsure, r, args, nil)
 		if err != nil {
 			return err
 		}
 
-		err = r.client.hookBefore(ctx, ActionEnsure, r, args, nil)
-		if err == nil {
-			r.IncusAlias = nil
-			r.ETag = ""
-			err = r.create(ctx, args)
-			return r.client.hookAfter(ctx, ActionEnsure, r, args, err)
-		}
+		err = r.create(ctx, args)
+
+		return r.client.hookAfter(ctx, ActionEnsure, r, args, err)
 	}
 
-	if err := r.client.hookBefore(ctx, ActionEnsure, r, args, nil); err != nil {
+	err = r.client.hookBefore(ctx, ActionEnsure, r, args, nil)
+	if err != nil {
 		return err
 	}
 
@@ -254,16 +276,16 @@ func (r *Image) Ensure(ctx context.Context, opts ...Option) error {
 }
 
 func (r *Image) setupCacheAndSource() error {
-	// Resolve cache: CacheServer > CacheProject > default imageCache which might be nil
+	// Resolve cache: CacheClient > CacheProject > default imageCache which might be nil
 	if r.cache == nil {
-		if r.Config.CacheServer != nil {
-			r.cache = r.Config.CacheServer
+		if r.Config.CacheClient != nil {
+			r.cache = r.Config.CacheClient
 		} else if r.Config.CacheProject != "" {
 			cacheClient, err := r.client.globalClient.EnsureProject(r.Config.CacheProject, EnsureProjectWithCreate())
 			if err != nil {
 				return fmt.Errorf("ensuring cache project %s: %w", r.Config.CacheProject, err)
 			}
-			r.cache = cacheClient.incus
+			r.cache = cacheClient
 		} else {
 			r.cache = r.client.imageCache
 		}
@@ -335,10 +357,10 @@ func (r *Image) deleteCached(ctx context.Context, args Options) error {
 	}
 
 	if r.cache != nil {
-		cacheAlias, _, err := r.cache.GetImageAlias(r.incusName)
+		cacheAlias, _, err := r.cache.incus.GetImageAlias(r.incusName)
 		if err == nil && (sourceAlias == nil || sourceAlias.Target != cacheAlias.Target) {
 			r.client.LogDebug("Deleting from cache", "resource", r)
-			op, err := r.cache.DeleteImage(cacheAlias.Target)
+			op, err := r.cache.incus.DeleteImage(cacheAlias.Target)
 
 			// On the cache the error is ignored.
 			if err = r.client.hookOperation(ctx, ActionDelete, r, args, op, err); err != nil {
@@ -415,7 +437,7 @@ func (r *Image) copyToCache(ctx context.Context, args Options) (*incusApi.ImageA
 	}
 
 	// Copy from source to cache, we just warn on error as parallel operations might have caused this.
-	op, err := r.cache.CopyImage(r.source, cacheImgInfo, cacheCopyArgs)
+	op, err := r.cache.incus.CopyImage(r.source, cacheImgInfo, cacheCopyArgs)
 	if err != nil {
 		r.client.LogWarn("Creating a copy operation failed", "resource", r, "error", err)
 	} else {
@@ -435,7 +457,7 @@ func (r *Image) copyToCache(ctx context.Context, args Options) (*incusApi.ImageA
 		retry.Attempts(10),
 		retry.Delay(30*time.Second),
 	).Do(func() (*incusApi.ImageAliasesEntry, error) {
-		alias, _, err := r.cache.GetImageAlias(r.incusName)
+		alias, _, err := r.cache.incus.GetImageAlias(r.incusName)
 		return alias, err
 	})
 	if err != nil {
@@ -443,7 +465,7 @@ func (r *Image) copyToCache(ctx context.Context, args Options) (*incusApi.ImageA
 	}
 
 	// Extract oci informations with a temporary instance.
-	err = extractAndStoreOCIConfig(ctx, r.client, r.cache, cacheAlias.Target)
+	err = extractAndStoreOCIConfig(ctx, r.client, r.cache.incus, cacheAlias.Target)
 	if err != nil {
 		return nil, ErrCreate.WithText("extracting OCI config from the image").Wrap(err)
 	}
@@ -451,135 +473,225 @@ func (r *Image) copyToCache(ctx context.Context, args Options) (*incusApi.ImageA
 	return cacheAlias, nil
 }
 
+// copyToProject is hop B: copy the cached image into the active project,
+// carrying the OCI properties extracted when it landed in the cache.
+func (r *Image) copyToProject(ctx context.Context, args Options, cacheAlias *incusApi.ImageAliasesEntry) error {
+	img, _, err := r.cache.incus.GetImage(cacheAlias.Target)
+	if err != nil {
+		return ErrCreate.WithText("cannot resolve the image from cache after copy")
+	}
+
+	r.size = img.Size
+	r.readOCIConfigFromProperties(img.Properties)
+
+	info := incusApi.Image{
+		Fingerprint: cacheAlias.Target,
+		ImagePut: incusApi.ImagePut{
+			Properties: map[string]string{
+				"oci.uid":        strconv.FormatUint(r.UID, 10),
+				"oci.gid":        strconv.FormatUint(r.GID, 10),
+				"oci.cwd":        r.Cwd,
+				"oci.entrypoint": r.Entrypoint,
+			},
+		},
+	}
+
+	op, err := r.conn.CopyImage(r.cache.incus, info, &incusClient.ImageCopyArgs{
+		Aliases: []incusApi.ImageAlias{{Name: r.incusName}},
+		Mode:    "pull",
+	})
+
+	err = r.client.hookRemoteOperation(ctx, ActionEnsure, r, args, op, err)
+	if err != nil {
+		return ErrCreate.WithText("project image").Wrap(err)
+	}
+
+	return r.get()
+}
+
+// lockStore takes the per-alias lock in the cache, returning a release func.
+// Without a cache the store is the project, which nobody else writes to, so
+// there is nothing to serialize against.
+func (r *Image) lockStore(ctx context.Context) (func(), error) {
+	if r.cache == nil {
+		return func() {}, nil
+	}
+
+	name := r.Config.LockVolume
+	if name == "" {
+		name = DefaultLockVolume
+	}
+
+	res, err := r.cache.Resource(KindStorageVolume, name, &StorageVolumeConfig{})
+	if err != nil {
+		return nil, err
+	}
+
+	vol, ok := res.(*StorageVolume)
+	if !ok {
+		return nil, ErrUnknownResource.WithText(name)
+	}
+
+	err = RunAction(ctx, vol, ActionEnsure, OptionCreate())
+	if err != nil {
+		return nil, err
+	}
+
+	sc, err := vol.SFTP()
+	if err != nil {
+		return nil, err
+	}
+
+	lock, err := vol.Lock(ctx, sc, fmt.Sprintf("%x", sha256.Sum256([]byte(r.incusName))), imageLockStale)
+	if err != nil {
+		r.client.WarnError(sc.Close, "Failed to close the image lock connection")
+		return nil, err
+	}
+
+	return func() {
+		r.client.WarnError(lock.Unlock, "Failed to release the image lock")
+		r.client.WarnError(sc.Close, "Failed to close the image lock connection")
+	}, nil
+}
+
+// create materializes the image. With a cache that is hop A under the per-alias
+// lock, then hop B outside it; without one the source is copied straight into
+// the project.
 func (r *Image) create(ctx context.Context, args Options) error {
-	if r.cache != nil {
-		cacheAlias, _, err := r.cache.GetImageAlias(r.incusName)
+	if r.cache == nil {
+		return r.createDirect(ctx, args)
+	}
+
+	release, err := r.lockStore(ctx)
+	if err != nil {
+		return err
+	}
+
+	cacheAlias, err := r.materialize(ctx, args)
+	release()
+	if err != nil {
+		return err
+	}
+
+	return r.copyToProject(ctx, args, cacheAlias)
+}
+
+// materialize is hop A: make sure the cache holds the alias, returning it.
+func (r *Image) materialize(ctx context.Context, args Options) (*incusApi.ImageAliasesEntry, error) {
+	if args.Pull == PullAlways {
+		err := r.deleteCached(ctx, args)
 		if err != nil {
-			var cacheErr error
-			cacheAlias, cacheErr = r.copyToCache(ctx, args)
-			if cacheErr != nil && errors.Is(cacheErr, ErrNotFound) {
-				cacheAlias, _, err = r.cache.GetImageAlias(r.incusName)
-				if err != nil {
-					return ErrNotFound.WithText("on cache and source").Wrap(cacheErr)
-				}
-
-				// Extract oci informations with a temporary instance.
-				err = extractAndStoreOCIConfig(ctx, r.client, r.cache, cacheAlias.Target)
-				if err != nil {
-					return ErrCreate.WithText("extracting OCI config from the image").Wrap(err)
-				}
-			} else if cacheErr != nil && strings.Contains(cacheErr.Error(), "Alias already exists") {
-				// When the the image has been generated by another concurrent process use that.
-				cacheAlias, _, err = r.cache.GetImageAlias(r.incusName)
-				if err != nil {
-					return ErrCreate.Wrap(err)
-				}
-			} else if cacheErr != nil {
-				return err
-			}
-		}
-		projectCopyArgs := &incusClient.ImageCopyArgs{
-			Aliases: []incusApi.ImageAlias{
-				{
-					Name: r.incusName,
-				},
-			},
-			Mode: "pull",
+			return nil, err
 		}
 
-		// Copy from cache, read oci.* from it.
-		img, _, err := r.cache.GetImage(cacheAlias.Target)
+		r.IncusAlias = nil
+		r.ETag = ""
+	}
+
+	cacheAlias, _, err := r.cache.incus.GetImageAlias(r.incusName)
+	if err == nil {
+		return cacheAlias, nil
+	}
+
+	if args.Pull == PullNever {
+		return nil, ErrNotFound.WithText("pull policy is never")
+	}
+
+	cacheAlias, cacheErr := r.copyToCache(ctx, args)
+	if cacheErr != nil && errors.Is(cacheErr, ErrNotFound) {
+		cacheAlias, _, err = r.cache.incus.GetImageAlias(r.incusName)
 		if err != nil {
-			return ErrCreate.WithText("cannot resolve the image from cache after copy")
-		}
-
-		r.size = img.Size
-		r.readOCIConfigFromProperties(img.Properties)
-
-		// Build image info for copy
-		projectImageInfo := incusApi.Image{
-			Fingerprint: cacheAlias.Target,
-			ImagePut: incusApi.ImagePut{
-				Properties: map[string]string{
-					"oci.uid":        strconv.FormatUint(r.UID, 10),
-					"oci.gid":        strconv.FormatUint(r.GID, 10),
-					"oci.cwd":        r.Cwd,
-					"oci.entrypoint": r.Entrypoint,
-				},
-			},
-		}
-
-		// Copy from cache to project
-		op, err := r.conn.CopyImage(r.cache, projectImageInfo, projectCopyArgs)
-
-		// Wait for copy to complete
-		if err = r.client.hookRemoteOperation(ctx, ActionEnsure, r, args, op, err); err != nil {
-			return ErrCreate.WithText("project image").Wrap(err)
-		}
-	} else {
-		if r.source == nil {
-			return ErrImageSource.WithText("not configured")
-		}
-
-		var targetImageInfo incusApi.Image
-		if r.NativeIncus() {
-			alias, _, err := r.source.GetImageAlias(r.image)
-			if err != nil {
-				return ErrNotFound.WithText("on source").Wrap(err)
-			}
-
-			image, _, err := r.source.GetImage(alias.Target)
-			if err != nil {
-				return ErrNotFound.WithText("resolved alias not found").Wrap(err)
-			}
-
-			r.size = image.Size
-
-			targetImageInfo = incusApi.Image{
-				Fingerprint: image.Fingerprint,
-				ImagePut: incusApi.ImagePut{
-					Public: true,
-				},
-			}
-		} else {
-			targetImageInfo = incusApi.Image{
-				Fingerprint: r.image,
-				ImagePut: incusApi.ImagePut{
-					Public: true,
-				},
-			}
-		}
-
-		targetCopyArgs := &incusClient.ImageCopyArgs{
-			Aliases: []incusApi.ImageAlias{
-				{
-					Name: r.incusName,
-				},
-			},
-			Mode: "pull",
-		}
-
-		op, err := r.conn.CopyImage(r.source, targetImageInfo, targetCopyArgs)
-		if err != nil {
-			r.client.LogWarn("Creating a copy operation failed", "resource", r, "error", err)
-		} else {
-			// Wait for copy to complete
-			err = r.client.hookRemoteOperation(ctx, ActionEnsure, r, args, op, err)
-			if err != nil {
-				r.client.LogWarn("Copy to project failed", "resource", r, "error", err)
-			}
-		}
-
-		targetAlias, _, err := r.conn.GetImageAlias(r.incusName)
-		if err != nil {
-			return ErrNotFound.WithText("on project after copy").Wrap(err)
+			return nil, ErrNotFound.WithText("on cache and source").Wrap(cacheErr)
 		}
 
 		// Extract oci informations with a temporary instance.
-		err = extractAndStoreOCIConfig(ctx, r.client, r.conn, targetAlias.Target)
+		err = extractAndStoreOCIConfig(ctx, r.client, r.cache.incus, cacheAlias.Target)
 		if err != nil {
-			return ErrCreate.WithText("extracting OCI config from the image").Wrap(err)
+			return nil, ErrCreate.WithText("extracting OCI config from the image").Wrap(err)
 		}
+	} else if cacheErr != nil && strings.Contains(cacheErr.Error(), "Alias already exists") {
+		// When the the image has been generated by another concurrent process use that.
+		cacheAlias, _, err = r.cache.incus.GetImageAlias(r.incusName)
+		if err != nil {
+			return nil, ErrCreate.Wrap(err)
+		}
+	} else if cacheErr != nil {
+		return nil, cacheErr
+	}
+
+	return cacheAlias, nil
+}
+
+// createDirect copies the source straight into the project, used when no cache
+// is configured.
+func (r *Image) createDirect(ctx context.Context, args Options) error {
+	// Without a cache the project is the store, and Ensure already missed it.
+	if args.Pull == PullNever {
+		return ErrNotFound.WithText("pull policy is never")
+	}
+
+	if r.source == nil {
+		return ErrImageSource.WithText("not configured")
+	}
+
+	var targetImageInfo incusApi.Image
+	if r.NativeIncus() {
+		alias, _, err := r.source.GetImageAlias(r.image)
+		if err != nil {
+			return ErrNotFound.WithText("on source").Wrap(err)
+		}
+
+		image, _, err := r.source.GetImage(alias.Target)
+		if err != nil {
+			return ErrNotFound.WithText("resolved alias not found").Wrap(err)
+		}
+
+		r.size = image.Size
+
+		targetImageInfo = incusApi.Image{
+			Fingerprint: image.Fingerprint,
+			ImagePut: incusApi.ImagePut{
+				Public: true,
+			},
+		}
+	} else {
+		targetImageInfo = incusApi.Image{
+			Fingerprint: r.image,
+			ImagePut: incusApi.ImagePut{
+				Public: true,
+			},
+		}
+	}
+
+	targetCopyArgs := &incusClient.ImageCopyArgs{
+		Aliases: []incusApi.ImageAlias{
+			{
+				Name: r.incusName,
+			},
+		},
+		Mode: "pull",
+	}
+
+	op, err := r.conn.CopyImage(r.source, targetImageInfo, targetCopyArgs)
+	if err != nil {
+		r.client.LogWarn("Creating a copy operation failed", "resource", r, "error", err)
+	} else {
+		// Wait for copy to complete
+		err = r.client.hookRemoteOperation(ctx, ActionEnsure, r, args, op, err)
+		if err != nil {
+			r.client.LogWarn("Copy to project failed", "resource", r, "error", err)
+		}
+	}
+
+	targetAlias, _, err := r.conn.GetImageAlias(r.incusName)
+	if err != nil {
+		return ErrNotFound.WithText("on project after copy").Wrap(err)
+	}
+
+	// Extract oci informations with a temporary instance.
+	err = extractAndStoreOCIConfig(ctx, r.client, r.conn, targetAlias.Target)
+	if err != nil {
+		return ErrCreate.WithText("extracting OCI config from the image").Wrap(err)
 	}
 
 	return r.get()
@@ -708,25 +820,37 @@ func (r *Image) ensureBuild(ctx context.Context, args Options) error {
 	}
 
 	err := r.get()
-	if err == nil {
-		// Image already present in the project.
-		if args.Build.Mode == BuildForce {
-			r.IncusAlias = nil
-			r.ETag = ""
-			err = r.buildImage(ctx, r.client, args)
-		}
-		// BuildAuto or BuildNever with an existing image: nothing to do.
-	} else {
-		if args.Build.Mode == BuildNever {
-			err = errors.New("image is missing and building is disabled")
-		} else if args.Create {
-			err = r.buildImage(ctx, r.client, args)
-		}
-		// !args.Create and BuildAuto: leave err non-nil (not found, don't create).
+	if err == nil && args.Build.Mode != BuildForce {
+		return r.client.hookAfter(ctx, ActionEnsure, r, args, nil)
 	}
 
-	err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
-	return err
+	if err != nil && args.Build.Mode == BuildNever {
+		return r.client.hookAfter(ctx, ActionEnsure, r, args, errors.New("image is missing and building is disabled"))
+	}
+
+	if err != nil && !args.Create {
+		return r.client.hookAfter(ctx, ActionEnsure, r, args, err)
+	}
+
+	release, err := r.lockStore(ctx)
+	if err != nil {
+		return r.client.hookAfter(ctx, ActionEnsure, r, args, err)
+	}
+	defer release()
+
+	// Hop A: the store already holds it, so copy rather than rebuild.
+	if r.cache != nil && args.Build.Mode != BuildForce {
+		cacheAlias, _, storeErr := r.cache.incus.GetImageAlias(r.incusName)
+		if storeErr == nil {
+			return r.client.hookAfter(ctx, ActionEnsure, r, args, r.copyToProject(ctx, args, cacheAlias))
+		}
+	}
+
+	r.IncusAlias = nil
+	r.ETag = ""
+	err = r.buildImage(ctx, r.client, args)
+
+	return r.client.hookAfter(ctx, ActionEnsure, r, args, err)
 }
 
 // buildImage shells out to the detected container builder, imports the rootfs
@@ -772,123 +896,64 @@ func (r *Image) buildImage(ctx context.Context, c *Client, args Options) error {
 		return ErrCreate.WithText("building image metadata").Wrap(err)
 	}
 
-	if buildCfg.NoCache || r.cache == nil {
-		// Delete before importing.
-		projectAlias, _, err := r.conn.GetImageAlias(r.incusName)
-		if err == nil {
-			_, err := r.conn.DeleteImage(projectAlias.Target)
+	// Without a usable cache the project is the import target, and hop B is a no-op.
+	cached := r.cache != nil && !buildCfg.NoCache
+	target := r.conn
+	targetName := "project"
+	if cached {
+		target = r.cache.incus
+		targetName = "cache"
+	}
+
+	stale, _, err := target.GetImageAlias(r.incusName)
+	if err == nil {
+		_, err = target.DeleteImage(stale.Target)
+		if err != nil {
+			return ErrCreate.WithText("while removing the image from the " + targetName).Wrap(err)
+		}
+	}
+
+	op, err := target.CreateImage(incusApi.ImagesPost{
+		Aliases: []incusApi.ImageAlias{{Name: r.incusName}},
+	}, &incusClient.ImageCreateArgs{
+		MetaFile:   meta,
+		MetaName:   "metadata.tar",
+		RootfsFile: rootfs,
+		RootfsName: "rootfs.tar",
+	})
+	err = r.client.hookOperation(ctx, ActionEnsure, r, args, op, err)
+	if err != nil {
+		return ErrCreate.WithText("importing built image on " + targetName).Wrap(err)
+	}
+
+	built, eTag, err := target.GetImageAlias(r.incusName)
+	if err != nil {
+		return ErrCreate.WithText("fetching alias after build").Wrap(err)
+	}
+
+	err = extractAndStoreOCIConfig(ctx, r.client, target, built.Target)
+	if err != nil {
+		return err
+	}
+
+	r.IncusAlias = built
+	r.ETag = eTag
+	r.created = true
+
+	if cached {
+		projectAlias, _, aliasErr := r.conn.GetImageAlias(r.incusName)
+		if aliasErr == nil {
+			_, err = r.conn.DeleteImage(projectAlias.Target)
 			if err != nil {
 				return ErrCreate.WithText("while removing the image from the project").Wrap(err)
 			}
 		}
 
-		op, err := r.conn.CreateImage(incusApi.ImagesPost{
-			Aliases: []incusApi.ImageAlias{{Name: r.incusName}},
-		}, &incusClient.ImageCreateArgs{
-			MetaFile:   meta,
-			MetaName:   "metadata.tar",
-			RootfsFile: rootfs,
-			RootfsName: "rootfs.tar",
-		})
-		if err = r.client.hookOperation(ctx, ActionEnsure, r, args, op, err); err != nil {
-			return ErrCreate.WithText("importing built image").Wrap(err)
-		}
-
-		alias, eTag, err := r.conn.GetImageAlias(r.incusName)
-		if err != nil {
-			return ErrCreate.WithText("fetching alias after build").Wrap(err)
-		}
-
-		err = extractAndStoreOCIConfig(ctx, r.client, r.conn, alias.Target)
+		err = r.copyToProject(ctx, args, built)
 		if err != nil {
 			return err
 		}
 
-		r.IncusAlias = alias
-		r.ETag = eTag
-		r.created = true
-	} else {
-		cacheAlias, _, err := r.cache.GetImageAlias(r.incusName)
-		if err == nil {
-			_, err := r.cache.DeleteImage(cacheAlias.Target)
-			if err != nil {
-				return ErrCreate.WithText("while removing the image from the cache").Wrap(err)
-			}
-		}
-
-		op, err := r.cache.CreateImage(incusApi.ImagesPost{
-			Aliases: []incusApi.ImageAlias{{Name: r.incusName}},
-		}, &incusClient.ImageCreateArgs{
-			MetaFile:   meta,
-			MetaName:   "metadata.tar",
-			RootfsFile: rootfs,
-			RootfsName: "rootfs.tar",
-		})
-		err = r.client.hookOperation(ctx, ActionEnsure, r, args, op, err)
-		if err != nil {
-			return ErrCreate.WithText("importing built image on cache").Wrap(err)
-		}
-
-		alias, eTag, err := r.cache.GetImageAlias(r.incusName)
-		if err != nil {
-			return ErrCreate.WithText("fetching alias after build").Wrap(err)
-		}
-
-		err = extractAndStoreOCIConfig(ctx, r.client, r.cache, alias.Target)
-		if err != nil {
-			return err
-		}
-
-		// Delete before importing.
-		projectAlias, _, err := r.conn.GetImageAlias(r.incusName)
-		if err == nil {
-			_, err := r.conn.DeleteImage(projectAlias.Target)
-			if err != nil {
-				return ErrCreate.WithText("while removing the image from the project").Wrap(err)
-			}
-		}
-
-		projectCopyArgs := &incusClient.ImageCopyArgs{
-			Aliases: []incusApi.ImageAlias{
-				{
-					Name: r.incusName,
-				},
-			},
-			Mode: "pull",
-		}
-
-		// Copy from cache, read oci.* from it.
-		img, _, err := r.cache.GetImage(alias.Target)
-		if err != nil {
-			return ErrCreate.WithText("cannot resolve the image from cache after copy")
-		}
-
-		r.size = img.Size
-		r.readOCIConfigFromProperties(img.Properties)
-
-		// Build image info for copy
-		projectImageInfo := incusApi.Image{
-			Fingerprint: alias.Target,
-			ImagePut: incusApi.ImagePut{
-				Properties: map[string]string{
-					"oci.uid":        strconv.FormatUint(r.UID, 10),
-					"oci.gid":        strconv.FormatUint(r.GID, 10),
-					"oci.cwd":        r.Cwd,
-					"oci.entrypoint": r.Entrypoint,
-				},
-			},
-		}
-
-		// Copy from cache to project
-		rop, err := r.conn.CopyImage(r.cache, projectImageInfo, projectCopyArgs)
-
-		// Wait for copy to complete
-		if err = r.client.hookRemoteOperation(ctx, ActionEnsure, r, args, rop, err); err != nil {
-			return ErrCreate.WithText("project image").Wrap(err)
-		}
-
-		r.IncusAlias = alias
-		r.ETag = eTag
 		r.created = true
 	}
 
@@ -898,14 +963,6 @@ func (r *Image) buildImage(ctx context.Context, c *Client, args Options) error {
 }
 
 // Delete removes the per-project copy of the image from the active project.
-//
-// Projects are created with features.images=true, so creating an instance
-// copies the image into the active project. Those copies are removed here on
-// down; without it they accumulate and go stale relative to the auto-updated
-// cache (see issue #29). The cache lives in a separate project and is left
-// untouched, so cached images persist across down/up cycles.
-//
-// Delete is idempotent: a missing per-project copy is not an error.
 func (r *Image) Delete(ctx context.Context, opts ...Option) error {
 	if !r.IsEnsured() {
 		r.IncusAlias = nil
