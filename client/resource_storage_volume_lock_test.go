@@ -3,6 +3,8 @@ package client
 import (
 	"context"
 	"os"
+	"path"
+	"sync"
 	"testing"
 	"time"
 
@@ -70,6 +72,134 @@ func TestStorageVolumeLock_AcquireExcludesAndUnlockRemoves(t *testing.T) {
 	f, err := probe.OpenFile("/test.lock", os.O_CREATE|os.O_EXCL|os.O_WRONLY)
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
+}
+
+func TestStorageVolumeLock_NestedNameCreatesParents(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	c := newRandomTestClient(t.Context(), t, "volume-lock-nested-")
+	vol := ensuredLockTestVolume(t, c, "nested-vol")
+
+	sc := lockTestSFTP(t, vol)
+	name := "docker.io/library/nginx:alpine"
+
+	lock, err := vol.Lock(t.Context(), sc, name, 0)
+	require.NoError(t, err)
+
+	fi, err := sc.Stat("/docker.io/library")
+	require.NoError(t, err)
+	require.True(t, fi.IsDir())
+
+	// Held: a second, independent connection cannot create the same file exclusively.
+	probe := lockTestSFTP(t, vol)
+	_, err = probe.OpenFile("/"+name, os.O_CREATE|os.O_EXCL|os.O_WRONLY)
+	require.Error(t, err)
+
+	require.NoError(t, lock.Unlock())
+
+	// Re-acquiring with the parents already in place must still work.
+	again, err := vol.Lock(t.Context(), sc, name, 0)
+	require.NoError(t, err)
+	require.NoError(t, again.Unlock())
+}
+
+func TestStorageVolumeLock_MultipleLocksInOneVolume(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	c := newRandomTestClient(t.Context(), t, "volume-lock-multi-")
+	vol := ensuredLockTestVolume(t, c, "multi-vol")
+
+	sc := lockTestSFTP(t, vol)
+	names := []string{"alpha.lock", "beta.lock", "nested/gamma.lock", "nested/deep/delta.lock"}
+
+	locks := make([]*VolumeLock, 0, len(names))
+	for _, n := range names {
+		l, err := vol.Lock(t.Context(), sc, n, 0)
+		require.NoError(t, err, n)
+		locks = append(locks, l)
+	}
+
+	// All held at once, each exclusive to its holder.
+	probe := lockTestSFTP(t, vol)
+	for _, n := range names {
+		_, err := probe.OpenFile(path.Join("/", n), os.O_CREATE|os.O_EXCL|os.O_WRONLY)
+		require.Error(t, err, n)
+	}
+
+	// Releasing one must not release the others.
+	require.NoError(t, locks[0].Unlock())
+
+	f, err := probe.OpenFile(path.Join("/", names[0]), os.O_CREATE|os.O_EXCL|os.O_WRONLY)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	for _, n := range names[1:] {
+		_, err := probe.OpenFile(path.Join("/", n), os.O_CREATE|os.O_EXCL|os.O_WRONLY)
+		require.Error(t, err, n)
+	}
+
+	for _, l := range locks[1:] {
+		require.NoError(t, l.Unlock())
+	}
+}
+
+func TestStorageVolumeLock_ConcurrentDistinctLocks(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	c := newRandomTestClient(t.Context(), t, "volume-lock-concurrent-")
+	vol := ensuredLockTestVolume(t, c, "concurrent-vol")
+
+	names := []string{
+		"images/alpha.lock",
+		"images/beta.lock",
+		"images/gamma.lock",
+		"images/delta.lock",
+		"images/epsilon.lock",
+	}
+
+	// Distinct locks must not block each other, even acquired in parallel with
+	// heartbeats running and sharing one parent directory.
+	var wg sync.WaitGroup
+	errs := make([]error, len(names))
+	held := make([]*VolumeLock, len(names))
+
+	for i, n := range names {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			sc, err := vol.SFTP()
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			defer func() { _ = sc.Close() }()
+
+			l, err := vol.Lock(t.Context(), sc, n, 3*time.Second)
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			held[i] = l
+
+			time.Sleep(250 * time.Millisecond)
+			errs[i] = l.Unlock()
+		}()
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		require.NoError(t, err, names[i])
+		require.NotNil(t, held[i], names[i])
+	}
+
+	// Every lock file was cleaned up by its owner.
+	probe := lockTestSFTP(t, vol)
+	for _, n := range names {
+		f, err := probe.OpenFile(path.Join("/", n), os.O_CREATE|os.O_EXCL|os.O_WRONLY)
+		require.NoError(t, err, n)
+		require.NoError(t, f.Close())
+	}
 }
 
 func TestStorageVolumeLock_BlocksUntilContextDone(t *testing.T) {

@@ -34,6 +34,7 @@ type VolumeLock struct {
 }
 
 // Lock acquires the named advisory lock on the volume, blocking until it is held or ctx is done.
+// The name may contain slashes; missing parent directories are created.
 // A stale of 0 means the lock is never taken over and the holder does not refresh it. sc must stay
 // open until Unlock is called - the acquire uses it, and when stale > 0 so does the heartbeat.
 func (r *StorageVolume) Lock(ctx context.Context, sc *sftp.Client, name string, stale time.Duration) (*VolumeLock, error) {
@@ -42,6 +43,14 @@ func (r *StorageVolume) Lock(ctx context.Context, sc *sftp.Client, name string, 
 	}
 
 	lockPath := path.Join("/", name)
+
+	dir := path.Dir(lockPath)
+	if dir != "/" {
+		err := sc.MkdirAll(dir)
+		if err != nil {
+			return nil, ErrOperation.WithText("creating lock directory " + dir).Wrap(err)
+		}
+	}
 
 	hostname, _ := os.Hostname()
 	owner := fmt.Sprintf("%s:%d:%s", hostname, os.Getpid(), RandString(8))
