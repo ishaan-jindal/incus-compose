@@ -66,6 +66,9 @@ for correct semver ordering. Headings below preserve each release's announced fo
   gateway is not known until the network exists. (by @jochumdev)
 - pushing directory content into a storage volume no longer closes each file
   twice. (by @jochumdev)
+- a `configs:` or `secrets:` entry whose target already exists in the image is
+  written instead of being silently skipped, so a config can replace a file the
+  image ships (e.g. an application's own default config). (by @jochumdev)
 
 ## [1.1.0] - 2026-07-31
 
