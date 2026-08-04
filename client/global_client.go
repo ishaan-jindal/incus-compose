@@ -145,7 +145,7 @@ type GlobalClient struct {
 	cliConfig *cliconfig.Config
 
 	incus      *incusClient.ProtocolIncus
-	imageCache incusClient.InstanceServer
+	imageCache *Client
 	unix       bool
 	connected  bool
 
@@ -449,7 +449,7 @@ func (c *GlobalClient) setupImageCache() error {
 				return fmt.Errorf("ensuring cache project %s: %w", c.config.CacheProject, err)
 			}
 		}
-		c.imageCache = cacheClient.incus
+		c.imageCache = cacheClient
 	}
 
 	return nil

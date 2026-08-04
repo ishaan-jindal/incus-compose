@@ -11,7 +11,25 @@ for correct semver ordering. Headings below preserve each release's announced fo
 
 ## [1.1.1] - unreleased
 
+### Added
+
+- `--pull never` on `up`, `build` and `pull` (`--policy never`) never contacts a
+  registry and fails when the image is not already stored, for air-gapped use.
+  `pull --policy` is honoured now instead of being ignored. (by @jochumdev)
+
 ### Changed
+
+- a service with `build:` no longer rebuilds in every project: the image cache
+  is checked before the builder runs, so the first `up` anywhere builds and the
+  rest copy from the cache. Use `--build` to force a rebuild after changing a
+  Dockerfile or context. (by @jochumdev)
+- image work is serialized per alias through a `ic-image-lock` volume in the
+  cache project, so parallel pulls and builds of one image no longer collide.
+  (by @jochumdev)
+- **library**: `ImageConfig.CacheServer` (an `incus.InstanceServer`) became
+  `ImageConfig.CacheClient` (a `*client.Client`), needed to ensure the lock
+  volume. `Options.Pull` is a `PullMode` instead of a `bool`; `OptionPull()`
+  still selects `PullAlways`. (by @jochumdev)
 
 - `up` without `--detach` no behaves the same as `docker compose`, it creates
   and starts the resources, then runs logs and on interrupt `down`. (by @jochumdev)

@@ -37,7 +37,7 @@ func newPullCommand() *cli.Command {
 			},
 			&cli.StringFlag{
 				Name:    "policy",
-				Usage:   `Apply pull policy ("missing"|"always") - ignored just for compatibility now`,
+				Usage:   `Apply pull policy ("missing"|"always"|"never")`,
 				Value:   "always",
 				Sources: cli.EnvVars("INCUS_COMPOSE_PULL_POLICY"),
 			},
@@ -167,10 +167,19 @@ func newPullCommand() *cli.Command {
 				}
 			}
 
+			// Anything unknown keeps the flag's "always" default.
+			pullMode := client.PullAlways
+			switch cmd.String("policy") {
+			case "missing":
+				pullMode = client.PullMissing
+			case "never":
+				pullMode = client.PullNever
+			}
+
 			err = stack.ForAction(client.ActionEnsure).Run(
 				ctx,
 				client.ActionEnsure,
-				client.OptionPull(),
+				client.OptionPullMode(pullMode),
 				client.OptionCreate(),
 			)
 			if err != nil {

@@ -43,8 +43,8 @@ type Options struct {
 	// Follow enables continuous streaming (for ActionLog).
 	Follow bool
 
-	// Pull forces cached images to refresh from their source registry (for ActionEnsure).
-	Pull bool
+	// Pull is the pull policy for images (for ActionEnsure).
+	Pull PullMode
 
 	// Build controls rebuild behavior for build-configured images (for ActionEnsure).
 	Build BuildInfo
@@ -108,8 +108,13 @@ func OptionFollow() Option {
 
 // OptionPull forces cached images to refresh from their source registry (for ActionEnsure).
 func OptionPull() Option {
+	return OptionPullMode(PullAlways)
+}
+
+// OptionPullMode sets the pull policy for images (for ActionEnsure).
+func OptionPullMode(m PullMode) Option {
 	return func(o *Options) {
-		o.Pull = true
+		o.Pull = m
 	}
 }
 
