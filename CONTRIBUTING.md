@@ -215,6 +215,9 @@ Output should match `docker compose config` where possible.
 **Intentional differences**:
 
 - OS env vars not included by default (use `--os-env` for compatibility)
+- `config --format=json` keeps `x-incus`/`x-incus-compose` (compose-go tags
+  extensions `json:"-"`, so docker drops them); it therefore omits docker's
+  explicit `command`/`entrypoint`/`ipam` nulls. `--format=yaml` matches exactly.
 
 ## Questions?
 
