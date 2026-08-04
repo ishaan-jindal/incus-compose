@@ -9,7 +9,7 @@ Version numbering moved from `0.0.1` to `1.0.0` at beta11 (1.0.0 is the intended
 final version), and the beta suffix gained a dot (`beta.16`) from beta.16 onward
 for correct semver ordering. Headings below preserve each release's announced form.
 
-## [1.2.0] - unreleased
+## [1.2.0] - 2026-08-04
 
 ### Added
 
@@ -23,6 +23,12 @@ for correct semver ordering. Headings below preserve each release's announced fo
 
 ### Changed
 
+- the image cache moved from the Incus `default` project to `incus-compose-cache`,
+  so cached images no longer pile up in the project most people work in. Whatever
+  earlier versions cached in `default` stays there and is never read again; delete
+  it by hand (`incus image list --project default`, filter on `.properties.type ==
+"oci"`). `--image-cache` still overrides the project, and `""` still disables
+  caching. (by @jochumdev)
 - a service with `build:` no longer rebuilds in every project: the image cache
   is checked before the builder runs, so the first `up` anywhere builds and the
   rest copy from the cache. Use `--build` to force a rebuild after changing a
