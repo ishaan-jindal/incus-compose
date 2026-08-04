@@ -2,19 +2,25 @@ name: with-bind-mounts
 
 services:
   file-web:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine-slim
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    image: docker.io/library/caddy:2-alpine
     x-incus:
       limits.cpu: 1
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
     volumes:
-      - ./file.html:/usr/share/nginx/html/index.html:ro
+      - ./file.html:/usr/share/caddy/index.html:ro
 
   dir-web:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine-slim
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    image: docker.io/library/caddy:2-alpine
     x-incus:
       limits.cpu: 1
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
     volumes:
-      - ./html:/usr/share/nginx/html:ro
+      - ./html:/usr/share/caddy:ro
+
+configs:
+  caddyfile:
+    file: ./Caddyfile

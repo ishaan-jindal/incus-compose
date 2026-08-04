@@ -125,7 +125,7 @@ func TestBindMountNoShift(t *testing.T) {
 	// With security.shifted=false the bind mount is not id-shifted, so the host
 	// file shows up as nobody (65534) inside the unprivileged container.
 	err = pollServiceExec(ctx, t, pn, compose, "web",
-		[]string{"ls", "-ln", "/usr/share/nginx/html/index.html"}, "65534", 60*time.Second)
+		[]string{"ls", "-ln", "/usr/share/caddy/index.html"}, "65534", 60*time.Second)
 	require.NoError(t, err)
 }
 

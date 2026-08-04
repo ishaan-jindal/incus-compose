@@ -1,8 +1,9 @@
-name: nginx-proxy
+name: proxy
 services:
   backend1:
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
     healthcheck:
       test:
         - CMD
@@ -13,15 +14,16 @@ services:
       timeout: 5s
       interval: 5s
       retries: 3
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
+    image: docker.io/library/caddy:2-alpine
     networks:
       default: null
     restart: unless-stopped
     x-incus:
       limits.cpu: 1
   backend2:
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
     healthcheck:
       test:
         - CMD
@@ -32,13 +34,16 @@ services:
       timeout: 5s
       interval: 5s
       retries: 3
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
+    image: docker.io/library/caddy:2-alpine
     networks:
       default: null
     restart: unless-stopped
     x-incus:
       limits.cpu: 1
-  nginx:
+  frontend:
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
     depends_on:
       backend1:
         condition: service_healthy
@@ -46,8 +51,6 @@ services:
       backend2:
         condition: service_healthy
         required: true
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
     healthcheck:
       test:
         - CMD
@@ -58,7 +61,7 @@ services:
       timeout: 5s
       interval: 5s
       retries: 3
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
+    image: docker.io/library/caddy:2-alpine
     networks:
       default: null
     restart: unless-stopped
@@ -66,4 +69,8 @@ services:
       limits.cpu: 1
 networks:
   default:
-    name: nginx-proxy_default
+    name: proxy_default
+configs:
+  caddyfile:
+    name: proxy_caddyfile
+    file: $FIXTURE_PATH/Caddyfile

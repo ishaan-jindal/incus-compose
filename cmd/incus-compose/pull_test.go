@@ -52,7 +52,7 @@ func TestE2EPull(t *testing.T) {
 
 	ctx := t.Context()
 	pn := t.Name()
-	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+	compose := "../../test/fixtures/simple/compose.yaml"
 
 	t.Cleanup(func() {
 		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")

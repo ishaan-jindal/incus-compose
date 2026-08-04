@@ -1,4 +1,4 @@
-name: nginx-scale
+name: scale
 services:
   web:
     deploy:
@@ -16,4 +16,4 @@ services:
       limits.cpu: 1
 networks:
   default:
-    name: nginx-scale_default
+    name: scale_default

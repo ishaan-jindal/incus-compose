@@ -35,11 +35,9 @@
     "description": "incus-compose: teste2estartstoprestartwithdeps:frontend-1",
     "incus_name": "frontend-1",
     "image": "docker.io/alpine:edge",
-    "status": "Running",
+    "status": "Stopped",
     "health": "Unknown",
-    "addresses": [
-      "-stripped-"
-    ]
+    "addresses": []
   },
   {
     "kind": "instance",

@@ -1,4 +1,4 @@
-name: simple-nginx
+name: simple
 services:
   web:
     image: docker.io/alpine:edge
@@ -8,4 +8,4 @@ services:
       limits.cpu: 1
 networks:
   default:
-    name: simple-nginx_default
+    name: simple_default

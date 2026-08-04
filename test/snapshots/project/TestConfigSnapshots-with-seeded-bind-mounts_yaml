@@ -1,30 +1,32 @@
 name: with-seeded-bind-mounts
 services:
   dir-web:
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
-    image: docker.io/nginxinc/nginx-unprivileged:alpine-slim
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+    image: docker.io/library/caddy:2-alpine
     networks:
       default: null
     volumes:
       - type: bind
         source: $FIXTURE_PATH/html
-        target: /usr/share/nginx/html
+        target: /usr/share/caddy
         read_only: true
         x-incus-compose:
           seed: true
     x-incus:
       limits.cpu: 1
   file-web:
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
-    image: docker.io/nginxinc/nginx-unprivileged:alpine-slim
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+    image: docker.io/library/caddy:2-alpine
     networks:
       default: null
     volumes:
       - type: bind
         source: $FIXTURE_PATH/file.html
-        target: /usr/share/nginx/html/index.html
+        target: /usr/share/caddy/index.html
         read_only: true
         x-incus-compose:
           seed: true
@@ -33,3 +35,7 @@ services:
 networks:
   default:
     name: with-seeded-bind-mounts_default
+configs:
+  caddyfile:
+    name: with-seeded-bind-mounts_caddyfile
+    file: $FIXTURE_PATH/Caddyfile

@@ -47,7 +47,7 @@ func TestE2EEventDrivenDiscovery(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	projectName := strings.ToLower(t.Name())
-	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+	compose := "../../test/fixtures/proxy/compose.yaml"
 
 	c, p := loadProject(ctx, t, compose, projectName)
 	err := c.Open()
@@ -234,7 +234,7 @@ func TestE2ECrashedInstanceRestarts(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	projectName := strings.ToLower(t.Name())
-	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+	compose := "../../test/fixtures/proxy/compose.yaml"
 
 	c, p := loadProject(ctx, t, compose, projectName)
 	err := c.Open()
@@ -318,14 +318,16 @@ func TestE2ERepeatedCrashesBackoff(t *testing.T) {
 	projectName := strings.ToLower(t.Name())
 
 	dir := writeTempFiles(t, map[string]string{
+		"Caddyfile": ":8080 {\n\troot * /usr/share/caddy\n\tfile_server\n}\n",
 		"compose.yaml": `services:
-  nginx:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
+  frontend:
+    image: docker.io/library/caddy:2-alpine
     restart: unless-stopped
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
     x-incus:
       limits.cpu: 1
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
     depends_on:
       backend1:
         condition: service_healthy
@@ -338,12 +340,13 @@ func TestE2ERepeatedCrashesBackoff(t *testing.T) {
       retries: 3
 
   backend1:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
+    image: docker.io/library/caddy:2-alpine
     restart: unless-stopped
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
     x-incus:
       limits.cpu: 1
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
       interval: 5s
@@ -351,17 +354,22 @@ func TestE2ERepeatedCrashesBackoff(t *testing.T) {
       retries: 1
 
   backend2:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
+    image: docker.io/library/caddy:2-alpine
     restart: unless-stopped
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
     x-incus:
       limits.cpu: 1
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
       interval: 5s
       timeout: 5s
       retries: 3
+
+configs:
+  caddyfile:
+    file: ./Caddyfile
 `,
 	})
 	compose := filepath.Join(dir, "compose.yaml")
@@ -454,7 +462,7 @@ func TestE2EIntentionalStopIsNotRestarted(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	projectName := strings.ToLower(t.Name())
-	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+	compose := "../../test/fixtures/proxy/compose.yaml"
 
 	c, p := loadProject(ctx, t, compose, projectName)
 	err := c.Open()
@@ -532,7 +540,7 @@ func TestE2EStaleRespawnDoesNotResurrect(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	projectName := strings.ToLower(t.Name())
-	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+	compose := "../../test/fixtures/proxy/compose.yaml"
 
 	c, p := loadProject(ctx, t, compose, projectName)
 	err := c.Open()

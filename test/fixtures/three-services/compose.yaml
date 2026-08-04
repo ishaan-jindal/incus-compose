@@ -13,8 +13,6 @@ services:
   backend1:
     image: docker.io/alpine:edge
     restart: unless-stopped
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
     x-incus:
       limits.cpu: 1
 
