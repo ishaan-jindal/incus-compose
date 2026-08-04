@@ -282,7 +282,7 @@ func newRootCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:    "image-cache",
 				Usage:   `Image cache project to use, set empty to disable`,
-				Value:   "default",
+				Value:   client.DefaultCacheProject,
 				Sources: cli.EnvVars("INCUS_COMPOSE_IMAGE_CACHE"),
 			},
 			&cli.StringSliceFlag{
