@@ -2,6 +2,8 @@ package client
 
 import (
 	"context"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -419,5 +421,45 @@ func TestStorageVolumeHooks(t *testing.T) {
 			c := newRandomTestClient(ctx, t, "volume-hook-")
 			tt.run(t, c)
 		})
+	}
+}
+
+func TestStorageVolumeEnsure_ConcurrentCreate(t *testing.T) {
+	skipLocal(t)
+	ctx := t.Context()
+
+	// One project, one volume name, so every worker races to create it.
+	c := newRandomTestClient(ctx, t, "volume-race-")
+	name := "ic-vol-" + strings.ToLower(RandString(6))
+
+	const workers = 6
+	vols := make([]Resource, workers)
+	for i := range vols {
+		r, err := newStorageVolume(c, name, &StorageVolumeConfig{})
+		require.NoError(t, err)
+		vols[i] = r
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, workers)
+	start := make(chan struct{})
+
+	for i, r := range vols {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			<-start
+
+			errs[i] = RunAction(ctx, r, ActionEnsure, OptionCreate())
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		require.NoError(t, err, i)
+		require.True(t, vols[i].IsEnsured(), i)
 	}
 }

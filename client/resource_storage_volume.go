@@ -134,6 +134,13 @@ func (r *StorageVolume) Ensure(ctx context.Context, opts ...Option) error {
 	if err != nil {
 		if options.Create && errors.Is(err, ErrNotFound) {
 			err = r.create()
+
+			// Incus reports a lost create race either as "already exists" or as a
+			// raw unique-constraint failure, so adopt whatever is there instead of
+			// matching messages.
+			if err != nil && r.get() == nil {
+				err = nil
+			}
 		}
 	}
 

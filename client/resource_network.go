@@ -215,6 +215,12 @@ func (r *Network) Ensure(ctx context.Context, opts ...Option) error {
 	}
 
 	err = r.create(ctx)
+
+	// A concurrent creator may have won the race; adopt whatever is there.
+	if err != nil && r.get() == nil {
+		err = nil
+	}
+
 	err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 
 	return err

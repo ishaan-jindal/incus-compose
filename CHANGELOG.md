@@ -20,6 +20,8 @@ for correct semver ordering. Headings below preserve each release's announced fo
 
 - default pool detection now checks the "root" device of the "default" profile first,
   if not found falls back to first pool found. (by @jochumdev)
+- concurrent `up` runs no longer fail creating the same volume, profile or
+  network; the loser of the race adopts what the winner made. (by @jochumdev)
 
 ## [1.1.0] - 2026-07-31
 
