@@ -21,6 +21,9 @@ const (
 
 	// debounceWindow coalesces bursts of update/delete events into one kill-and-replace.
 	debounceWindow = 100 * time.Millisecond
+
+	// apiTimeout bounds an Incus API call, at the transport and at the caller.
+	apiTimeout = 30 * time.Second
 )
 
 // Default healthcheck settings when keys are missing on the instance.

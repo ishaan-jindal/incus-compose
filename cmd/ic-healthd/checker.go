@@ -150,9 +150,37 @@ func (c *checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 	}
 }
 
+// withContext runs call on its own goroutine and gives up when ctx is done.
+func withContext[T any](ctx context.Context, call func() (T, error)) (T, error) {
+	type result struct {
+		value T
+		err   error
+	}
+
+	ch := make(chan result, 1)
+	go func() {
+		value, err := call()
+		ch <- result{value: value, err: err}
+	}()
+
+	select {
+	case r := <-ch:
+		return r.value, r.err
+	case <-ctx.Done():
+		var zero T
+		return zero, ctx.Err()
+	}
+}
+
 // check runs the healthcheck command once and returns nil when healthy.
 func (c *checker) check(ctx context.Context) error {
-	inst, _, err := c.conn.GetInstanceState(c.name)
+	stateCtx, cancel := context.WithTimeout(ctx, c.params.Timeout)
+	defer cancel()
+
+	inst, err := withContext(stateCtx, func() (*incusApi.InstanceState, error) {
+		state, _, err := c.conn.GetInstanceState(c.name)
+		return state, err
+	})
 	if err != nil {
 		slog.Debug("fetching instance status error", "instance", c.name, "error", err)
 		return err
@@ -213,7 +241,10 @@ func (c *checker) exec(ctx context.Context, cmd []string) (int, string, string, 
 		DataDone: make(chan bool),
 	}
 
-	op, err := c.conn.ExecInstance(c.name, req, &args)
+	// A timed-out call leaves any operation it creates for the server to reap.
+	op, err := withContext(ctx, func() (incus.Operation, error) {
+		return c.conn.ExecInstance(c.name, req, &args)
+	})
 	if err != nil {
 		return -1, "", "", err
 	}
@@ -250,7 +281,13 @@ func (c *checker) writeStatus(ctx context.Context, status string) error {
 		return nil
 	}
 
-	inst, _, err := c.conn.GetInstance(c.name)
+	ctx, cancel := context.WithTimeout(ctx, apiTimeout)
+	defer cancel()
+
+	inst, err := withContext(ctx, func() (*incusApi.Instance, error) {
+		i, _, err := c.conn.GetInstance(c.name)
+		return i, err
+	})
 	if err != nil {
 		return err
 	}
@@ -286,12 +323,16 @@ func (c *checker) writeStatus(ctx context.Context, status string) error {
 		retry.RetryIf(func(err error) bool {
 			return strings.Contains(err.Error(), "Instance is busy")
 		}),
+		retry.LastErrorOnly(true),
 	).Do(func() error {
-		_, _, patchErr := c.conn.RawQuery("PATCH", path, instanceConfigPatch{
-			Config: map[string]string{shared.HealthStatusKey: status},
-		}, "")
+		_, err := withContext(ctx, func() (struct{}, error) {
+			_, _, patchErr := c.conn.RawQuery("PATCH", path, instanceConfigPatch{
+				Config: map[string]string{shared.HealthStatusKey: status},
+			}, "")
 
-		return patchErr
+			return struct{}{}, patchErr
+		})
+		return err
 	})
 	if err != nil {
 		return err

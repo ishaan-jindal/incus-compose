@@ -83,6 +83,13 @@ for correct semver ordering. Headings below preserve each release's announced fo
   correctly. They were wrapped in double quotes with no escaping, and a
   single-argument command was passed through unquoted, so either could be
   re-split into the wrong arguments. (by @jochumdev)
+- ic-healthd no longer stops health checking an instance when an Incus API call
+  stalls. The Incus client takes no per-call context, so a request that was
+  accepted but never answered blocked the instance's checker for good - it
+  reported no status at all from then on, and anything waiting on
+  `condition: service_healthy` timed out. Calls are now bounded by the
+  healthcheck's own `timeout`, and the daemon's HTTP transport has a
+  30s response-header timeout. (by @jochumdev)
 
 ## [1.1.0] - 2026-07-31
 
