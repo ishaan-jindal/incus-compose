@@ -16,6 +16,10 @@ for correct semver ordering. Headings below preserve each release's announced fo
 - `--pull never` on `up`, `build` and `pull` (`--policy never`) never contacts a
   registry and fails when the image is not already stored, for air-gapped use.
   `pull --policy` is honoured now instead of being ignored. (by @jochumdev)
+- **library**: `StorageVolume.SFTP()` and `StorageVolume.Lock()` expose the
+  volume over SFTP and provide an advisory lock on it, with optional stale
+  takeover and heartbeat. Lock names may contain slashes; missing parent
+  directories are created. (by @jochumdev)
 
 ### Changed
 
@@ -30,9 +34,12 @@ for correct semver ordering. Headings below preserve each release's announced fo
   `ImageConfig.CacheClient` (a `*client.Client`), needed to ensure the lock
   volume. `Options.Pull` is a `PullMode` instead of a `bool`; `OptionPull()`
   still selects `PullAlways`. (by @jochumdev)
-
 - `up` without `--detach` no behaves the same as `docker compose`, it creates
   and starts the resources, then runs logs and on interrupt `down`. (by @jochumdev)
+- `config --format=json` keeps the `x-incus` and `x-incus-compose` blocks, which
+  `docker compose` drops. As a consequence it omits docker's explicit
+  `command`/`entrypoint`/`ipam` nulls and sorts keys alphabetically, so parse the
+  JSON rather than diffing it against docker's. (by @jochumdev)
 
 ### Fixed
 
@@ -40,6 +47,19 @@ for correct semver ordering. Headings below preserve each release's announced fo
   if not found falls back to first pool found. (by @jochumdev)
 - concurrent `up` runs no longer fail creating the same volume, profile or
   network; the loser of the race adopts what the winner made. (by @jochumdev)
+- `config --format=yaml` no longer nests the whole document under a `project:`
+  key, matching `docker compose config`. (by @jochumdev)
+- `build.dockerfile` is resolved relative to `build.context` as the compose spec
+  requires, instead of the working directory. Two services with different
+  contexts but the same `dockerfile:` name were both built from whichever
+  Dockerfile sat in the current directory. (by @jochumdev)
+- a service's `x-incus.raw.dnsmasq` lines are no longer appended a second time
+  when they already appear in the generated config. (by @jochumdev)
+- assigning a static `ipv4_address`/`ipv6_address` on a network whose address is
+  `auto` now fails with an explanation instead of producing a broken NIC: the
+  gateway is not known until the network exists. (by @jochumdev)
+- pushing directory content into a storage volume no longer closes each file
+  twice. (by @jochumdev)
 
 ## [1.1.0] - 2026-07-31
 
