@@ -89,14 +89,32 @@ Prefer Go-style concise names over Java-style verbose names:
 | `Copied()` | `IsCopiedToProject()` |
 | `Status()` | `GetCurrentStatus()`  |
 | `Valid()`  | `IsValidInstance()`   |
+| `Backuper` | `BackupManager`       |
+| `mu`       | `wellKnownMu`         |
 | `err`      | `errorResult`         |
 
 Go code reads better when names are short and context provides meaning.
+
+Name a type for what it *is*, not for the role it plays: `Backuper`, not
+`BackupManager`. `-Manager`, `-Handler`, `-Service` and `-Helper` suffixes carry
+no information.
+
+Don't qualify a variable with what it guards or holds when the scope already
+says it - a mutex in a struct with one lock is `mu`.
+
+### Helpers
+
+Avoid single-purpose helpers. A function with one caller is usually better
+inlined: the indirection costs the reader a jump and hides the flow. The
+exception is when extracting it makes the caller *much* easier to read - a
+noisy block reduced to one named line.
 
 ### Comments
 
 - All exported functions and types need doc comments ending with a period
 - No misleading comments - if code is self-explanatory, don't comment
+- Comments are code: keep them as short as what they explain, and delete them
+  when the code already says it
 
 ### Use of `any`
 
