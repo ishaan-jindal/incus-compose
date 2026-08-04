@@ -9,6 +9,8 @@ services:
         uid: "101"
         gid: "101"
         mode: "0640"
+      - source: image_override
+        target: /etc/nsswitch.conf
     image: docker.io/library/busybox:glibc
     networks:
       default: null
@@ -24,6 +26,10 @@ configs:
     content: |
       DB_HOST=localhost
       DB_PORT=5432
+  image_override:
+    name: test-local-config_image_override
+    content: |
+      overwrote-the-image-file
   nginx_config:
     name: test-local-config_nginx_config
     environment: NGINX_CONFIG

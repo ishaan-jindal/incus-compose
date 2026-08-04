@@ -58,14 +58,14 @@ func TestE2EUpNoDeps(t *testing.T) {
 }
 
 // TestE2EConfigOverwritesImageFile verifies a config whose target already exists
-// in the image replaces it. The caddy image ships its own /etc/caddy/Caddyfile
-// listening on :80, so only the pushed one contains :8080.
+// in the image replaces it. The busybox image ships /etc/nsswitch.conf, so the
+// marker content can only come from the pushed config.
 func TestE2EConfigOverwritesImageFile(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipE2E(t)
 
-	compose := "../../test/fixtures/proxy/compose.yaml"
+	compose := "../../test/fixtures/with-configs/compose.yaml"
 
 	ctx := t.Context()
 	pn := t.Name()
@@ -74,13 +74,14 @@ func TestE2EConfigOverwritesImageFile(t *testing.T) {
 		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach", "--no-deps", "backend1")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
-	stdout, err := runCommand(ctx, t, pn, "-f", compose, "exec", "--no-tty", "backend1",
-		"--", "cat", "/etc/caddy/Caddyfile")
+	stdout, err := runCommand(ctx, t, pn, "-f", compose, "exec", "--no-tty", "app",
+		"--", "cat", "/etc/nsswitch.conf")
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), ":8080", "the pushed Caddyfile must replace the image's own")
+	assert.Contains(t, stdout.String(), "overwrote-the-image-file",
+		"the pushed config must replace the image's own file")
 }
 
 // TestE2EUpDeps verifies `up <service>` (default) follows depends_on and starts the

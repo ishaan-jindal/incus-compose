@@ -1,19 +1,13 @@
 services:
   web:
-    image: docker.io/library/caddy:2-alpine
+    image: docker.io/library/busybox:glibc
+    command: ["-c", "httpd -f -v -p 8080 -h /www"]
     x-incus:
       limits.cpu: 1
-    configs:
-      - source: caddyfile
-        target: /etc/caddy/Caddyfile
     volumes:
       - type: bind
         source: ./html
-        target: /usr/share/caddy
+        target: /www
         read_only: true
         x-incus:
           security.shifted: "false"
-
-configs:
-  caddyfile:
-    file: ./Caddyfile

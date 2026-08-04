@@ -1,9 +1,10 @@
 name: proxy
 services:
   backend1:
-    configs:
-      - source: caddyfile
-        target: /etc/caddy/Caddyfile
+    command:
+      - -c
+      - mkdir -p /www && echo backend1-ok > /www/index.html && httpd -f -v -p 8080
+        -h /www
     healthcheck:
       test:
         - CMD
@@ -14,16 +15,17 @@ services:
       timeout: 5s
       interval: 5s
       retries: 3
-    image: docker.io/library/caddy:2-alpine
+    image: docker.io/library/busybox:glibc
     networks:
       default: null
     restart: unless-stopped
     x-incus:
       limits.cpu: 1
   backend2:
-    configs:
-      - source: caddyfile
-        target: /etc/caddy/Caddyfile
+    command:
+      - -c
+      - mkdir -p /www && echo backend2-ok > /www/index.html && httpd -f -v -p 8080
+        -h /www
     healthcheck:
       test:
         - CMD
@@ -34,16 +36,17 @@ services:
       timeout: 5s
       interval: 5s
       retries: 3
-    image: docker.io/library/caddy:2-alpine
+    image: docker.io/library/busybox:glibc
     networks:
       default: null
     restart: unless-stopped
     x-incus:
       limits.cpu: 1
   frontend:
-    configs:
-      - source: caddyfile
-        target: /etc/caddy/Caddyfile
+    command:
+      - -c
+      - mkdir -p /www && echo frontend-ok > /www/index.html && httpd -f -v -p 8080
+        -h /www
     depends_on:
       backend1:
         condition: service_healthy
@@ -61,7 +64,7 @@ services:
       timeout: 5s
       interval: 5s
       retries: 3
-    image: docker.io/library/caddy:2-alpine
+    image: docker.io/library/busybox:glibc
     networks:
       default: null
     restart: unless-stopped
@@ -70,7 +73,3 @@ services:
 networks:
   default:
     name: proxy_default
-configs:
-  caddyfile:
-    name: proxy_caddyfile
-    file: $FIXTURE_PATH/Caddyfile

@@ -9,6 +9,8 @@ services:
         uid: "101"
         gid: "101"
         mode: 0o640
+      - source: image_override
+        target: /etc/nsswitch.conf
 
 configs:
   app_config:
@@ -19,3 +21,8 @@ configs:
       DB_PORT=5432
   nginx_config:
     environment: NGINX_CONFIG
+  # Targets a path the busybox image already ships, so it only lands if
+  # configs overwrite image files.
+  image_override:
+    content: |
+      overwrote-the-image-file

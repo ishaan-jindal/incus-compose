@@ -318,16 +318,13 @@ func TestE2ERepeatedCrashesBackoff(t *testing.T) {
 	projectName := strings.ToLower(t.Name())
 
 	dir := writeTempFiles(t, map[string]string{
-		"Caddyfile": ":8080 {\n\troot * /usr/share/caddy\n\tfile_server\n}\n",
 		"compose.yaml": `services:
   frontend:
-    image: docker.io/library/caddy:2-alpine
+    image: docker.io/library/busybox:glibc
     restart: unless-stopped
+    command: ["-c", "mkdir -p /www && echo frontend-ok > /www/index.html && httpd -f -v -p 8080 -h /www"]
     x-incus:
       limits.cpu: 1
-    configs:
-      - source: caddyfile
-        target: /etc/caddy/Caddyfile
     depends_on:
       backend1:
         condition: service_healthy
@@ -340,13 +337,11 @@ func TestE2ERepeatedCrashesBackoff(t *testing.T) {
       retries: 3
 
   backend1:
-    image: docker.io/library/caddy:2-alpine
+    image: docker.io/library/busybox:glibc
     restart: unless-stopped
+    command: ["-c", "mkdir -p /www && echo backend1-ok > /www/index.html && httpd -f -v -p 8080 -h /www"]
     x-incus:
       limits.cpu: 1
-    configs:
-      - source: caddyfile
-        target: /etc/caddy/Caddyfile
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
       interval: 5s
@@ -354,22 +349,16 @@ func TestE2ERepeatedCrashesBackoff(t *testing.T) {
       retries: 1
 
   backend2:
-    image: docker.io/library/caddy:2-alpine
+    image: docker.io/library/busybox:glibc
     restart: unless-stopped
+    command: ["-c", "mkdir -p /www && echo backend2-ok > /www/index.html && httpd -f -v -p 8080 -h /www"]
     x-incus:
       limits.cpu: 1
-    configs:
-      - source: caddyfile
-        target: /etc/caddy/Caddyfile
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
       interval: 5s
       timeout: 5s
       retries: 3
-
-configs:
-  caddyfile:
-    file: ./Caddyfile
 `,
 	})
 	compose := filepath.Join(dir, "compose.yaml")

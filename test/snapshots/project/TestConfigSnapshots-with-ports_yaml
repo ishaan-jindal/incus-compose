@@ -1,7 +1,7 @@
 name: with-ports
 services:
   web:
-    image: docker.io/caddy:latest
+    image: docker.io/alpine:edge
     networks:
       default: null
     ports:

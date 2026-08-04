@@ -14,7 +14,7 @@
     "name": "backend1",
     "description": "incus-compose: teste2ehealthdproxy:backend1-1",
     "incus_name": "backend1-1",
-    "image": "docker.io/library/caddy:2-alpine",
+    "image": "docker.io/library/busybox:glibc",
     "status": "Running",
     "health": "Healthy",
     "addresses": [
@@ -26,7 +26,7 @@
     "name": "backend2",
     "description": "incus-compose: teste2ehealthdproxy:backend2-1",
     "incus_name": "backend2-1",
-    "image": "docker.io/library/caddy:2-alpine",
+    "image": "docker.io/library/busybox:glibc",
     "status": "Running",
     "health": "Healthy",
     "addresses": [
@@ -38,7 +38,7 @@
     "name": "frontend",
     "description": "incus-compose: teste2ehealthdproxy:frontend-1",
     "incus_name": "frontend-1",
-    "image": "docker.io/library/caddy:2-alpine",
+    "image": "docker.io/library/busybox:glibc",
     "status": "Running",
     "health": "Healthy",
     "addresses": [
