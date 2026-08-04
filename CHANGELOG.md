@@ -55,8 +55,8 @@ for correct semver ordering. Headings below preserve each release's announced fo
   Dockerfile sat in the current directory. (by @jochumdev)
 - a service's `x-incus.raw.dnsmasq` lines are no longer appended a second time
   when they already appear in the generated config. (by @jochumdev)
-- assigning a static `ipv4_address`/`ipv6_address` on a network whose address is
-  `auto` now fails with an explanation instead of producing a broken NIC: the
+- assigning a static `ipv4_address`/`ipv6_address` on a network with no explicit
+  address now fails with an explanation instead of producing a broken NIC: the
   gateway is not known until the network exists. (by @jochumdev)
 - pushing directory content into a storage volume no longer closes each file
   twice. (by @jochumdev)

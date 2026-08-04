@@ -331,7 +331,7 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 
 			if !networkDef.Internal {
 				v, ok := netConfig.Extensions["ipv4.address"]
-				if ok && v != "none" && v != "auto" {
+				if ok && v != "none" && v != "" {
 					ip, _, err := net.ParseCIDR(v)
 					if err != nil {
 						errs = errors.Join(
@@ -343,7 +343,7 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 					gateway4 = ip.String()
 				}
 				v, ok = netConfig.Extensions["ipv6.address"]
-				if ok && v != "none" && v != "auto" {
+				if ok && v != "none" && v != "" {
 					ip, _, err := net.ParseCIDR(v)
 					if err != nil {
 						errs = errors.Join(
@@ -378,12 +378,13 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 			ipv6Address = sNet.Ipv6Address
 		}
 
-		if (ipv4Address != "" && netConfig.Extensions["ipv4.address"] == "auto") ||
-			(ipv6Address != "" && netConfig.Extensions["ipv6.address"] == "auto") {
+		// A gateway set on the NIC supplies what the missing network address would have.
+		if (ipv4Address != "" && netConfig.Extensions["ipv4.address"] == "" && userExtensions["ipv4.gateway"] == "") ||
+			(ipv6Address != "" && netConfig.Extensions["ipv6.address"] == "" && userExtensions["ipv6.gateway"] == "") {
 			errs = errors.Join(
 				errs,
 				fmt.Errorf(
-					"service %q: cannot assign a static IP on network %q whose address is \"auto\" - the gateway isn't known until the network is created; set an explicit CIDR on the network instead",
+					"service %q: cannot assign a static IP on network %q with no address - the gateway isn't known until the network is created; set an explicit CIDR on the network instead",
 					service.Name, name,
 				),
 			)
