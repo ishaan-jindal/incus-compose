@@ -28,6 +28,10 @@ const (
 	PullNever
 )
 
+// DefaultCacheProject is the Incus project images are cached in. It is not the
+// "default" project so our images don't pile up where users keep their own.
+const DefaultCacheProject = "incus-compose-cache"
+
 // DefaultLockVolume is the storage volume holding the per-alias image locks.
 const DefaultLockVolume = "ic-image-lock"
 
