@@ -78,7 +78,7 @@ func newUpCommand() *cli.Command {
 			&cli.BoolFlag{
 				Name:    "detach",
 				Aliases: []string{"d"},
-				Usage:   "Detached mode: run containers in the background (a WIP)",
+				Usage:   "Detached mode: run containers in the background",
 				Sources: cli.EnvVars("INCUS_COMPOSE_UP_DETACH"),
 			},
 			&cli.BoolFlag{
