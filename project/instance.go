@@ -791,11 +791,12 @@ func instanceSecrets(p *types.Project, service types.ServiceConfig) ([]client.In
 				continue
 			}
 			result = append(result, client.InstanceFile{
-				Target:  svcSecret.Target,
-				Content: fp,
-				UID:     parseSecretID(svcSecret.UID),
-				GID:     parseSecretID(svcSecret.GID),
-				Mode:    parseSecretMode(svcSecret.Mode),
+				Target:    svcSecret.Target,
+				Content:   fp,
+				UID:       parseSecretID(svcSecret.UID),
+				GID:       parseSecretID(svcSecret.GID),
+				Mode:      parseSecretMode(svcSecret.Mode),
+				Overwrite: true,
 			})
 		case secretDef.Environment != "":
 			value, ok := p.Environment[secretDef.Environment]
@@ -805,11 +806,12 @@ func instanceSecrets(p *types.Project, service types.ServiceConfig) ([]client.In
 			}
 
 			result = append(result, client.InstanceFile{
-				Target:  svcSecret.Target,
-				Content: client.NewReaderFromBytes([]byte(value)),
-				UID:     parseSecretID(svcSecret.UID),
-				GID:     parseSecretID(svcSecret.GID),
-				Mode:    parseSecretMode(svcSecret.Mode),
+				Target:    svcSecret.Target,
+				Content:   client.NewReaderFromBytes([]byte(value)),
+				UID:       parseSecretID(svcSecret.UID),
+				GID:       parseSecretID(svcSecret.GID),
+				Mode:      parseSecretMode(svcSecret.Mode),
+				Overwrite: true,
 			})
 		default:
 			errs = errors.Join(errs, fmt.Errorf("secret '%v' has no source (file or environment)", svcSecret.Source))
@@ -961,20 +963,22 @@ func instanceConfigs(p *types.Project, service types.ServiceConfig) ([]client.In
 				continue
 			}
 			result = append(result, client.InstanceFile{
-				Target:  target,
-				Content: fp,
-				UID:     parseSecretID(svcConfig.UID),
-				GID:     parseSecretID(svcConfig.GID),
-				Mode:    parseConfigMode(svcConfig.Mode),
+				Target:    target,
+				Content:   fp,
+				UID:       parseSecretID(svcConfig.UID),
+				GID:       parseSecretID(svcConfig.GID),
+				Mode:      parseConfigMode(svcConfig.Mode),
+				Overwrite: true,
 			})
 		// Content will be populated by compose-go from its environment.
 		case configDef.Content != "":
 			result = append(result, client.InstanceFile{
-				Target:  target,
-				Content: client.NewReaderFromBytes([]byte(configDef.Content)),
-				UID:     parseSecretID(svcConfig.UID),
-				GID:     parseSecretID(svcConfig.GID),
-				Mode:    parseConfigMode(svcConfig.Mode),
+				Target:    target,
+				Content:   client.NewReaderFromBytes([]byte(configDef.Content)),
+				UID:       parseSecretID(svcConfig.UID),
+				GID:       parseSecretID(svcConfig.GID),
+				Mode:      parseConfigMode(svcConfig.Mode),
+				Overwrite: true,
 			})
 		default:
 			errs = errors.Join(errs, fmt.Errorf("config '%v' has no source (file or content - content would be populated from environment)", target))

@@ -152,7 +152,7 @@ run-healthd compose="examples/immich/compose.yaml" name="immich": build-healthd
     go run ./cmd/incus-compose --debug -f {{ compose }} healthd up --recreate --binary bin/ic-healthd
     go run ./cmd/incus-compose -f {{ compose }} incus exec {{ name }}-ic-healthd -- tail -n 1000 -f /var/log/ic-healthd.log
 
-# Usage: just run -f test/fixtures/simple-nginx/compose.yaml config
+# Usage: just run -f test/fixtures/simple/compose.yaml config
 run *args:
     @go run ./cmd/incus-compose {{ args }}
 

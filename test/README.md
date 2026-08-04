@@ -70,9 +70,9 @@ just cleanup
 
 Test fixtures are located in `test/fixtures/` and represent different compose scenarios:
 
-- `simple-nginx/`: Simple single-service setup
+- `simple/`: Simple single-service setup
 - `wordpress/`: Multi-service application with database
-- `nginx_proxy/`: Network configuration testing
+- `proxy/`: Network configuration testing
 - `with_profiles/`: Profile-based configurations
 - `with_env/`: Environment variable testing
 - `dev_environment/`: Complex development setup

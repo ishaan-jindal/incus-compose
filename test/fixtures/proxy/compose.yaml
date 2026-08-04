@@ -1,11 +1,12 @@
 services:
-  nginx:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
+  frontend:
+    image: docker.io/library/caddy:2-alpine
     restart: unless-stopped
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
     x-incus:
       limits.cpu: 1
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
     depends_on:
       backend1:
         condition: service_healthy
@@ -18,12 +19,13 @@ services:
       retries: 3
 
   backend1:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
+    image: docker.io/library/caddy:2-alpine
     restart: unless-stopped
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
     x-incus:
       limits.cpu: 1
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
       interval: 5s
@@ -31,14 +33,19 @@ services:
       retries: 3
 
   backend2:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
+    image: docker.io/library/caddy:2-alpine
     restart: unless-stopped
-    environment:
-      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
     x-incus:
       limits.cpu: 1
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
       interval: 5s
       timeout: 5s
       retries: 3
+
+configs:
+  caddyfile:
+    file: ./Caddyfile

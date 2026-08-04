@@ -17,7 +17,7 @@ func TestNoDanglingNetworksAfterDown(t *testing.T) {
 
 	ctx := t.Context()
 	pn := t.Name()
-	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+	compose := "../../test/fixtures/simple/compose.yaml"
 
 	t.Cleanup(func() {
 		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
@@ -48,7 +48,7 @@ func TestE2EStartStopIdempotent(t *testing.T) {
 	skipLocal(t)
 	skipE2E(t)
 
-	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+	compose := "../../test/fixtures/simple/compose.yaml"
 
 	ctx := t.Context()
 	pn := t.Name()
@@ -91,7 +91,7 @@ func TestE2ENoImageCache(t *testing.T) {
 	skipLocal(t)
 	skipE2E(t)
 
-	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+	compose := "../../test/fixtures/simple/compose.yaml"
 
 	ctx := t.Context()
 	pn := t.Name()

@@ -224,14 +224,14 @@ func TestConfigCommand(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			name:     "simple-nginx yaml",
+			name:     "simple yaml",
 			args:     []string{"config"},
-			fixtures: []string{"../../test/fixtures/simple-nginx/compose.yaml"},
+			fixtures: []string{"../../test/fixtures/simple/compose.yaml"},
 		},
 		{
-			name:     "simple-nginx json",
+			name:     "simple json",
 			args:     []string{"config", "--format", "json"},
-			fixtures: []string{"../../test/fixtures/simple-nginx/compose.yaml"},
+			fixtures: []string{"../../test/fixtures/simple/compose.yaml"},
 		},
 		{
 			name:     "two-services yaml",
@@ -279,8 +279,8 @@ func TestConfigCommand(t *testing.T) {
 			fixtures: []string{"../../test/fixtures/with-multi-files/a.yaml", "../../test/fixtures/with-multi-files/b.yaml"},
 		},
 		{
-			name: "project-directory simple-nginx",
-			args: []string{"--project-directory", "../../test/fixtures/simple-nginx", "config"},
+			name: "project-directory simple",
+			args: []string{"--project-directory", "../../test/fixtures/simple", "config"},
 		},
 		{
 			name: "project-directory docker-compose with incus overlay",
@@ -383,13 +383,13 @@ func TestConfigFilterByService(t *testing.T) {
 	}
 }
 
-func TestUpDownUpSimpleNginx(t *testing.T) {
+func TestUpDownUpSimple(t *testing.T) {
 	skipLocal(t)
 	t.Parallel()
 
 	ctx := t.Context()
 	pn := t.Name()
-	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+	compose := "../../test/fixtures/simple/compose.yaml"
 
 	t.Cleanup(func() {
 		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
@@ -397,19 +397,19 @@ func TestUpDownUpSimpleNginx(t *testing.T) {
 
 	tests := []e2eTest{
 		{
-			name:            "up simple-nginx",
+			name:            "up simple",
 			args:            []string{"-f", compose, "up", "--detach"},
 			snapshotList:    true,
 			snapStripHealth: false,
 		},
 		{
-			name:            "down simple-nginx",
+			name:            "down simple",
 			args:            []string{"-f", compose, "down"},
 			snapshotList:    true,
 			snapStripHealth: true,
 		},
 		{
-			name:            "up simple-nginx",
+			name:            "up simple",
 			args:            []string{"-f", compose, "up", "--detach"},
 			snapshotList:    true,
 			snapStripHealth: false,
@@ -470,7 +470,7 @@ func TestUpDownscaleRemovesInstancesAndDNS(t *testing.T) {
 
 	ctx := t.Context()
 	pn := t.Name()
-	compose := "../../test/fixtures/nginx-downscale/compose.yaml"
+	compose := "../../test/fixtures/downscale/compose.yaml"
 
 	networks := plannedNetworkNames(ctx, t, pn, compose)
 	require.NotEmpty(t, networks)

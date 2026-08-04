@@ -317,11 +317,11 @@ func TestStackProfileAndNetworkMixedPriorities(t *testing.T) {
 	}
 }
 
-func TestStackSimpleNginx(t *testing.T) {
+func TestStackSimple(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := t.Context()
-	c := newRandomTestClient(ctx, t, "stack-nginx-")
+	c := newRandomTestClient(ctx, t, "stack-simple-")
 
 	network, err := c.Resource(KindNetwork, "default", &NetworkConfig{})
 	require.NoError(t, err)
@@ -360,7 +360,7 @@ func TestStackSimpleNginx(t *testing.T) {
 	require.NoError(t, stack.ForAction(ActionStop).Run(ctx, ActionStop, OptionForce()))
 }
 
-func TestStackNginxScale(t *testing.T) {
+func TestStackScale(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	ctx := t.Context()

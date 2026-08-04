@@ -228,14 +228,14 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func TestE2EHealthdNginx(t *testing.T) {
+func TestE2EHealthdProxy(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipE2E(t)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	projectName := strings.ToLower(t.Name())
-	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+	compose := "../../test/fixtures/proxy/compose.yaml"
 
 	c, p := loadProject(ctx, t, compose, projectName)
 	err := c.Open()

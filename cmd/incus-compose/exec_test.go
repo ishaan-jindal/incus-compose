@@ -20,7 +20,7 @@ func TestExecSelectsCorrectInstance(t *testing.T) {
 
 	ctx := t.Context()
 	pn := t.Name()
-	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
+	compose := "../../test/fixtures/proxy/compose.yaml"
 
 	t.Cleanup(func() {
 		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
@@ -33,7 +33,7 @@ func TestExecSelectsCorrectInstance(t *testing.T) {
 		service  string
 		wantHost string
 	}{
-		{"nginx", "nginx-1"},
+		{"frontend", "frontend-1"},
 		{"backend1", "backend1-1"},
 		{"backend2", "backend2-1"},
 	}

@@ -1,5 +1,5 @@
 {
-  "name": "simple-nginx",
+  "name": "simple",
   "services": {
     "web": {
       "command": null,
@@ -12,7 +12,7 @@
   },
   "networks": {
     "default": {
-      "name": "simple-nginx_default",
+      "name": "simple_default",
       "ipam": {}
     }
   }

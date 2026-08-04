@@ -36,12 +36,12 @@ func TestLoadBasicProject(t *testing.T) {
 	t.Parallel()
 
 	proj, err := New().Load(
-		t.Context(), LoadWorkingDir(fixturePath("simple-nginx")),
+		t.Context(), LoadWorkingDir(fixturePath("simple")),
 	)
 
 	require.NoError(t, err)
 	require.NotNil(t, proj)
-	assert.Equal(t, "simple-nginx", proj.Name)
+	assert.Equal(t, "simple", proj.Name)
 	assert.Len(t, proj.Services, 1)
 
 	service, exists := proj.Services["web"]
@@ -112,12 +112,12 @@ func TestLoadPostgresRedisWithEnv(t *testing.T) {
 	assert.True(t, exists, "api service should exist")
 }
 
-// TestLoadNginxProxyMultiNetwork tests Nginx proxy with multiple networks.
-func TestLoadNginxProxyMultiNetwork(t *testing.T) {
+// TestLoadProxyMultiNetwork tests the proxy fixture with multiple networks.
+func TestLoadProxyMultiNetwork(t *testing.T) {
 	t.Parallel()
 
 	proj, err := New().Load(
-		t.Context(), LoadWorkingDir(fixturePath("nginx-proxy")),
+		t.Context(), LoadWorkingDir(fixturePath("proxy")),
 	)
 
 	require.NoError(t, err)
@@ -163,7 +163,7 @@ func TestLoadWithCustomProjectName(t *testing.T) {
 	t.Parallel()
 
 	proj, err := New().Load(
-		t.Context(), LoadWorkingDir(fixturePath("simple-nginx")),
+		t.Context(), LoadWorkingDir(fixturePath("simple")),
 		LoadName("my-custom-project"),
 	)
 
@@ -722,7 +722,7 @@ func TestHealthdConfigExtractsXIncusCompose(t *testing.T) {
 func TestHealthdConfigEmptyWithoutExtension(t *testing.T) {
 	t.Parallel()
 
-	proj, err := New().Load(t.Context(), LoadWorkingDir(fixturePath("simple-nginx")))
+	proj, err := New().Load(t.Context(), LoadWorkingDir(fixturePath("simple")))
 	require.NoError(t, err)
 
 	config := proj.ClientConfig.Healthd

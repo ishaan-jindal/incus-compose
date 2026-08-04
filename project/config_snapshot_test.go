@@ -129,12 +129,12 @@ func TestConfigSnapshots(t *testing.T) {
 			Fixture: "dev-environment/compose.yaml",
 		},
 		{
-			Name:    "simple-nginx_yaml",
-			Fixture: "simple-nginx/compose.yaml",
+			Name:    "simple_yaml",
+			Fixture: "simple/compose.yaml",
 		},
 		{
-			Name:    "simple-nginx_json",
-			Fixture: "simple-nginx/compose.yaml",
+			Name:    "simple_json",
+			Fixture: "simple/compose.yaml",
 			Format:  "json",
 		},
 		{
@@ -146,12 +146,12 @@ func TestConfigSnapshots(t *testing.T) {
 			Fixture: "two-services/compose.yaml",
 		},
 		{
-			Name:    "nginx-proxy_yaml",
-			Fixture: "nginx-proxy/compose.yaml",
+			Name:    "proxy_yaml",
+			Fixture: "proxy/compose.yaml",
 		},
 		{
-			Name:    "nginx-scale_yaml",
-			Fixture: "nginx-scale/compose.yaml",
+			Name:    "scale_yaml",
+			Fixture: "scale/compose.yaml",
 		},
 		{
 			Name:    "with-bind-mounts_yaml",

@@ -10,13 +10,13 @@
 simplenginx() {
   project_name=$1
 
-  just run --debug -P test/fixtures/simple-nginx -p "${project_name}" up --detach
+  just run --debug -P test/fixtures/simple -p "${project_name}" up --detach
   rc=$?
-  just run --debug -P test/fixtures/simple-nginx -p "${project_name}" down --project
+  just run --debug -P test/fixtures/simple -p "${project_name}" down --project
 
-  # incus-compose --debug -P test/fixtures/simple-nginx -p "${project_name}" up --detach
+  # incus-compose --debug -P test/fixtures/simple -p "${project_name}" up --detach
   # rc=$?
-  # incus-compose --debug -P test/fixtures/simple-nginx -p "${project_name}" down --project
+  # incus-compose --debug -P test/fixtures/simple -p "${project_name}" down --project
 
   return "${rc}"
 }
