@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,6 +140,10 @@ func (r *Runner) writeStatus(ctx context.Context, status string) error {
 
 	myConn := r.conn.UseProject(r.config.OwnProject)
 
+	// Bounded because this runs on the Run loop.
+	ctx, cancel := context.WithTimeout(ctx, apiTimeout)
+	defer cancel()
+
 	slog.Debug("Writing status", "own-project", r.config.OwnProject, "own-name", r.config.OwnName, "status", status)
 
 	info, err := myConn.GetConnectionInfo()
@@ -161,11 +166,15 @@ func (r *Runner) writeStatus(ctx context.Context, status string) error {
 			return strings.Contains(err.Error(), "Instance is busy")
 		}),
 	).Do(func() error {
-		_, _, patchErr := myConn.RawQuery("PATCH", path, instanceConfigPatch{
-			Config: map[string]string{shared.HealthStatusKey: status},
-		}, "")
+		_, err := withContext(ctx, func() (struct{}, error) {
+			_, _, patchErr := myConn.RawQuery("PATCH", path, instanceConfigPatch{
+				Config: map[string]string{shared.HealthStatusKey: status},
+			}, "")
 
-		return patchErr
+			return struct{}{}, patchErr
+		})
+
+		return err
 	})
 }
 
@@ -215,11 +224,35 @@ func (r *Runner) connect() (incus.InstanceServer, error) {
 		return nil, fmt.Errorf("reading key: %w", err)
 	}
 
-	return incus.ConnectIncus(r.config.IncusURL, &incus.ConnectionArgs{
-		TLSClientCert:      string(certPEM),
-		TLSClientKey:       string(keyPEM),
+	return incus.ConnectIncus(r.config.IncusURL, connectionArgs(string(certPEM), string(keyPEM)))
+}
+
+// timeoutTransport adapts *http.Transport to incus.HTTPTransporter.
+type timeoutTransport struct {
+	wrapped *http.Transport
+}
+
+// RoundTrip implements http.RoundTripper.
+func (t *timeoutTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return t.wrapped.RoundTrip(req)
+}
+
+// Transport returns the wrapped transport.
+func (t *timeoutTransport) Transport() *http.Transport {
+	return t.wrapped
+}
+
+// connectionArgs builds the daemon's Incus connection arguments.
+func connectionArgs(certPEM, keyPEM string) *incus.ConnectionArgs {
+	return &incus.ConnectionArgs{
+		TLSClientCert:      certPEM,
+		TLSClientKey:       keyPEM,
 		InsecureSkipVerify: true,
-	})
+		TransportWrapper: func(t *http.Transport) incus.HTTPTransporter {
+			t.ResponseHeaderTimeout = apiTimeout
+			return &timeoutTransport{wrapped: t}
+		},
+	}
 }
 
 // register has Incus trust a self-signed cert via the one-time token, then persists it.
@@ -229,11 +262,7 @@ func (r *Runner) register(token string) (incus.InstanceServer, error) {
 		return nil, fmt.Errorf("generating cert: %w", err)
 	}
 
-	conn, err := incus.ConnectIncus(r.config.IncusURL, &incus.ConnectionArgs{
-		TLSClientCert:      string(certPEM),
-		TLSClientKey:       string(keyPEM),
-		InsecureSkipVerify: true,
-	})
+	conn, err := incus.ConnectIncus(r.config.IncusURL, connectionArgs(string(certPEM), string(keyPEM)))
 	if err != nil {
 		return nil, fmt.Errorf("connecting to register cert: %w", err)
 	}
