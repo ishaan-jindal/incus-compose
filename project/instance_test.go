@@ -81,12 +81,30 @@ func TestParseSecretOwnershipAndMode(t *testing.T) {
 	assert.Equal(t, 0o440, parseSecretMode(&mode))
 }
 
-func TestFormatCommand(t *testing.T) {
+func TestCheckEntrypoint(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "", formatCommand(nil))
-	assert.Equal(t, "/bin/sh", formatCommand([]string{"/bin/sh"}))
-	assert.Equal(t, `"/bin/sh" "-c" "echo hello"`, formatCommand([]string{"/bin/sh", "-c", "echo hello"}))
+	// Both explicitly empty leaves nothing to exec.
+	err := checkEntrypoint(types.ServiceConfig{
+		Name:       "web",
+		Entrypoint: types.ShellCommand{},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "web")
+
+	// An explicitly empty entrypoint is fine as long as a command remains.
+	require.NoError(t, checkEntrypoint(types.ServiceConfig{
+		Name:       "web",
+		Entrypoint: types.ShellCommand{},
+		Command:    types.ShellCommand{"httpd"},
+	}))
+
+	// An unset entrypoint is never an error, with or without a command.
+	require.NoError(t, checkEntrypoint(types.ServiceConfig{Name: "web"}))
+	require.NoError(t, checkEntrypoint(types.ServiceConfig{
+		Name:    "web",
+		Command: types.ShellCommand{"httpd"},
+	}))
 }
 
 func TestNetworkExtensionsExtractsXIncus(t *testing.T) {

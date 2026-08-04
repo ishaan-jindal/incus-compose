@@ -58,9 +58,37 @@ func TestE2EUpNoDeps(t *testing.T) {
 }
 
 // TestE2EConfigOverwritesImageFile verifies a config whose target already exists
-// in the image replaces it. The caddy image ships its own /etc/caddy/Caddyfile
-// listening on :80, so only the pushed one contains :8080.
+// in the image replaces it. The busybox image ships /etc/nsswitch.conf, so the
+// marker content can only come from the pushed config.
 func TestE2EConfigOverwritesImageFile(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	skipE2E(t)
+
+	compose := "../../test/fixtures/with-configs/compose.yaml"
+
+	ctx := t.Context()
+	pn := t.Name()
+
+	t.Cleanup(func() {
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+	})
+
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	stdout, err := runCommand(ctx, t, pn, "-f", compose, "exec", "--no-tty", "app",
+		"--", "cat", "/etc/nsswitch.conf")
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "overwrote-the-image-file",
+		"the pushed config must replace the image's own file")
+}
+
+// TestE2EEntrypointReplacesImageEntrypoint verifies compose `entrypoint:` sets
+// oci.entrypoint outright. The contract is an absence: the image's own
+// entrypoint must not be prefixed, which is the only thing distinguishing a
+// replace from the append that `command:` alone still does.
+func TestE2EEntrypointReplacesImageEntrypoint(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipE2E(t)
@@ -74,13 +102,22 @@ func TestE2EConfigOverwritesImageFile(t *testing.T) {
 		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 	})
 
-	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach", "--no-deps", "backend1")
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach",
+		"--no-start", "--no-healthd", "--no-deps", "backend1")
 	require.NoError(t, err)
 
-	stdout, err := runCommand(ctx, t, pn, "-f", compose, "exec", "--no-tty", "backend1",
-		"--", "cat", "/etc/caddy/Caddyfile")
+	c := projectClient(ctx, t, pn)
+	conn, err := c.Connection()
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), ":8080", "the pushed Caddyfile must replace the image's own")
+
+	inst, _, err := conn.GetInstance("backend1-1")
+	require.NoError(t, err)
+
+	// The busybox entrypoint is "sh"; an append would prefix it here. The shell
+	// script also has to survive as a single argument.
+	assert.Equal(t,
+		`/bin/sh -c 'mkdir -p /www && echo backend1-ok > /www/index.html && httpd -f -v -p 8080 -h /www'`,
+		inst.Config["oci.entrypoint"])
 }
 
 // TestE2EUpDeps verifies `up <service>` (default) follows depends_on and starts the

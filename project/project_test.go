@@ -547,10 +547,11 @@ func TestLoadWithConfigs(t *testing.T) {
 	assert.Equal(t, "with-configs", proj.Name)
 
 	// Check configs are defined.
-	assert.Len(t, proj.Configs, 3)
+	assert.Len(t, proj.Configs, 4)
 	assert.Contains(t, proj.Configs, "app_config")
 	assert.Contains(t, proj.Configs, "db_config")
 	assert.Contains(t, proj.Configs, "nginx_config")
+	assert.Contains(t, proj.Configs, "image_override")
 
 	// Check app_config config (file-based).
 	appConfig := proj.Configs["app_config"]
@@ -563,7 +564,7 @@ func TestLoadWithConfigs(t *testing.T) {
 	// Check service has configs configured.
 	app, exists := proj.Services["app"]
 	assert.True(t, exists, "app service should exist")
-	assert.Len(t, app.Configs, 3)
+	assert.Len(t, app.Configs, 4)
 
 	// Check first config (simple reference).
 	assert.Equal(t, "app_config", app.Configs[0].Source)

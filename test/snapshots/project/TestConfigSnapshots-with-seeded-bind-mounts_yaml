@@ -1,32 +1,42 @@
 name: with-seeded-bind-mounts
 services:
   dir-web:
-    configs:
-      - source: caddyfile
-        target: /etc/caddy/Caddyfile
-    image: docker.io/library/caddy:2-alpine
+    entrypoint:
+      - httpd
+      - -f
+      - -v
+      - -p
+      - "8080"
+      - -h
+      - /www
+    image: docker.io/library/busybox:glibc
     networks:
       default: null
     volumes:
       - type: bind
         source: $FIXTURE_PATH/html
-        target: /usr/share/caddy
+        target: /www
         read_only: true
         x-incus-compose:
           seed: true
     x-incus:
       limits.cpu: 1
   file-web:
-    configs:
-      - source: caddyfile
-        target: /etc/caddy/Caddyfile
-    image: docker.io/library/caddy:2-alpine
+    entrypoint:
+      - httpd
+      - -f
+      - -v
+      - -p
+      - "8080"
+      - -h
+      - /www
+    image: docker.io/library/busybox:glibc
     networks:
       default: null
     volumes:
       - type: bind
         source: $FIXTURE_PATH/file.html
-        target: /usr/share/caddy/index.html
+        target: /www/index.html
         read_only: true
         x-incus-compose:
           seed: true
@@ -35,7 +45,3 @@ services:
 networks:
   default:
     name: with-seeded-bind-mounts_default
-configs:
-  caddyfile:
-    name: with-seeded-bind-mounts_caddyfile
-    file: $FIXTURE_PATH/Caddyfile

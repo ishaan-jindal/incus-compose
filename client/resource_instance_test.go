@@ -63,6 +63,65 @@ func TestSanitizeInstanceName(t *testing.T) {
 	}
 }
 
+// TestResolveEntrypoint covers the compose entrypoint/command combinations. A
+// non-nil entrypoint replaces the image argv; an unset one falls back to
+// appending the command to the image entrypoint.
+func TestResolveEntrypoint(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		entrypoint []string
+		command    []string
+		want       string
+	}{
+		{
+			name: "neither set leaves the image alone",
+			want: "",
+		},
+		{
+			name:    "command alone appends to the image entrypoint",
+			command: []string{"httpd", "-f"},
+			want:    "caddy httpd -f",
+		},
+		{
+			name:       "entrypoint alone replaces the image argv",
+			entrypoint: []string{"httpd", "-f", "-p", "8080"},
+			want:       "httpd -f -p 8080",
+		},
+		{
+			name:       "entrypoint and command concatenate",
+			entrypoint: []string{"/bin/sh", "-c"},
+			command:    []string{"echo hello"},
+			want:       "/bin/sh -c 'echo hello'",
+		},
+		{
+			name:       "empty entrypoint with a command runs the command alone",
+			entrypoint: []string{},
+			command:    []string{"httpd", "-f"},
+			want:       "httpd -f",
+		},
+		{
+			name:       "entrypoint discards the image entrypoint entirely",
+			entrypoint: []string{"httpd"},
+			want:       "httpd",
+		},
+		{
+			name:       "arguments needing quotes survive the round trip",
+			entrypoint: []string{"/bin/sh", "-c", `echo "a b" && $HOME`},
+			want:       `/bin/sh -c 'echo "a b" && $HOME'`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, tt.want, resolveEntrypoint("caddy", tt.entrypoint, tt.command))
+		})
+	}
+}
+
 // TestInstanceConfigPatchOnlyTouchesNamedKeys pins the semantics
 // SetHealthCheckingStopped relies on.
 func TestInstanceConfigPatchOnlyTouchesNamedKeys(t *testing.T) {

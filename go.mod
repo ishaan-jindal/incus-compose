@@ -10,6 +10,7 @@ require (
 	github.com/dominikbraun/graph v0.23.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/gosimple/slug v1.15.0
+	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/lmittmann/tint v1.1.3
 	github.com/lxc/incus/v7 v7.2.0
 	github.com/mattn/go-colorable v0.1.15

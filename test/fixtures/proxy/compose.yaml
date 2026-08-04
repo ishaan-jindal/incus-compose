@@ -1,12 +1,10 @@
 services:
   frontend:
-    image: docker.io/library/caddy:2-alpine
+    image: docker.io/library/busybox:glibc
     restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /www && echo frontend-ok > /www/index.html && httpd -f -v -p 8080 -h /www"]
     x-incus:
       limits.cpu: 1
-    configs:
-      - source: caddyfile
-        target: /etc/caddy/Caddyfile
     depends_on:
       backend1:
         condition: service_healthy
@@ -19,13 +17,11 @@ services:
       retries: 3
 
   backend1:
-    image: docker.io/library/caddy:2-alpine
+    image: docker.io/library/busybox:glibc
     restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /www && echo backend1-ok > /www/index.html && httpd -f -v -p 8080 -h /www"]
     x-incus:
       limits.cpu: 1
-    configs:
-      - source: caddyfile
-        target: /etc/caddy/Caddyfile
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
       interval: 5s
@@ -33,19 +29,13 @@ services:
       retries: 3
 
   backend2:
-    image: docker.io/library/caddy:2-alpine
+    image: docker.io/library/busybox:glibc
     restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /www && echo backend2-ok > /www/index.html && httpd -f -v -p 8080 -h /www"]
     x-incus:
       limits.cpu: 1
-    configs:
-      - source: caddyfile
-        target: /etc/caddy/Caddyfile
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
       interval: 5s
       timeout: 5s
       retries: 3
-
-configs:
-  caddyfile:
-    file: ./Caddyfile

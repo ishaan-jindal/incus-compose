@@ -1,6 +1,6 @@
 services:
   web:
-    image: docker.io/caddy:latest
+    image: docker.io/alpine:edge
     ports:
       - "8080:80"
     x-incus:
