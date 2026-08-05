@@ -50,7 +50,7 @@ func healthdCreateToken(c *client.Client) (string, error) {
 		Token: true,
 	}
 
-	conn, err := c.Connection()
+	conn, err := c.GlobalConnection()
 	if err != nil {
 		return "", err
 	}
