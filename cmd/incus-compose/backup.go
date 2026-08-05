@@ -83,9 +83,9 @@ func newBackupCreateCommand() *cli.Command {
 				backupConfig.Pool = pool
 			}
 
-			bm, err := client.NewBackupManager(globalClient, c, composePool, backupConfig)
+			bm, err := client.NewBackuper(globalClient, c, composePool, backupConfig)
 			if err != nil {
-				c.LogError("Creating backup manager", "error", err)
+				c.LogError("Setting up backup", "error", err)
 				return errLogged.Wrap(err)
 			}
 			defer func() { _ = bm.Done() }()

@@ -273,13 +273,15 @@ func TestE2EBackupCreateFiltered(t *testing.T) {
 	compose := writeTempCompose(t, `
 services:
   db:
-    image: docker.io/library/nginx:alpine
+    image: docker.io/library/busybox:glibc
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /www && httpd -f -v -p 8080 -h /www"]
     volumes:
       - type: volume
         source: db-data
         target: /data
   app:
-    image: docker.io/library/nginx:alpine
+    image: docker.io/library/busybox:glibc
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /www && httpd -f -v -p 8080 -h /www"]
     volumes:
       - type: volume
         source: app-data
@@ -348,7 +350,8 @@ func TestE2EBackupCreateDefaultPool(t *testing.T) {
 	compose := writeTempCompose(t, `
 services:
   app:
-    image: docker.io/library/nginx:alpine
+    image: docker.io/library/busybox:glibc
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /www && httpd -f -v -p 8080 -h /www"]
     volumes:
       - type: volume
         source: data
