@@ -701,8 +701,8 @@ func TestProjectConfigExtractsXIncus(t *testing.T) {
 	config := proj.ClientConfig
 
 	assert.Equal(t, map[string]string{
-		"limits.cpu":              "5",
-		"limits.memory":           "2149MB",
+		"limits.cpu":              "6",
+		"limits.memory":           "2305MB",
 		"limits.virtual-machines": "0",
 	}, config.XIncus)
 
@@ -718,6 +718,25 @@ func TestHealthdConfigExtractsXIncusCompose(t *testing.T) {
 	config := proj.ClientConfig.Healthd
 	assert.Equal(t, "https://10.0.0.1:8443", config.Incus)
 	assert.Equal(t, "healthd:default", config.Network)
+	assert.Equal(t, shared.HealthScopeProject, config.Scope)
+	assert.Equal(t, 64, config.Workers)
+	assert.Equal(t, 8, config.RestartWorkers)
+	assert.Equal(t, map[string]string{
+		"limits.cpu":    "4",
+		"limits.memory": "512MB",
+	}, config.XIncus)
+}
+
+func TestHealthdConfigRejectsABadScope(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	compose := "x-incus-compose:\n  healthd:\n    scope: worldwide\nservices:\n  web:\n    image: docker.io/alpine:edge\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(compose), 0o600))
+
+	_, err := New().Load(t.Context(), LoadWorkingDir(dir))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "x-incus-compose.healthd.scope")
 }
 
 func TestHealthdConfigEmptyWithoutExtension(t *testing.T) {
@@ -730,4 +749,8 @@ func TestHealthdConfigEmptyWithoutExtension(t *testing.T) {
 	assert.Empty(t, config.Incus)
 	assert.Empty(t, config.Network)
 	assert.False(t, config.External)
+	assert.Empty(t, config.Scope)
+	assert.Zero(t, config.Workers)
+	assert.Zero(t, config.RestartWorkers)
+	assert.Empty(t, config.XIncus)
 }

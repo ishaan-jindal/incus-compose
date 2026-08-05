@@ -1,0 +1,12 @@
+services:
+  web:
+    image: docker.io/library/busybox:glibc
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /www && echo web-ok > /www/index.html && httpd -f -v -p 8080 -h /www"]
+    x-incus:
+      limits.cpu: 1
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
+      interval: 5s
+      timeout: 5s
+      retries: 3

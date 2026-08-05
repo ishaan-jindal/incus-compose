@@ -28,10 +28,13 @@ discussable - always ask before guessing.
 ## Formatting
 
 - Code comments should be no longer than one line, unless they are required to cover complex unintuitive logic.
+- Never explain previous behaviour in comments.
 - Commit messages should similarly be kept as short and to the point as possible, no need to summarize the whole issue. Keep the conventional `<type>(<scope>): <description>` format from CONTRIBUTING.md.
 - Never hand-edit imports or formatting. Run `just fix` and let it do that -
   it applies `gofmt` and `goimports` via the formatters in `.golangci.yml`.
-  It is always save to run `just fix` within this project.
+  It is always save to run `just fix` within this project,
+  also use it as a replacement for `lint` no need to `lint` after `fix` is green.
+- You don't need to capture tests on your own use `just test-log` to get the last log.
 - We don't use the define and test one line `if` syntax, instead splitting definition and testing across two lines:
 
   ```go
@@ -65,6 +68,39 @@ commands instead of raw `go` (see `just --list`).
 - Run long commands (test suites, builds, `up`) in the background so the terminal stays usable, and report when they exit.
 - Never chain edit -> test -> restore in one shell invocation. Interrupted or denied mid-chain the edit lands and the restore never runs; keep each step separately reversible.
 - Before changing behaviour that contradicts the upstream docs, check them (`~/vendor/go/incus/doc/`). If we deviate anyway, record why in the code - the next reader will otherwise "fix" it back.
+
+## Changing ic-healthd
+
+The sidecar runs a container image, so a change under `cmd/ic-healthd/**` - or
+in what it compiles in, `shared/` and the dependencies - reaches it only after
+`just update-healthd`, which also points `INCUS_COMPOSE_HEALTHD_IMAGE` in
+`.env` at the new tag. Change none of those and there is nothing to rebuild.
+
+A daemon acting as if your fix is not there is usually a stale image; check the
+logs of healthd to make sure your version runs.
+
+Which tests care:
+
+- `just test-e2e ./cmd/ic-healthd/...` runs the daemon in-process, from the
+  working tree. The image is never involved.
+- `just test-e2e ./cmd/incus-compose/...` drives the real sidecar, so it runs
+  whatever the image holds.
+
+Iterating on the daemon itself is faster without a sidecar at all: run it on the
+host and attach a project with `up --external-healthd`, or push a local binary
+with `healthd up --binary`. See
+[docs/root/architecture/healthd.md](docs/root/architecture/healthd.md).
+
+Two invariants a change must not break:
+
+- ic-healthd is the only writer of `user.healthcheck.status`. incus-compose
+  writes it once at creation, with `--no-healthd`, and never otherwise.
+- The scheduler loop never blocks. Anything talking to Incus runs on a pool
+  worker and reports through the results channel; a blocking send there stalls
+  routing and, behind it, the event stream.
+
+The sidecar's `limits.cpu`/`limits.memory` are charged against the user's project
+quota, so raising them can break projects that fit before.
 
 ## Claude agents
 

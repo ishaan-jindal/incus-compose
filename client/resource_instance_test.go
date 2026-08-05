@@ -1,10 +1,14 @@
 package client
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/stretchr/testify/require"
+
+	"github.com/lxc/incus-compose/shared"
 )
 
 // ----------------------------------------------------------------------------
@@ -122,6 +126,70 @@ func TestResolveEntrypoint(t *testing.T) {
 	}
 }
 
+// TestInstanceEnsureAddsMissingConfigOnly pins that Ensure compares keys, not
+// values: a missing one is added, an existing one keeps what it holds.
+func TestInstanceEnsureAddsMissingConfigOnly(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := t.Context()
+	c := newRandomTestClient(ctx, t, "ensure-addmissing-")
+
+	imageResource, err := c.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
+	require.NoError(t, err)
+	image, ok := imageResource.(*Image)
+	require.True(t, ok)
+
+	create, err := c.Resource(KindInstance, "web", &InstanceConfig{
+		Image: image.Name(),
+		Extensions: map[string]string{
+			HealthStatusKey: shared.HealthStatusStarting,
+			"user.keep.me":  "original",
+		},
+	})
+	require.NoError(t, err)
+
+	stack := NewStack(c)
+	stack.Add(image, create)
+	require.NoError(t, stack.ForAction(ActionEnsure).Run(ctx, ActionEnsure, OptionCreate()))
+
+	conn, err := c.Connection()
+	require.NoError(t, err)
+
+	inst, ok := create.(*Instance)
+	require.True(t, ok)
+
+	// Stand in for ic-healthd reporting, and for a key nobody declared.
+	info, err := conn.GetConnectionInfo()
+	require.NoError(t, err)
+	_, _, err = conn.RawQuery("PATCH", incusApi.NewURL().
+		Path("1.0", "instances", inst.IncusName()).
+		Project(info.Project).
+		Target(info.Target).
+		String(), instanceConfigPatch{
+		Config: map[string]string{
+			HealthStatusKey: HealthStatusHealthy,
+			"user.theirs":   "set-by-hand",
+		},
+	}, "")
+	require.NoError(t, err)
+
+	// Declare one new key, and a different value for one already carried.
+	inst.Config.Extensions["user.added.later"] = "true"
+	inst.Config.Extensions["user.keep.me"] = "changed"
+
+	require.NoError(t, RunAction(ctx, inst, ActionEnsure))
+
+	got, _, err := conn.GetInstance(inst.IncusName())
+	require.NoError(t, err)
+
+	require.Equal(t, "true", got.Config["user.added.later"], "a declared key the instance lacks must be added")
+	require.Equal(t, HealthStatusHealthy, got.Config[HealthStatusKey],
+		"an existing key keeps its value: resetting this would undo ic-healthd on every up")
+	require.Equal(t, "original", got.Config["user.keep.me"],
+		"a changed value still needs --recreate; keys are compared, values are not")
+	require.Equal(t, "set-by-hand", got.Config["user.theirs"], "a key nobody declared must survive")
+}
+
 // TestInstanceConfigPatchOnlyTouchesNamedKeys pins the semantics
 // SetHealthCheckingStopped relies on.
 func TestInstanceConfigPatchOnlyTouchesNamedKeys(t *testing.T) {
@@ -138,7 +206,7 @@ func TestInstanceConfigPatchOnlyTouchesNamedKeys(t *testing.T) {
 	instRes, err := c.Resource(KindInstance, "web", &InstanceConfig{
 		Image: image.Name(),
 		Extensions: map[string]string{
-			HealthStatusKey:             HealthStatusUnknown,
+			HealthStatusKey:             shared.HealthStatusStarting,
 			HealthStoppedKey:            "true",
 			HealthKeyPrefix + "restart": "unless-stopped",
 			"user.keep.me":              "untouched",
@@ -186,4 +254,153 @@ func TestInstanceConfigPatchOnlyTouchesNamedKeys(t *testing.T) {
 	require.Equal(t, before.Devices, got.Devices, "PATCH must not wipe devices")
 	require.Equal(t, before.Profiles, got.Profiles, "PATCH must not wipe profiles")
 	require.Equal(t, before.Architecture, got.Architecture, "PATCH must not wipe the architecture")
+}
+
+// TestCloneInstancesFollowLifecycleEvents pins that instances on a cloned client
+// are kept fresh by the project client's listener; nothing else wakes them.
+func TestCloneInstancesFollowLifecycleEvents(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := t.Context()
+	c := newRandomTestClient(ctx, t, "clone-events-")
+
+	// A phase of restart: its own hooks and its own resources.
+	rc := c.Clone()
+
+	imageResource, err := rc.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
+	require.NoError(t, err)
+	image, ok := imageResource.(*Image)
+	require.True(t, ok)
+
+	instRes, err := rc.Resource(KindInstance, "web", &InstanceConfig{
+		Image:      image.Name(),
+		Extensions: map[string]string{HealthStatusKey: shared.HealthStatusStarting},
+	})
+	require.NoError(t, err)
+	inst, ok := instRes.(*Instance)
+	require.True(t, ok)
+
+	stack := NewStack(rc)
+	stack.Add(image, inst)
+	require.NoError(t, stack.ForAction(ActionEnsure).Run(ctx, ActionEnsure, OptionCreate()))
+
+	conn, err := c.Connection()
+	require.NoError(t, err)
+
+	info, err := conn.GetConnectionInfo()
+	require.NoError(t, err)
+
+	// Stand in for ic-healthd reporting a verdict, once the wait below is parked.
+	go func() {
+		time.Sleep(2 * time.Second)
+
+		_, _, _ = conn.RawQuery("PATCH", incusApi.NewURL().
+			Path("1.0", "instances", inst.IncusName()).
+			Project(info.Project).
+			Target(info.Target).
+			String(), instanceConfigPatch{
+			Config: map[string]string{HealthStatusKey: HealthStatusHealthy},
+		}, "")
+	}()
+
+	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	require.NoError(t, inst.waitForHealthCheck(waitCtx),
+		"the wait must be woken by the listener, which only reaches resources it knows about")
+}
+
+// TestInstanceStoppedLeavesTheStatusAlone pins the single-writer rule: a stop
+// writes the intent marker ic-healthd reads, and nothing else.
+func TestInstanceStoppedLeavesTheStatusAlone(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := t.Context()
+	c := newRandomTestClient(ctx, t, "stopped-status-")
+
+	imageResource, err := c.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
+	require.NoError(t, err)
+	image, ok := imageResource.(*Image)
+	require.True(t, ok)
+
+	instRes, err := c.Resource(KindInstance, "web", &InstanceConfig{
+		Image: image.Name(),
+	})
+	require.NoError(t, err)
+	inst, ok := instRes.(*Instance)
+	require.True(t, ok)
+
+	stack := NewStack(c)
+	stack.Add(image, inst)
+	// Healthd is on by default, which is the case this pins.
+	require.NoError(t, stack.ForAction(ActionEnsure).Run(ctx, ActionEnsure, OptionCreate()))
+
+	conn, err := c.Connection()
+	require.NoError(t, err)
+
+	got, _, err := conn.GetInstance(inst.IncusName())
+	require.NoError(t, err)
+	require.Empty(t, got.Config[HealthStatusKey],
+		"with a daemon to report, the instance is created without a status of its own")
+
+	// Stand in for ic-healthd having reported on it.
+	info, err := conn.GetConnectionInfo()
+	require.NoError(t, err)
+	_, _, err = conn.RawQuery("PATCH", incusApi.NewURL().
+		Path("1.0", "instances", inst.IncusName()).
+		Project(info.Project).
+		Target(info.Target).
+		String(), instanceConfigPatch{
+		Config: map[string]string{HealthStatusKey: HealthStatusHealthy},
+	}, "")
+	require.NoError(t, err)
+
+	require.NoError(t, inst.SetHealthCheckingStopped(ctx, true))
+
+	got, _, err = conn.GetInstance(inst.IncusName())
+	require.NoError(t, err)
+	require.Equal(t, "true", got.Config[HealthStoppedKey], "the marker is what a stop writes")
+	require.Equal(t, HealthStatusHealthy, got.Config[HealthStatusKey],
+		"the status is the daemon's alone; it writes stopped from the event it sees")
+
+	require.NoError(t, inst.SetHealthCheckingStopped(ctx, false))
+
+	got, _, err = conn.GetInstance(inst.IncusName())
+	require.NoError(t, err)
+	require.Equal(t, "false", got.Config[HealthStoppedKey])
+	require.Equal(t, HealthStatusHealthy, got.Config[HealthStatusKey])
+}
+
+// TestInstanceWithoutHealthdReportsUnknown pins the other half of the rule:
+// with no daemon to report, the instance says so.
+func TestInstanceWithoutHealthdReportsUnknown(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := t.Context()
+	c := newRandomTestClient(ctx, t, "nohealthd-status-")
+
+	imageResource, err := c.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
+	require.NoError(t, err)
+	image, ok := imageResource.(*Image)
+	require.True(t, ok)
+
+	instRes, err := c.Resource(KindInstance, "web", &InstanceConfig{
+		Image: image.Name(),
+	})
+	require.NoError(t, err)
+	inst, ok := instRes.(*Instance)
+	require.True(t, ok)
+
+	stack := NewStack(c)
+	stack.Add(image, inst)
+	require.NoError(t, stack.ForAction(ActionEnsure).
+		Run(ctx, ActionEnsure, OptionCreate(), OptionNoHealthd()))
+
+	conn, err := c.Connection()
+	require.NoError(t, err)
+
+	got, _, err := conn.GetInstance(inst.IncusName())
+	require.NoError(t, err)
+	require.Equal(t, shared.HealthStatusUnknown, got.Config[HealthStatusKey])
+	require.Empty(t, got.Config[HealthStoppedKey], "there is no daemon to hold back")
 }

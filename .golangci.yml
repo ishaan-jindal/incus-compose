@@ -144,9 +144,15 @@ severity:
       severity: error
 formatters:
   enable:
+    - gci
     - gofmt
     - goimports
   settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/lxc/incus-compose)
     goimports:
       local-prefixes:
         - github.com/lxc/incus-compose

@@ -190,7 +190,7 @@ func TestInstanceConfig(t *testing.T) {
 		},
 	}
 
-	config, err := instanceConfig(c, service, "")
+	config, err := instanceConfig(c, service, "", nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, "bar", config["environment.FOO"])
@@ -203,7 +203,8 @@ func TestInstanceConfig(t *testing.T) {
 	assert.Equal(t, "always", config[client.HealthKeyPrefix+"restart"])
 	assert.Equal(t, "2", config["limits.cpu"])
 	assert.Equal(t, "512MiB", config["limits.memory"])
-	assert.Equal(t, client.HealthStatusUnknown, config[client.HealthStatusKey])
+	assert.NotContains(t, config, client.HealthStatusKey,
+		"ic-healthd is the only writer of the status; a value here is one it has to correct")
 	assert.Equal(t, `["CMD","curl","-f","http://localhost"]`, config[client.HealthKeyPrefix+"test"])
 	assert.Equal(t, "3", config[client.HealthKeyPrefix+"retries"])
 	assert.Equal(t, "8.8.8.8,1.1.1.1", config["oci.dns.nameservers"])
@@ -283,7 +284,7 @@ func TestInstanceConfigResourceLimits(t *testing.T) {
 				service.Extensions = types.Extensions{"x-incus": tt.xIncus}
 			}
 
-			config, err := instanceConfig(c, service, "test")
+			config, err := instanceConfig(c, service, "test", nil)
 			require.NoError(t, err)
 
 			for key, value := range tt.want {
@@ -305,12 +306,11 @@ func TestInstanceConfigMinimal(t *testing.T) {
 	c, err := gc.EnsureProject("default")
 	require.NoError(t, err)
 
-	config, err := instanceConfig(c, types.ServiceConfig{Name: "web"}, "project1")
+	config, err := instanceConfig(c, types.ServiceConfig{Name: "web"}, "project1", nil)
 	require.NoError(t, err)
 	// Only the default restart policy is applied.
 	assert.Equal(t, map[string]string{
 		"boot.autostart":                   "false",
-		client.HealthStatusKey:             client.HealthStatusUnknown,
 		"raw.lxc":                          "lxc.start.delay = 1\n",
 		"user.label.incus-compose.project": "project1",
 		"user.label.incus-compose.service": "web",
@@ -329,7 +329,7 @@ func TestInstanceConfigXIncusOverrides(t *testing.T) {
 	proj, err := New().Load(t.Context(), LoadWorkingDir(fixturePath("with-incus-options")))
 	require.NoError(t, err)
 
-	config, err := instanceConfig(c, proj.Services["web"], "")
+	config, err := instanceConfig(c, proj.Services["web"], "", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "1024MB", config["limits.memory"])
 	assert.Equal(t, "2", config["limits.cpu"])

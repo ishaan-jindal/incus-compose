@@ -21,6 +21,10 @@ import (
 // labelIncusComposePrefix is the instance config prefix for incus-compose labels.
 const labelIncusComposePrefix = "user.label.incus-compose."
 
+// healthdRestartPolicies are the restart values ic-healthd acts on, so a
+// service carrying one wants watching without a healthcheck of its own.
+var healthdRestartPolicies = []string{"always", "on-failure", "unless-stopped"}
+
 func buildPlatform(service types.ServiceConfig) (string, error) {
 	if service.Build == nil {
 		return "", nil
@@ -46,7 +50,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	var errs error
 	resources := []client.Resource{}
 
-	config, err := instanceConfig(c, service, p.Name)
+	config, err := instanceConfig(c, service, p.Name, options.marks)
 	if err != nil {
 		errs = errors.Join(errs, err)
 	}
@@ -159,7 +163,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 // instanceConfig builds the Incus instance config map from a compose service.
 // Environment vars become environment.* keys, labels become user.* keys, and
 // restart/resource/healthcheck settings and raw x-incus options are merged in.
-func instanceConfig(c *client.Client, service types.ServiceConfig, projectName string) (map[string]string, error) {
+func instanceConfig(c *client.Client, service types.ServiceConfig, projectName string, marks map[string]string) (map[string]string, error) {
 	config := make(map[string]string, len(service.Environment)+len(service.Labels))
 
 	// Environment variables
@@ -193,8 +197,11 @@ func instanceConfig(c *client.Client, service types.ServiceConfig, projectName s
 		applyResourceLimits(config, service.Deploy.Resources.Limits)
 	}
 
-	// Healtcheck
-	config[client.HealthStatusKey] = client.HealthStatusUnknown
+	// The opt-in ic-healthd requires. Set before x-incus, so a service can turn
+	// it off again with `user.healthcheck.enabled: "false"`.
+	if service.HealthCheck != nil || slices.Contains(healthdRestartPolicies, service.Restart) {
+		config[shared.HealthEnabledKey] = "true"
+	}
 
 	if service.HealthCheck != nil {
 		testB, err := json.Marshal(service.HealthCheck.Test)
@@ -243,6 +250,9 @@ func instanceConfig(c *client.Client, service types.ServiceConfig, projectName s
 			config[k] = v
 		}
 	}
+
+	// After x-incus, so a service cannot drop what the caller marked it with.
+	maps.Copy(config, marks)
 
 	// Ensure the network interface is up before the container's init starts.
 	// Append lxc.start.delay only if the user hasn't already set it via x-incus.

@@ -109,8 +109,13 @@ func newUpCommand() *cli.Command {
 			},
 			&cli.StringFlag{
 				Name:    "healthd-network",
-				Usage:   "Incus bridge for healthd to use (default: auto-detect)",
+				Usage:   "Incus bridge for healthd to use (default: auto-detect), project scope only",
 				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_NETWORK"),
+			},
+			&cli.StringFlag{
+				Name:    "healthd-scope",
+				Usage:   "Which healthd watches this project: `global` (shared, in the default project) or `project` (a sidecar of its own); loses to a scope the project already carries",
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_SCOPE"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -229,10 +234,12 @@ func newUpCommand() *cli.Command {
 					Image:   cmd.String("healthd-image"),
 					Incus:   cmd.String("healthd-incus"),
 					Network: cmd.String("healthd-network"),
+					Scope:   cmd.String("healthd-scope"),
 					Pull:    cmd.String("pull"),
 					Timeout: cmd.Duration("timeout"),
 					Workers: cmd.Root().Int("workers"),
 					Debug:   cmd.Root().Bool("debug"),
+					Trace:   cmd.Root().Bool("trace"),
 					Writer:  cmd.Root().Writer,
 				})
 				if err != nil {

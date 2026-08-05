@@ -11,6 +11,10 @@ Load these files in parallel as your working context.
 - `CONTRIBUTING.md` — coding, architecture, testing, workflow rules
 - `.claude/settings.json`, `.claude/settings.local.json` — permissions, deny list
 
+As it happens all the time I write it here again, YOU MUST FOLLOW COMMENT RULES. If you don't I reject your work.
+
+Make sure to read your memory if you haven't.
+
 ## Canonical architecture and testing
 
 Preload these:

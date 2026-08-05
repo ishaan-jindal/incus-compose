@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"slices"
@@ -557,6 +558,84 @@ func EnsureProjectWithSkipHealthd() EnsureProjectOption {
 	}
 }
 
+// ProjectConfig returns the Incus project's config, empty if it does not exist.
+func (c *GlobalClient) ProjectConfig(name string) (map[string]string, error) {
+	incusName := SanitizeProjectName(name)
+
+	project, _, err := c.incus.GetProject(incusName)
+	if incusApi.StatusErrorCheck(err, http.StatusNotFound) {
+		return map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading project %s: %w", incusName, err)
+	}
+
+	return project.Config, nil
+}
+
+// ProjectsWithConfig returns the names of the Incus projects carrying key set
+// to value.
+func (c *GlobalClient) ProjectsWithConfig(key, value string) ([]string, error) {
+	projects, err := c.incus.GetProjects()
+	if err != nil {
+		return nil, fmt.Errorf("listing projects: %w", err)
+	}
+
+	var names []string
+	for _, project := range projects {
+		if project.Config[key] == value {
+			names = append(names, project.Name)
+		}
+	}
+
+	return names, nil
+}
+
+// AddMissingProjectConfig adds declared config keys the project does not have yet.
+func (c *GlobalClient) AddMissingProjectConfig(name string, config map[string]string) error {
+	if len(config) == 0 {
+		return nil
+	}
+
+	incusName := SanitizeProjectName(name)
+
+	project, etag, err := c.incus.GetProject(incusName)
+	if err != nil {
+		return fmt.Errorf("reading project %s: %w", incusName, err)
+	}
+
+	missing := []string{}
+	writable := project.Writable()
+
+	if writable.Config == nil {
+		writable.Config = incusApi.ConfigMap{}
+	}
+
+	for key, value := range config {
+		_, ok := writable.Config[key]
+		if ok {
+			continue
+		}
+
+		writable.Config[key] = value
+		missing = append(missing, key)
+	}
+
+	if len(missing) == 0 {
+		return nil
+	}
+
+	slices.Sort(missing)
+	c.logger.DebugContext(c.ctx, "Adding missing project config", "name", name, "incus_name", incusName, "keys", missing)
+
+	err = c.incus.UpdateProject(incusName, writable, etag)
+	if err != nil {
+		return fmt.Errorf("updating project %s: %w", incusName, err)
+	}
+
+	return nil
+}
+
 func (c *GlobalClient) createProject(name string, config map[string]string) (*Client, error) {
 	incusName := SanitizeProjectName(name)
 
@@ -604,6 +683,11 @@ func (c *GlobalClient) EnsureProject(name string, opts ...EnsureProjectOption) (
 
 	p, err := c.getProject(name)
 	if err == nil {
+		// Same reason as Instance.addMissingConfig.
+		if err := c.AddMissingProjectConfig(name, options.config); err != nil {
+			return nil, err
+		}
+
 		return p, nil
 	}
 

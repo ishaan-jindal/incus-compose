@@ -9,7 +9,6 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/lxc/incus-compose/client"
-	"github.com/lxc/incus-compose/project"
 )
 
 func newHealthdRestartCommand() *cli.Command {
@@ -35,33 +34,19 @@ func newHealthdRestartCommand() *cli.Command {
 				return err
 			}
 
-			p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
+			target, done, err := resolveHealthdTarget(ctx, cmd, globalClient)
 			if err != nil {
-				globalClient.LogError("Configuring the project", "error", err)
+				globalClient.LogError("Finding healthd", "error", err)
 				return errLogged.Wrap(err)
 			}
+			defer done()
 
-			c, err := globalClient.EnsureProject(p.Name)
-			if err != nil {
-				globalClient.LogError("Getting the incus project", "error", err)
-				return errLogged.Wrap(err)
-			}
-			if err := c.Open(); err != nil {
-				globalClient.LogError("Opening the project client", "error", err)
-				return errLogged.Wrap(err)
-			}
-			defer func() { _ = c.Done() }()
+			c, h := target.client, target.instance
 
 			if !cmd.Root().Bool("debug") {
 				progress := newProgressRenderer(cmd.Root().Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
 				progress.Start(c)
 				defer progress.Stop(c)
-			}
-
-			h, err := healthdResolve(c)
-			if err != nil {
-				c.LogError(err.Error())
-				return errLogged.Wrap(err)
 			}
 
 			if err := h.Ensure(ctx); err != nil {

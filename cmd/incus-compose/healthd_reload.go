@@ -6,8 +6,6 @@ import (
 
 	"github.com/mattn/go-isatty"
 	"github.com/urfave/cli/v3"
-
-	"github.com/lxc/incus-compose/project"
 )
 
 func newHealthdReloadCommand() *cli.Command {
@@ -25,42 +23,28 @@ func newHealthdReloadCommand() *cli.Command {
 				return err
 			}
 
-			p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
+			target, done, err := resolveHealthdTarget(ctx, cmd, globalClient)
 			if err != nil {
-				globalClient.LogError("Configuring the project", "error", err)
+				globalClient.LogError("Finding healthd", "error", err)
 				return errLogged.Wrap(err)
 			}
+			defer done()
 
-			c, err := globalClient.EnsureProject(p.Name)
-			if err != nil {
-				globalClient.LogError("Getting the incus project", "error", err)
-				return errLogged.Wrap(err)
-			}
-			if err := c.Open(); err != nil {
-				globalClient.LogError("Opening the project client", "error", err)
-				return errLogged.Wrap(err)
-			}
-			defer func() { _ = c.Done() }()
+			hc, h := target.client, target.instance
 
 			if !cmd.Root().Bool("debug") {
 				progress := newProgressRenderer(cmd.Root().Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
-				progress.Start(c)
-				defer progress.Stop(c)
-			}
-
-			h, err := healthdResolve(c)
-			if err != nil {
-				c.LogError(err.Error())
-				return errLogged.Wrap(err)
+				progress.Start(hc)
+				defer progress.Stop(hc)
 			}
 
 			if err := h.Ensure(ctx); err != nil {
-				c.LogError("Ensuring healthd", "error", err)
+				hc.LogError("Ensuring healthd", "error", err)
 				return errLogged.Wrap(err)
 			}
 
-			if err := healthdReload(c, h); err != nil {
-				c.LogError("Reloading healthd", "error", err)
+			if err := healthdReload(hc, h); err != nil {
+				hc.LogError("Reloading healthd", "error", err)
 				return errLogged.Wrap(err)
 			}
 

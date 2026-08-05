@@ -11,8 +11,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
+	"sync"
 
 	incusClient "github.com/lxc/incus/v7/client"
+	incusApi "github.com/lxc/incus/v7/shared/api"
+
+	"github.com/lxc/incus-compose/shared"
 )
 
 // Client wraps a project-scoped Incus client with resource management.
@@ -32,8 +37,18 @@ type Client struct {
 	// Cache for FindHealthd
 	healthd string
 
+	// Cache for healthdTarget, which may point at another project.
+	healthdConn *incusClient.ProtocolIncus
+	healthdName string
+
 	// Resource storage
 	resources ResourceStore
+
+	// clonesMu guards clones.
+	clonesMu sync.Mutex
+
+	// clones keep their own resources, which this client's event listener must reach.
+	clones []*Client
 
 	// hookBefore is called before any action
 	hookBefore func(ctx context.Context, action Action, r Resource, args Options, err error) error
@@ -113,7 +128,7 @@ func (c *GlobalClient) newProjectClient(name, incusName string, created bool) (*
 // Clone returns a copy of the client, where you can add independent hooks and resources.
 // Resources are NOT shared.
 func (c *Client) Clone() *Client {
-	return &Client{
+	clone := &Client{
 		ctx:          c.ctx,
 		globalClient: c.globalClient,
 		config:       c.config,
@@ -133,7 +148,28 @@ func (c *Client) Clone() *Client {
 		hookConnected: c.hookConnected,
 		hookDone:      c.hookDone,
 
-		healthd: c.healthd,
+		healthd:     c.healthd,
+		healthdConn: c.healthdConn,
+		healthdName: c.healthdName,
+	}
+
+	c.clonesMu.Lock()
+	c.clones = append(c.clones, clone)
+	c.clonesMu.Unlock()
+
+	return clone
+}
+
+// rangeResources runs f over this client's resources and every clone's.
+func (c *Client) rangeResources(f func(r Resource)) {
+	c.resources.Range(f)
+
+	c.clonesMu.Lock()
+	clones := slices.Clone(c.clones)
+	c.clonesMu.Unlock()
+
+	for _, clone := range clones {
+		clone.rangeResources(f)
 	}
 }
 
@@ -394,6 +430,61 @@ func (c *Client) FindHealthd() (string, error) {
 	}
 
 	return "", ErrNotFound.WithText(": within FindHealthd")
+}
+
+// HealthdRunning reports whether the daemon watching this project is up,
+// looking wherever the project's stored scope says it lives.
+func (c *Client) HealthdRunning() (bool, error) {
+	conn, name, err := c.healthdTarget()
+	if err != nil {
+		return false, err
+	}
+
+	state, _, err := conn.GetInstanceState(name)
+	if err != nil {
+		return false, fmt.Errorf("getting the healthd %q instance state: %w", name, err)
+	}
+
+	return state.StatusCode == incusApi.Running, nil
+}
+
+// healthdTarget locates the daemon watching this project. Every instance start
+// asks, so the answer is cached; it cannot change while a command runs.
+func (c *Client) healthdTarget() (*incusClient.ProtocolIncus, string, error) {
+	if c.healthdConn != nil {
+		return c.healthdConn, c.healthdName, nil
+	}
+
+	if c.incus == nil {
+		return nil, "", ErrNotFound.WithText(": within healthdTarget")
+	}
+
+	cfg, err := c.globalClient.ProjectConfig(c.project)
+	if err != nil {
+		return nil, "", err
+	}
+
+	conn := c.incus
+	if cfg[shared.HealthScopeKey] == shared.HealthScopeGlobal {
+		conn = c.globalClient.incus
+	}
+
+	instances, err := conn.GetInstances("")
+	if err != nil {
+		return nil, "", ErrUnknown.Wrap(fmt.Errorf("listing instances: %w", err))
+	}
+
+	for _, inst := range instances {
+		if inst.Config[HealthKeyPrefix+"daemon"] != "true" {
+			continue
+		}
+
+		c.healthdConn, c.healthdName = conn, inst.Name
+
+		return conn, inst.Name, nil
+	}
+
+	return nil, "", ErrNotFound.WithText(": within healthdTarget")
 }
 
 // InstanceExists reports whether an instance with the given name exists in Incus.

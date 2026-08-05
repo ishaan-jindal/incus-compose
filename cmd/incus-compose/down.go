@@ -93,9 +93,10 @@ func down(ctx context.Context, p *project.Project, c *client.Client, args downAr
 	}
 	stack.AddOrdered(order, myResources)
 
+	// Only a sidecar this project owns comes down with it.
 	if len(args.Services) == 0 && !args.NoHealthd {
-		h, err := healthdResolve(c)
-		if err == nil {
+		hc, h, err := healthdResolve(p, c)
+		if err == nil && hc.IncusProject() == c.IncusProject() {
 			stack.Add(h)
 		}
 	}
