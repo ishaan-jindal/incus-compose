@@ -165,10 +165,13 @@ build-healthd-image tag_base="ghcr.io/lxc/incus-compose/ic-healthd":
     # The random suffix gives a clear sign that your version is running.
     export VERSION="`git describe --tags --always --long --dirty="-dirty"`-`openssl rand -hex 4`"
     echo ${VERSION}
+
     echo "Building for the 'default' cache"
     just run -P cmd/ic-healthd build --os-env
+
     echo "Building for the 'incus-compose-tests-cache' cache"
     INCUS_COMPOSE_IMAGE_CACHE="incus-compose-tests-cache" just run -P cmd/ic-healthd build --os-env
+
     sed -i -e 's|export INCUS_COMPOSE_HEALTHD_IMAGE=".*"|export INCUS_COMPOSE_HEALTHD_IMAGE="{{ tag_base }}:'${VERSION}'"|g' \
            .env
 
@@ -180,13 +183,10 @@ update-healthd *args="--trace": build-healthd-image
     remote="${INCUS_REMOTE:-local}"
 
     echo "Deleting the shared ic-healthd on remote '${remote}'"
-    incus delete --force "${remote}:ic-healthd" --project default 2>/dev/null || true
-
-    # dotenv-load read .env before build-healthd-image rewrote it.
-    source .env
+    INCUS_REMOTE="${remote}" incus delete --force "ic-healthd" --project default 2>/dev/null || true
 
     # The healthd-scope project is left behind as the handle for `healthd logs`.
-    just run healthd up {{ args }}
+    INCUS_REMOTE="${remote}" just run healthd up {{ args }}
 
 # Build ic-healthd container image
 release-healthd-image tag="ghcr.io/lxc/incus-compose/ic-healthd:latest": build-healthd-image

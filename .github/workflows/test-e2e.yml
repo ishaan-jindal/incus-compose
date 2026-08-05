@@ -69,11 +69,12 @@ jobs:
           short="${sha:0:7}"
           echo "VERSION=${short}" >> "$GITHUB_ENV"
           echo "INCUS_COMPOSE_HEALTHD_IMAGE=ghcr.io/lxc/incus-compose/ic-healthd:${short}" >> "$GITHUB_ENV"
-          echo "Using healthd image: ghcr.io/lxc/incus-compose/ic-healthd:${short}"
 
       - name: Build healthd
         run: |
+          echo "Using healthd image: ${INCUS_COMPOSE_HEALTHD_IMAGE}"
           just run -P cmd/ic-healthd build --os-env
+          just run healthd down --force || true
 
       - name: Test
         run: |
