@@ -531,81 +531,106 @@ func healthdEnsureNetwork(ctx context.Context, c *client.Client, name string) (*
 // healthdIncusURL is the endpoint the sidecar dials: --healthd-incus, then
 // core.https_address once it names a host, then the bridge gateway.
 func healthdIncusURL(c *client.Client, params healthdParams, network *client.Network) (*url.URL, error) {
-	if params.incus != nil {
-		return params.incus, nil
-	}
+	u := params.incus
 
-	addr, err := c.Global().HTTPSAddress()
-	if err == nil {
-		host, port, err := net.SplitHostPort(addr)
-		if err == nil && host != "" && port != "" {
-			u, err := url.Parse(fmt.Sprintf("https://%s:%s", host, port))
-			if err == nil {
-				return u, nil
+	if u == nil {
+		addr, err := c.Global().HTTPSAddress()
+		if err == nil {
+			host, port, splitErr := net.SplitHostPort(addr)
+
+			// An unspecified address means every interface, so it names no host
+			// to dial; the bridge gateway below is the reachable form of it.
+			if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
+				host = ""
+			}
+
+			if splitErr == nil && host != "" && port != "" {
+				parsed, parseErr := url.Parse(fmt.Sprintf("https://%s:%s", host, port))
+				if parseErr == nil {
+					u = parsed
+				}
 			}
 		}
 	}
 
-	if !c.IsRemote() {
-		return nil, errors.New("healthd works only with a https connection, provide one with INCUS_COMPOSE_HEALTHD_INCUS")
+	if u == nil {
+		if !c.IsRemote() {
+			return nil, errors.New("healthd works only with a https connection, provide one with INCUS_COMPOSE_HEALTHD_INCUS")
+		}
+
+		var err error
+
+		u, err = c.Global().URL()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get the url: %w", err)
+		}
+
+		ip, _, err := healthdBridgeIP(c, network)
+		if err != nil {
+			return nil, err
+		}
+
+		u.Host = net.JoinHostPort(ip.String(), u.Port())
 	}
 
-	u, err := c.Global().URL()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get the url: %w", err)
+	if ip := net.ParseIP(u.Hostname()); ip != nil && ip.IsLoopback() {
+		return nil, fmt.Errorf(
+			"the Incus endpoint %q is a loopback address the ic-healthd container cannot reach; "+
+				"bind core.https_address to a reachable address, or set --healthd-incus", u.Host)
 	}
-
-	cidr, name, err := healthdBridgeCIDR(c, network)
-	if err != nil {
-		return nil, err
-	}
-
-	if cidr == "" {
-		return nil, fmt.Errorf("ip of network %q is empty", name)
-	}
-
-	ip := net.ParseIP(strings.Split(cidr, "/")[0])
-	if ip == nil {
-		return nil, fmt.Errorf("result is nil while parsing ip '%v'", cidr)
-	}
-
-	u.Host = net.JoinHostPort(ip.String(), u.Port())
 
 	return u, nil
 }
 
-// healthdBridgeCIDR returns the ipv4.address of the bridge the sidecar sits on,
-// read from the default profile when the sidecar brings no network of its own.
-func healthdBridgeCIDR(c *client.Client, network *client.Network) (cidr, name string, err error) {
+// healthdBridgeIP returns the gateway of the bridge the sidecar sits on and its
+// network, taken from the default profile when the sidecar brings none.
+func healthdBridgeIP(c *client.Client, network *client.Network) (net.IP, string, error) {
+	var cidr, name string
+
 	if network != nil {
-		return network.IncusNetwork.Config["ipv4.address"], network.Name(), nil
-	}
-
-	conn, err := c.GlobalConnection()
-	if err != nil {
-		return "", "", err
-	}
-
-	profile, _, err := conn.GetProfile("default")
-	if err != nil {
-		return "", "", fmt.Errorf("reading the default profile of the %s project: %w", globalHealthdProject, err)
-	}
-
-	for _, device := range profile.Devices {
-		if device["type"] != "nic" || device["network"] == "" {
-			continue
-		}
-
-		incusNetwork, _, err := conn.GetNetwork(device["network"])
+		cidr, name = network.IncusNetwork.Config["ipv4.address"], network.Name()
+	} else {
+		conn, err := c.GlobalConnection()
 		if err != nil {
-			return "", "", fmt.Errorf("reading network %q: %w", device["network"], err)
+			return nil, "", err
 		}
 
-		return incusNetwork.Config["ipv4.address"], device["network"], nil
+		profile, _, err := conn.GetProfile("default")
+		if err != nil {
+			return nil, "", fmt.Errorf("reading the default profile of the %s project: %w", globalHealthdProject, err)
+		}
+
+		for _, device := range profile.Devices {
+			if device["type"] != "nic" || device["network"] == "" {
+				continue
+			}
+
+			incusNetwork, _, err := conn.GetNetwork(device["network"])
+			if err != nil {
+				return nil, "", fmt.Errorf("reading network %q: %w", device["network"], err)
+			}
+
+			cidr, name = incusNetwork.Config["ipv4.address"], device["network"]
+
+			break
+		}
+
+		if name == "" {
+			return nil, "", errors.New(
+				"the default profile has no managed network to reach Incus over, set --healthd-incus or x-incus-compose.healthd.incus")
+		}
 	}
 
-	return "", "", errors.New(
-		"the default profile has no managed network to reach Incus over, set --healthd-incus or x-incus-compose.healthd.incus")
+	if cidr == "" {
+		return nil, name, fmt.Errorf("ip of network %q is empty", name)
+	}
+
+	ip, _, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return nil, name, fmt.Errorf("parsing the address of network %q: %w", name, err)
+	}
+
+	return ip, name, nil
 }
 
 // healthdTeardown removes a healthd sidecar, its volume and its certificate
