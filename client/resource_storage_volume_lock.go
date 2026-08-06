@@ -109,7 +109,7 @@ func (l *VolumeLock) heartbeat(ctx context.Context, stale time.Duration) {
 	for {
 		select {
 		case <-ctx.Done():
-			l.client.LogWarn("volume lock heartbeat stopped", "path", l.path)
+			// l.client.LogWarn("volume lock heartbeat stopped", "path", l.path)
 			return
 		case now := <-ticker.C:
 			if err := l.sc.Chtimes(l.path, now, now); err != nil {
