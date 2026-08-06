@@ -216,6 +216,18 @@
   },
   {
     "kind": "instance",
+    "name": "",
+    "description": "incus-compose: default:ic-healthd",
+    "incus_name": "ic-healthd",
+    "image": "ghcr.io/lxc/incus-compose/ic-healthd:-stripped-",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      "-stripped-"
+    ]
+  },
+  {
+    "kind": "instance",
     "name": "mailer",
     "description": "incus-compose: testexample-many-dependencies:mailer-1",
     "incus_name": "mailer-1",
@@ -319,18 +331,6 @@
     "description": "incus-compose: testexample-many-dependencies:search-db-1",
     "incus_name": "search-db-1",
     "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
-    "status": "Running",
-    "health": "Healthy",
-    "addresses": [
-      "-stripped-"
-    ]
-  },
-  {
-    "kind": "instance",
-    "name": "",
-    "description": "incus-compose: testexample-many-dependencies:testexample-many-dependencies-ic-healthd",
-    "incus_name": "testexample-many-dependencies-ic-healthd",
-    "image": "ghcr.io/lxc/incus-compose/ic-healthd:-stripped-",
     "status": "Running",
     "health": "Healthy",
     "addresses": [

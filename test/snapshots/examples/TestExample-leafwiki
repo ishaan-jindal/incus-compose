@@ -22,8 +22,8 @@
   {
     "kind": "instance",
     "name": "",
-    "description": "incus-compose: testexample-leafwiki:testexample-leafwiki-ic-healthd",
-    "incus_name": "testexample-leafwiki-ic-healthd",
+    "description": "incus-compose: default:ic-healthd",
+    "incus_name": "ic-healthd",
     "image": "ghcr.io/lxc/incus-compose/ic-healthd:-stripped-",
     "status": "Running",
     "health": "Healthy",
@@ -38,7 +38,7 @@
     "incus_name": "wiki",
     "image": "ghcr.io/perber/leafwiki:v0.12.0",
     "status": "Running",
-    "health": "Unknown",
+    "health": "Healthy",
     "addresses": [
       "-stripped-"
     ]
