@@ -166,14 +166,15 @@ build-healthd-image tag_base="ghcr.io/lxc/incus-compose/ic-healthd":
     export VERSION="`git describe --tags --always --long --dirty="-dirty"`-`openssl rand -hex 4`"
     echo ${VERSION}
 
-    echo "Building for the 'default' cache"
-    just run -P cmd/ic-healthd build --os-env
+    echo "Building for the 'default' cache on '${INCUS_REMOTE}'"
+    just run -P cmd/ic-healthd build --os-env # os-env cause of VERSION
 
-    echo "Building for the 'incus-compose-tests-cache' cache"
-    INCUS_COMPOSE_IMAGE_CACHE="incus-compose-tests-cache" just run -P cmd/ic-healthd build --os-env
+    if [[ ${INCUS_COMPOSE_IMAGE_CACHE:-} != "incus-compose-tests-cache" ]]; then
+      echo "Building for the 'incus-compose-tests-cache' cache on '${INCUS_REMOTE}'"
+      just run --image-cache="incus-compose-tests-cache" -P cmd/ic-healthd build --os-env
+    fi
 
-    sed -i -e 's|export INCUS_COMPOSE_HEALTHD_IMAGE=".*"|export INCUS_COMPOSE_HEALTHD_IMAGE="{{ tag_base }}:'${VERSION}'"|g' \
-           .env
+    sed -i -e 's|export INCUS_COMPOSE_HEALTHD_IMAGE=".*"|export INCUS_COMPOSE_HEALTHD_IMAGE="{{ tag_base }}:'${VERSION}'"|g' .env
 
 # Rebuild the ic-healthd image and put the shared daemon on it
 update-healthd *args="--trace": build-healthd-image
@@ -183,10 +184,14 @@ update-healthd *args="--trace": build-healthd-image
     remote="${INCUS_REMOTE:-local}"
 
     echo "Deleting the shared ic-healthd on remote '${remote}'"
-    INCUS_REMOTE="${remote}" incus delete --force "ic-healthd" --project default 2>/dev/null || true
+    incus delete --force "ic-healthd" --project default 2>/dev/null || true
+
+    # New image
+    export INCUS_COMPOSE_HEALTHD_IMAGE=$(source .env; echo "$INCUS_COMPOSE_HEALTHD_IMAGE")
+    echo "Image ${INCUS_COMPOSE_HEALTHD_IMAGE}"
 
     # The healthd-scope project is left behind as the handle for `healthd logs`.
-    INCUS_REMOTE="${remote}" just run healthd up {{ args }}
+    just run healthd up {{ args }}
 
 # Build ic-healthd container image
 release-healthd-image tag="ghcr.io/lxc/incus-compose/ic-healthd:latest": build-healthd-image
