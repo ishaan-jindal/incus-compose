@@ -21,12 +21,18 @@ for correct semver ordering. Headings below preserve each release's announced fo
 - `x-incus-compose.healthd` gained `scope`, `workers`, `restart-workers` and
   `x-incus`. `workers`/`restart-workers` size the daemon's pools; `x-incus` is
   Incus instance config for the sidecar, e.g. `limits.cpu`. (by @jochumdev)
-- `up` upgrades the ic-healthd container: when the image you ask for is a newer
-  release than the one it is running, the daemon is replaced by one built from
-  it. The comparison is semver and forward-only, so a machine on an older
-  incus-compose cannot downgrade a daemon shared with everyone else. Tags that
-  are not release versions - moving tags like `latest`, and `git describe`
-  builds - are not comparable and replace on any difference. (by @jochumdev)
+- `up` and `healthd up` upgrade the ic-healthd container: when the image you ask
+  for is a newer release than the one it is running, the daemon is replaced by
+  one built from it. The comparison is semver and forward-only, so a machine on
+  an older incus-compose cannot downgrade a daemon shared with everyone else.
+  Tags that are not release versions - moving tags like `latest`, and `git
+  describe` builds - are not comparable and replace on any difference.
+
+  The replacement keeps the running daemon's configuration - its endpoint,
+  worker counts, limits and anything else set on it - so an upgrade triggered by
+  one project no longer resets settings another supplied. A flag or compose
+  value given to the run doing the upgrade still wins, and a limit below the
+  sidecar's own default is raised to it. (by @jochumdev)
 - the `healthd` sub-commands run without a compose file, acting on the shared
   daemon. `incus-compose healthd up` on a bare server creates it before any
   project exists; `logs`, `restart`, `reload` and `down` fail with `no ic-healthd
@@ -87,9 +93,10 @@ for correct semver ordering. Headings below preserve each release's announced fo
   worker free is retried rather than queued, so it never counts as a check that
   timed out.
 
-  The sidecar is created with 2 CPUs and 256MB instead of 1 and 50MB. A project
-  carrying an aggregate `limits.cpu`/`limits.memory` has to budget for that;
-  existing sidecars keep their old limits until `healthd up --recreate`.
+  The sidecar is created with 2 CPUs and 256MiB instead of 1 and 50MB, and an
+  existing one is raised to that when it is replaced. Only a project-scoped
+  sidecar counts against an aggregate `limits.cpu`/`limits.memory`; the shared
+  daemon lives in the Incus `default` project and counts against nothing.
   (by @jochumdev)
 - `user.healthcheck.status` is written by ic-healthd alone. incus-compose no
   longer stamps `starting`/`stopped` on it, so the value always says what a
@@ -117,8 +124,9 @@ for correct semver ordering. Headings below preserve each release's announced fo
 ### Fixed
 
 - ic-healthd reliability: stalled API calls, checker cancellation races, invalid
-  intervals, `unless-stopped` misread as a deliberate stop, and state lost on an
-  event-listener reconnect. (by @jochumdev)
+  intervals, `unless-stopped` misread as a deliberate stop, instances re-checked
+  forever after they stopped, and state lost on an event-listener reconnect.
+  (by @jochumdev)
 - concurrent `up` runs no longer fail creating the same volume, profile or
   network. (by @jochumdev)
 - `build.dockerfile` is resolved relative to `build.context`, not the working
@@ -137,49 +145,6 @@ for correct semver ordering. Headings below preserve each release's announced fo
   (by @jochumdev)
 - pushing directory content into a storage volume no longer closes each file
   twice. (by @jochumdev)
-<<<<<<< Updated upstream
-- a `configs:` or `secrets:` entry whose target already exists in the image is
-  written instead of being silently skipped, so a config can replace a file the
-  image ships (e.g. an application's own default config). (by @jochumdev)
-- `command:` arguments containing spaces, quotes or `$` are shell-quoted
-  correctly. They were wrapped in double quotes with no escaping, and a
-  single-argument command was passed through unquoted, so either could be
-  re-split into the wrong arguments. (by @jochumdev)
-- ic-healthd no longer stops health checking an instance when an Incus API call
-  stalls. The Incus client takes no per-call context, so a request that was
-  accepted but never answered blocked the instance's checker for good - it
-  reported no status at all from then on, and anything waiting on
-  `condition: service_healthy` timed out. Calls are now bounded by the
-  healthcheck's own `timeout`, and the daemon's HTTP transport has a
-  30s response-header timeout. (by @jochumdev)
-||||||| Stash base
-- a `configs:` or `secrets:` entry whose target already exists in the image is
-  written instead of being silently skipped, so a config can replace a file the
-  image ships (e.g. an application's own default config). (by @jochumdev)
-- `command:` arguments containing spaces, quotes or `$` are shell-quoted
-  correctly. They were wrapped in double quotes with no escaping, and a
-  single-argument command was passed through unquoted, so either could be
-  re-split into the wrong arguments. (by @jochumdev)
-- ic-healthd no longer stops health checking an instance when an Incus API call
-  stalls. The Incus client takes no per-call context, so a request that was
-  accepted but never answered blocked the instance's checker for good - it
-  reported no status at all from then on, and anything waiting on
-  `condition: service_healthy` timed out. Calls are now bounded by the
-  healthcheck's own `timeout`, and the daemon's HTTP transport has a
-  30s response-header timeout. (by @jochumdev)
-- a `healthcheck` with a zero or negative `interval` or `start_interval` is
-  rejected instead of crashing ic-healthd. The value reached `time.NewTicker`,
-  whose panic took down the sidecar and stopped health checking every instance
-  in the project. (by @jochumdev)
-- an instance with `restart: unless-stopped` is restarted again after a
-  temporary Incus API error. The error was read as "stopped on purpose", so the
-  restart was skipped and the instance was dropped from health checking - and
-  since it stays stopped, nothing brought it back. (by @jochumdev)
-- ic-healthd stops health checking an instance that is no longer running,
-  instead of re-checking it forever without reporting anything. The lifecycle
-  events start a fresh checker when the instance comes back. (by @jochumdev)
-=======
->>>>>>> Stashed changes
 
 ## [1.1.0] - 2026-07-31
 

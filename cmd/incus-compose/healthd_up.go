@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"maps"
 	"net/url"
 	"os"
 	"time"
@@ -226,6 +227,9 @@ func healthdUpGlobal(ctx context.Context, gc *client.GlobalClient, args healthdU
 // healthdEnsure adds the sidecar to stack, brings it up, and replaces it when
 // the image asked for is newer than the one it runs.
 func healthdEnsure(ctx context.Context, hc *client.Client, stack *client.Stack, params healthdParams) error {
+	// Shared with the hook that applies it, which reads it after the teardown.
+	params.carry = map[string]string{}
+
 	hInst, hResources, err := healthdGetResources(hc, params)
 	if err != nil {
 		hc.LogError("Creating healthd resources", "error", err)
@@ -256,6 +260,8 @@ func healthdEnsure(ctx context.Context, hc *client.Client, stack *client.Stack, 
 		}
 	}
 	if hInst.IsEnsured() && healthdNeedsUpgrade(hInst.IncusInstance.Config["user.image_alias"], wantAlias) {
+		maps.Copy(params.carry, healthdCarriedConfig(hInst.IncusInstance.Config))
+
 		downStack := client.NewStack(hc, client.StackSortDescending(), client.StackWorkers(params.stackWorkers))
 
 		for _, r := range hResources {

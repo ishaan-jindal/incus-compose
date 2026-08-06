@@ -15,6 +15,7 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/types"
 	incusApi "github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/units"
 	"github.com/urfave/cli/v3"
 
 	"github.com/lxc/incus-compose/client"
@@ -26,8 +27,8 @@ import (
 var DefaultHealthdImage = "ghcr.io/lxc/incus-compose/ic-healthd:{version}"
 
 const (
-	defaultHealthdCPULimit    = "2"
-	defaultHealthdMemoryLimit = "256MB"
+	defaultHealthdCPU         = 2
+	defaultHealthdMemoryLimit = "256MiB"
 )
 
 const (
@@ -79,6 +80,109 @@ type healthdParams struct {
 
 	// xIncus is Incus instance config for the sidecar, e.g. limits.*.
 	xIncus map[string]string
+
+	// carry is the replaced daemon's config on an upgrade. It is filled between
+	// the two ensures, so the hook applying it must read it at hook time.
+	carry map[string]string
+}
+
+// healthdDropPrefixes are config namespaces Incus or the image owns.
+var healthdDropPrefixes = []string{"volatile.", "image.", "oci."}
+
+// healthdDropKeys are decided by the new image, the new registration or the
+// daemon itself, so carrying them would pin a sidecar to the one it replaced.
+var healthdDropKeys = []string{
+	"user.image_alias",
+	"environment.INCUS_COMPOSE_HEALTHD_TOKEN",
+	shared.HealthStatusKey,
+	client.HealthKeyPrefix + "stopped",
+}
+
+// The daemon's environment keys, as Incus instance config.
+const (
+	envIncus          = "environment.INCUS_COMPOSE_HEALTHD_INCUS"
+	envWorkers        = "environment.INCUS_COMPOSE_HEALTHD_WORKERS"
+	envRestartWorkers = "environment.INCUS_COMPOSE_HEALTHD_RESTART_WORKERS"
+	envDebug          = "environment.INCUS_COMPOSE_HEALTHD_DEBUG"
+	envTrace          = "environment.INCUS_COMPOSE_HEALTHD_TRACE"
+)
+
+// healthdSettings layers this run's settings over the daemon being replaced:
+// what a flag or the compose file names wins, what it leaves out is kept, and
+// incusURL only fills the gap when neither supplies an endpoint.
+func healthdSettings(params healthdParams, incusURL string, debug bool) map[string]string {
+	settings := map[string]string{}
+	maps.Copy(settings, params.carry)
+
+	if params.incus != nil || settings[envIncus] == "" {
+		settings[envIncus] = incusURL
+	}
+	if params.workers > 0 {
+		settings[envWorkers] = strconv.Itoa(params.workers)
+	}
+	if params.restartWorkers > 0 {
+		settings[envRestartWorkers] = strconv.Itoa(params.restartWorkers)
+	}
+	if debug {
+		settings[envDebug] = "true"
+	}
+	if params.trace {
+		settings[envTrace] = "true"
+	}
+
+	// Last, so x-incus overrides a limit the replaced daemon carried.
+	maps.Copy(settings, params.xIncus)
+
+	return settings
+}
+
+// healthdCarriedConfig is what survives replacing a sidecar: everything the
+// running daemon carries except what has to be derived again. Excluding rather
+// than listing keeps settings a newer incus-compose does not know about.
+func healthdCarriedConfig(config map[string]string) map[string]string {
+	carried := map[string]string{}
+
+	for key, value := range config {
+		if slices.Contains(healthdDropKeys, key) {
+			continue
+		}
+
+		if slices.ContainsFunc(healthdDropPrefixes, func(p string) bool { return strings.HasPrefix(key, p) }) {
+			continue
+		}
+
+		carried[key] = value
+	}
+
+	healthdFloorLimits(carried)
+
+	return carried
+}
+
+// healthdFloorLimits raises a carried limit below the sidecar's default, so a
+// daemon created by an older version is not kept at a size its worker pools
+// have outgrown. Only a plain count or byte size compares; a CPU pin such as
+// "1-1" or a memory percentage is deliberate and left alone.
+func healthdFloorLimits(carried map[string]string) {
+	cpu, err := strconv.Atoi(carried["limits.cpu"])
+	if err == nil && cpu < defaultHealthdCPU {
+		carried["limits.cpu"] = strconv.Itoa(defaultHealthdCPU)
+	}
+
+	// An empty value parses as zero bytes, which would floor a limit into being.
+	if carried["limits.memory"] == "" {
+		return
+	}
+
+	memory, err := units.ParseByteSizeString(carried["limits.memory"])
+	if err != nil {
+		return
+	}
+
+	deflt, err := units.ParseByteSizeString(defaultHealthdMemoryLimit)
+	if err == nil && memory < deflt {
+		carried["limits.memory"] = defaultHealthdMemoryLimit
+	}
 }
 
 // healthdCreateToken creates the sidecar's trust token. The shared daemon must
@@ -212,7 +316,7 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 		Image: imgRes.Name(),
 		Type:  incusApi.InstanceTypeContainer,
 		Extensions: map[string]string{
-			"limits.cpu":                       defaultHealthdCPULimit,
+			"limits.cpu":                       strconv.Itoa(defaultHealthdCPU),
 			"limits.memory":                    defaultHealthdMemoryLimit,
 			client.HealthKeyPrefix + "restart": "unless-stopped", // Needed for instance.Start to wait for it.
 			client.HealthKeyPrefix + "daemon":  "true",
@@ -287,9 +391,16 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			inst.Config.Resources = append(inst.Config.Resources, network)
 		}
 
-		incusURL, err := healthdIncusURL(c, params, network)
-		if err != nil {
-			return err
+		// A carried endpoint stands, so replacing a daemon does not require
+		// being able to derive the one it already dials.
+		var incusURL string
+		if params.incus != nil || params.carry[envIncus] == "" {
+			u, err := healthdIncusURL(c, params, network)
+			if err != nil {
+				return err
+			}
+
+			incusURL = u.String()
 		}
 
 		token, err := healthdCreateToken(c, params.global)
@@ -298,7 +409,7 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			token = ""
 		}
 
-		inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_INCUS"] = incusURL.String()
+		maps.Copy(inst.Config.Extensions, healthdSettings(params, incusURL, c.IsDebugging()))
 		// inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_TOKEN"] = token
 
 		if params.global {
@@ -307,20 +418,6 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 				shared.HealthScopeKey + "=" + shared.HealthScopeGlobal
 		} else {
 			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_PROJECTS"] = c.IncusProject()
-		}
-
-		if params.workers > 0 {
-			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_WORKERS"] = strconv.Itoa(params.workers)
-		}
-		if params.restartWorkers > 0 {
-			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_RESTART_WORKERS"] = strconv.Itoa(params.restartWorkers)
-		}
-
-		if c.IsDebugging() {
-			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_DEBUG"] = "true"
-		}
-		if params.trace {
-			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_TRACE"] = "true"
 		}
 
 		inst.Config.Files = append(inst.Config.Files, client.InstanceFile{
@@ -531,81 +628,106 @@ func healthdEnsureNetwork(ctx context.Context, c *client.Client, name string) (*
 // healthdIncusURL is the endpoint the sidecar dials: --healthd-incus, then
 // core.https_address once it names a host, then the bridge gateway.
 func healthdIncusURL(c *client.Client, params healthdParams, network *client.Network) (*url.URL, error) {
-	if params.incus != nil {
-		return params.incus, nil
-	}
+	u := params.incus
 
-	addr, err := c.Global().HTTPSAddress()
-	if err == nil {
-		host, port, err := net.SplitHostPort(addr)
-		if err == nil && host != "" && port != "" {
-			u, err := url.Parse(fmt.Sprintf("https://%s:%s", host, port))
-			if err == nil {
-				return u, nil
+	if u == nil {
+		addr, err := c.Global().HTTPSAddress()
+		if err == nil {
+			host, port, splitErr := net.SplitHostPort(addr)
+
+			// An unspecified address means every interface, so it names no host
+			// to dial; the bridge gateway below is the reachable form of it.
+			if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
+				host = ""
+			}
+
+			if splitErr == nil && host != "" && port != "" {
+				parsed, parseErr := url.Parse(fmt.Sprintf("https://%s:%s", host, port))
+				if parseErr == nil {
+					u = parsed
+				}
 			}
 		}
 	}
 
-	if !c.IsRemote() {
-		return nil, errors.New("healthd works only with a https connection, provide one with INCUS_COMPOSE_HEALTHD_INCUS")
+	if u == nil {
+		if !c.IsRemote() {
+			return nil, errors.New("healthd works only with a https connection, provide one with INCUS_COMPOSE_HEALTHD_INCUS")
+		}
+
+		var err error
+
+		u, err = c.Global().URL()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get the url: %w", err)
+		}
+
+		ip, _, err := healthdBridgeIP(c, network)
+		if err != nil {
+			return nil, err
+		}
+
+		u.Host = net.JoinHostPort(ip.String(), u.Port())
 	}
 
-	u, err := c.Global().URL()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get the url: %w", err)
+	if ip := net.ParseIP(u.Hostname()); ip != nil && ip.IsLoopback() {
+		return nil, fmt.Errorf(
+			"the Incus endpoint %q is a loopback address the ic-healthd container cannot reach; "+
+				"bind core.https_address to a reachable address, or set --healthd-incus", u.Host)
 	}
-
-	cidr, name, err := healthdBridgeCIDR(c, network)
-	if err != nil {
-		return nil, err
-	}
-
-	if cidr == "" {
-		return nil, fmt.Errorf("ip of network %q is empty", name)
-	}
-
-	ip := net.ParseIP(strings.Split(cidr, "/")[0])
-	if ip == nil {
-		return nil, fmt.Errorf("result is nil while parsing ip '%v'", cidr)
-	}
-
-	u.Host = net.JoinHostPort(ip.String(), u.Port())
 
 	return u, nil
 }
 
-// healthdBridgeCIDR returns the ipv4.address of the bridge the sidecar sits on,
-// read from the default profile when the sidecar brings no network of its own.
-func healthdBridgeCIDR(c *client.Client, network *client.Network) (cidr, name string, err error) {
+// healthdBridgeIP returns the gateway of the bridge the sidecar sits on and its
+// network, taken from the default profile when the sidecar brings none.
+func healthdBridgeIP(c *client.Client, network *client.Network) (net.IP, string, error) {
+	var cidr, name string
+
 	if network != nil {
-		return network.IncusNetwork.Config["ipv4.address"], network.Name(), nil
-	}
-
-	conn, err := c.GlobalConnection()
-	if err != nil {
-		return "", "", err
-	}
-
-	profile, _, err := conn.GetProfile("default")
-	if err != nil {
-		return "", "", fmt.Errorf("reading the default profile of the %s project: %w", globalHealthdProject, err)
-	}
-
-	for _, device := range profile.Devices {
-		if device["type"] != "nic" || device["network"] == "" {
-			continue
-		}
-
-		incusNetwork, _, err := conn.GetNetwork(device["network"])
+		cidr, name = network.IncusNetwork.Config["ipv4.address"], network.Name()
+	} else {
+		conn, err := c.GlobalConnection()
 		if err != nil {
-			return "", "", fmt.Errorf("reading network %q: %w", device["network"], err)
+			return nil, "", err
 		}
 
-		return incusNetwork.Config["ipv4.address"], device["network"], nil
+		profile, _, err := conn.GetProfile("default")
+		if err != nil {
+			return nil, "", fmt.Errorf("reading the default profile of the %s project: %w", globalHealthdProject, err)
+		}
+
+		for _, device := range profile.Devices {
+			if device["type"] != "nic" || device["network"] == "" {
+				continue
+			}
+
+			incusNetwork, _, err := conn.GetNetwork(device["network"])
+			if err != nil {
+				return nil, "", fmt.Errorf("reading network %q: %w", device["network"], err)
+			}
+
+			cidr, name = incusNetwork.Config["ipv4.address"], device["network"]
+
+			break
+		}
+
+		if name == "" {
+			return nil, "", errors.New(
+				"the default profile has no managed network to reach Incus over, set --healthd-incus or x-incus-compose.healthd.incus")
+		}
 	}
 
-	return "", "", errors.New(
-		"the default profile has no managed network to reach Incus over, set --healthd-incus or x-incus-compose.healthd.incus")
+	if cidr == "" {
+		return nil, name, fmt.Errorf("ip of network %q is empty", name)
+	}
+
+	ip, _, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return nil, name, fmt.Errorf("parsing the address of network %q: %w", name, err)
+	}
+
+	return ip, name, nil
 }
 
 // healthdTeardown removes a healthd sidecar, its volume and its certificate

@@ -701,8 +701,8 @@ func TestProjectConfigExtractsXIncus(t *testing.T) {
 	config := proj.ClientConfig
 
 	assert.Equal(t, map[string]string{
-		"limits.cpu":              "6",
-		"limits.memory":           "2305MB",
+		"limits.cpu":              "4",
+		"limits.memory":           "2049MiB",
 		"limits.virtual-machines": "0",
 	}, config.XIncus)
 
