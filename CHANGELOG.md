@@ -9,7 +9,7 @@ Version numbering moved from `0.0.1` to `1.0.0` at beta11 (1.0.0 is the intended
 final version), and the beta suffix gained a dot (`beta.16`) from beta.16 onward
 for correct semver ordering. Headings below preserve each release's announced form.
 
-## [unreleased]
+## [v1.2.0-rc.1] - 2026-08-06
 
 ### Added
 
@@ -26,17 +26,18 @@ for correct semver ordering. Headings below preserve each release's announced fo
   one built from it. The comparison is semver and forward-only, so a machine on
   an older incus-compose cannot downgrade a daemon shared with everyone else.
   Tags that are not release versions - moving tags like `latest`, and `git
-  describe` builds - are not comparable and replace on any difference.
+describe` builds - are not comparable and replace on any difference.
 
   The replacement keeps the running daemon's configuration - its endpoint,
   worker counts, limits and anything else set on it - so an upgrade triggered by
   one project no longer resets settings another supplied. A flag or compose
   value given to the run doing the upgrade still wins, and a limit below the
   sidecar's own default is raised to it. (by @jochumdev)
+
 - the `healthd` sub-commands run without a compose file, acting on the shared
   daemon. `incus-compose healthd up` on a bare server creates it before any
   project exists; `logs`, `restart`, `reload` and `down` fail with `no ic-healthd
-  is running` when there is none instead of complaining about a missing
+is running` when there is none instead of complaining about a missing
   `compose.yaml`. (by @jochumdev)
 - `--trace`, a level below `--debug` (which it implies), on both incus-compose
   and `ic-healthd run`. The daemon's per-event and per-check lines moved there,
@@ -78,6 +79,7 @@ for correct semver ordering. Headings below preserve each release's announced fo
   Projects last brought up by an earlier version carry no scope at all and are
   invisible to the shared daemon, so nothing changes for them until you run `up`.
   See [Health Checking](https://docs.incus-compose.org/healthd). (by @jochumdev)
+
 - **health checking is opt-in.** ic-healthd watches an instance only when it
   carries `user.healthcheck.enabled: "true"`; a `healthcheck:` block or a restart
   policy alone is no longer enough. incus-compose writes it automatically.
@@ -98,6 +100,7 @@ for correct semver ordering. Headings below preserve each release's announced fo
   sidecar counts against an aggregate `limits.cpu`/`limits.memory`; the shared
   daemon lives in the Incus `default` project and counts against nothing.
   (by @jochumdev)
+
 - `user.healthcheck.status` is written by ic-healthd alone. incus-compose no
   longer stamps `starting`/`stopped` on it, so the value always says what a
   daemon actually saw: an instance carries no status until one reports, reports
