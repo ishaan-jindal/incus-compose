@@ -15,7 +15,7 @@ import (
 
 // BackupConfig holds backup configuration from x-incus-compose.backup.
 type BackupConfig struct {
-	Pool string
+	Pool string `mapstructure:"pool"`
 }
 
 // BackupEntry represents a single backup in the manifest.

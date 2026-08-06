@@ -76,9 +76,7 @@ func newBackupCreateCommand() *cli.Command {
 
 			composePool := c.Config().DefaultStoragePool
 
-			backupConfig := client.BackupConfig{
-				Pool: p.ClientConfig.Backup.Pool,
-			}
+			backupConfig := p.ClientConfig.Backup
 			if pool := cmd.String("pool"); pool != "" {
 				backupConfig.Pool = pool
 			}
