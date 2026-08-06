@@ -126,7 +126,7 @@ lint folder="./...":
     shellcheck **/*.sh
     golangci-lint run {{ folder }}
 
-# Lint and fix all files.
+# Lint and fix all files. Imports are gopls' job, not this one - see AGENTS.md.
 fix folder="./...":
     golangci-lint run --fix {{ folder }}
 

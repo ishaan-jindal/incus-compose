@@ -71,6 +71,10 @@ dockers_v2:
       - linux/arm64
 
 release:
+  # Never publish straight from a tag push; the release is published by hand.
+  draft: true
+  # Marks the release pre-release when the tag carries a semver pre-release part.
+  prerelease: auto
   footer: >-
 
     ---
