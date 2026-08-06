@@ -9,6 +9,17 @@ Version numbering moved from `0.0.1` to `1.0.0` at beta11 (1.0.0 is the intended
 final version), and the beta suffix gained a dot (`beta.16`) from beta.16 onward
 for correct semver ordering. Headings below preserve each release's announced form.
 
+## [v1.2.0-rc.2] - 2026-08-06
+
+### Fixed
+
+- `self-update` installs the build for the machine it runs on. It picked the
+  first asset in the release instead - `darwin_amd64` for everybody - so on
+  Linux and Windows it replaced the binary with one that cannot execute. The
+  broken `self-update` is the one already installed, so 1.0.0 and 1.1.0 users
+  have to reinstall once with `install.sh`; it works from here on.
+  (by @jochumdev)
+
 ## [v1.2.0-rc.1] - 2026-08-06
 
 ### Added

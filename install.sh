@@ -11,9 +11,10 @@ usage() {
   cat <<EOF
 $this: download and install incus-compose binaries
 
-Usage: $this [-b <bindir>] [-d] [<tag>]
+Usage: $this [-b <bindir>] [-d] [-p] [<tag>]
   -b sets bindir or installation directory, Defaults to ./bin
   -d turns on debug logging
+  -p installs the newest release even when it is a pre-release
    <tag> is a tag from
    https://github.com/lxc/incus-compose/releases
    If tag is missing, then the latest will be used.
@@ -27,10 +28,12 @@ parse_args() {
   # overridden by flag below
 
   BINDIR=${BINDIR:-./bin}
-  while getopts "b:dh?x" arg; do
+  PRERELEASE=${PRERELEASE:-0}
+  while getopts "b:dph?x" arg; do
     case "$arg" in
       b) BINDIR="$OPTARG" ;;
       d) log_set_priority 10 ;;
+      p) PRERELEASE=1 ;;
       h | \?) usage "$0" ;;
       x) set -x ;;
     esac
@@ -73,12 +76,17 @@ get_binaries() {
   esac
 }
 tag_to_version() {
-  if [ -z "${TAG}" ]; then
-    log_info "checking GitHub for latest tag"
+  if [ -z "${TAG}" ] && [ "${PRERELEASE}" = "1" ]; then
+    log_info "checking GitHub for the newest release, pre-releases included"
+    REALTAG=$(github_prerelease "$OWNER/$REPO") && true
   else
-    log_info "checking GitHub for tag '${TAG}'"
+    if [ -z "${TAG}" ]; then
+      log_info "checking GitHub for latest tag"
+    else
+      log_info "checking GitHub for tag '${TAG}'"
+    fi
+    REALTAG=$(github_release "$OWNER/$REPO" "${TAG}") && true
   fi
-  REALTAG=$(github_release "$OWNER/$REPO" "${TAG}") && true
   if test -z "$REALTAG"; then
     log_crit "unable to find '${TAG}' - use 'latest' or see https://github.com/${PREFIX}/releases for details"
     exit 1
@@ -314,6 +322,17 @@ http_copy() {
   body=$(cat "$tmp")
   rm -f "${tmp}"
   echo "$body"
+}
+# The releases feed is ordered newest first and, unlike /releases/latest,
+# lists pre-releases. Drafts are not public, so they never show up here.
+github_prerelease() {
+  owner_repo=$1
+  giturl="https://github.com/${owner_repo}/releases.atom"
+  feed=$(http_copy "$giturl" "Accept:application/atom+xml")
+  test -z "$feed" && return 1
+  version=$(echo "$feed" | grep -o '/releases/tag/[^"]*' | head -1 | sed 's|/releases/tag/||')
+  test -z "$version" && return 1
+  echo "$version"
 }
 github_release() {
   owner_repo=$1

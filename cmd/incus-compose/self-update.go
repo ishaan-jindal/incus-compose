@@ -34,10 +34,11 @@ func newSelfUpdateCommand() *cli.Command {
 				return err
 			}
 
+			// No Filters: they replace the OS/arch suffix match rather than
+			// narrowing it, so the first matching asset wins whatever it targets.
 			updater, err := selfupdate.NewUpdater(selfupdate.Config{
 				Draft:      cmd.Bool("draft"),
 				Prerelease: cmd.Bool("pre-release"),
-				Filters:    []string{"^incus-compose_"},
 			})
 			if err != nil {
 				gc.LogError("Creating updater", "error", err)
