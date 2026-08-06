@@ -15,6 +15,7 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/types"
 	incusApi "github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/units"
 	"github.com/urfave/cli/v3"
 
 	"github.com/lxc/incus-compose/client"
@@ -26,8 +27,8 @@ import (
 var DefaultHealthdImage = "ghcr.io/lxc/incus-compose/ic-healthd:{version}"
 
 const (
-	defaultHealthdCPULimit    = "2"
-	defaultHealthdMemoryLimit = "256MB"
+	defaultHealthdCPU         = 2
+	defaultHealthdMemoryLimit = "256MiB"
 )
 
 const (
@@ -79,6 +80,109 @@ type healthdParams struct {
 
 	// xIncus is Incus instance config for the sidecar, e.g. limits.*.
 	xIncus map[string]string
+
+	// carry is the replaced daemon's config on an upgrade. It is filled between
+	// the two ensures, so the hook applying it must read it at hook time.
+	carry map[string]string
+}
+
+// healthdDropPrefixes are config namespaces Incus or the image owns.
+var healthdDropPrefixes = []string{"volatile.", "image.", "oci."}
+
+// healthdDropKeys are decided by the new image, the new registration or the
+// daemon itself, so carrying them would pin a sidecar to the one it replaced.
+var healthdDropKeys = []string{
+	"user.image_alias",
+	"environment.INCUS_COMPOSE_HEALTHD_TOKEN",
+	shared.HealthStatusKey,
+	client.HealthKeyPrefix + "stopped",
+}
+
+// The daemon's environment keys, as Incus instance config.
+const (
+	envIncus          = "environment.INCUS_COMPOSE_HEALTHD_INCUS"
+	envWorkers        = "environment.INCUS_COMPOSE_HEALTHD_WORKERS"
+	envRestartWorkers = "environment.INCUS_COMPOSE_HEALTHD_RESTART_WORKERS"
+	envDebug          = "environment.INCUS_COMPOSE_HEALTHD_DEBUG"
+	envTrace          = "environment.INCUS_COMPOSE_HEALTHD_TRACE"
+)
+
+// healthdSettings layers this run's settings over the daemon being replaced:
+// what a flag or the compose file names wins, what it leaves out is kept, and
+// incusURL only fills the gap when neither supplies an endpoint.
+func healthdSettings(params healthdParams, incusURL string, debug bool) map[string]string {
+	settings := map[string]string{}
+	maps.Copy(settings, params.carry)
+
+	if params.incus != nil || settings[envIncus] == "" {
+		settings[envIncus] = incusURL
+	}
+	if params.workers > 0 {
+		settings[envWorkers] = strconv.Itoa(params.workers)
+	}
+	if params.restartWorkers > 0 {
+		settings[envRestartWorkers] = strconv.Itoa(params.restartWorkers)
+	}
+	if debug {
+		settings[envDebug] = "true"
+	}
+	if params.trace {
+		settings[envTrace] = "true"
+	}
+
+	// Last, so x-incus overrides a limit the replaced daemon carried.
+	maps.Copy(settings, params.xIncus)
+
+	return settings
+}
+
+// healthdCarriedConfig is what survives replacing a sidecar: everything the
+// running daemon carries except what has to be derived again. Excluding rather
+// than listing keeps settings a newer incus-compose does not know about.
+func healthdCarriedConfig(config map[string]string) map[string]string {
+	carried := map[string]string{}
+
+	for key, value := range config {
+		if slices.Contains(healthdDropKeys, key) {
+			continue
+		}
+
+		if slices.ContainsFunc(healthdDropPrefixes, func(p string) bool { return strings.HasPrefix(key, p) }) {
+			continue
+		}
+
+		carried[key] = value
+	}
+
+	healthdFloorLimits(carried)
+
+	return carried
+}
+
+// healthdFloorLimits raises a carried limit below the sidecar's default, so a
+// daemon created by an older version is not kept at a size its worker pools
+// have outgrown. Only a plain count or byte size compares; a CPU pin such as
+// "1-1" or a memory percentage is deliberate and left alone.
+func healthdFloorLimits(carried map[string]string) {
+	cpu, err := strconv.Atoi(carried["limits.cpu"])
+	if err == nil && cpu < defaultHealthdCPU {
+		carried["limits.cpu"] = strconv.Itoa(defaultHealthdCPU)
+	}
+
+	// An empty value parses as zero bytes, which would floor a limit into being.
+	if carried["limits.memory"] == "" {
+		return
+	}
+
+	memory, err := units.ParseByteSizeString(carried["limits.memory"])
+	if err != nil {
+		return
+	}
+
+	deflt, err := units.ParseByteSizeString(defaultHealthdMemoryLimit)
+	if err == nil && memory < deflt {
+		carried["limits.memory"] = defaultHealthdMemoryLimit
+	}
 }
 
 // healthdCreateToken creates the sidecar's trust token. The shared daemon must
@@ -212,7 +316,7 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 		Image: imgRes.Name(),
 		Type:  incusApi.InstanceTypeContainer,
 		Extensions: map[string]string{
-			"limits.cpu":                       defaultHealthdCPULimit,
+			"limits.cpu":                       strconv.Itoa(defaultHealthdCPU),
 			"limits.memory":                    defaultHealthdMemoryLimit,
 			client.HealthKeyPrefix + "restart": "unless-stopped", // Needed for instance.Start to wait for it.
 			client.HealthKeyPrefix + "daemon":  "true",
@@ -287,9 +391,16 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			inst.Config.Resources = append(inst.Config.Resources, network)
 		}
 
-		incusURL, err := healthdIncusURL(c, params, network)
-		if err != nil {
-			return err
+		// A carried endpoint stands, so replacing a daemon does not require
+		// being able to derive the one it already dials.
+		var incusURL string
+		if params.incus != nil || params.carry[envIncus] == "" {
+			u, err := healthdIncusURL(c, params, network)
+			if err != nil {
+				return err
+			}
+
+			incusURL = u.String()
 		}
 
 		token, err := healthdCreateToken(c, params.global)
@@ -298,7 +409,7 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			token = ""
 		}
 
-		inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_INCUS"] = incusURL.String()
+		maps.Copy(inst.Config.Extensions, healthdSettings(params, incusURL, c.IsDebugging()))
 		// inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_TOKEN"] = token
 
 		if params.global {
@@ -307,20 +418,6 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 				shared.HealthScopeKey + "=" + shared.HealthScopeGlobal
 		} else {
 			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_PROJECTS"] = c.IncusProject()
-		}
-
-		if params.workers > 0 {
-			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_WORKERS"] = strconv.Itoa(params.workers)
-		}
-		if params.restartWorkers > 0 {
-			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_RESTART_WORKERS"] = strconv.Itoa(params.restartWorkers)
-		}
-
-		if c.IsDebugging() {
-			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_DEBUG"] = "true"
-		}
-		if params.trace {
-			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_TRACE"] = "true"
 		}
 
 		inst.Config.Files = append(inst.Config.Files, client.InstanceFile{

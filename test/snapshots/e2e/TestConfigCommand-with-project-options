@@ -9,7 +9,7 @@ services:
     restart: unless-stopped
     x-incus:
       limits.cpu: "1"
-      limits.memory: 512MB
+      limits.memory: 512MiB
 networks:
   default:
     name: test-local-config_default
