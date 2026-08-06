@@ -144,14 +144,13 @@ func newPullCommand() *cli.Command {
 
 			if !cmd.Bool("no-healthd") && healthdInUseByProject(globalClient, p) {
 				hparams := healthdParams{
-					projectName: p.Name,
-					binary:      "",
-					image:       resolveHealthdImage(cmd.String("healthd-image")),
-					pull:        cmd.String("policy"),
-					incus:       nil,
-					network:     "",
-					timeout:     time.Second,
-					workers:     cmd.Root().Int("workers"),
+					binary:       "",
+					image:        resolveHealthdImage(cmd.String("healthd-image")),
+					pull:         cmd.String("policy"),
+					incus:        nil,
+					network:      "",
+					timeout:      time.Second,
+					stackWorkers: cmd.Root().Int("workers"),
 				}
 
 				_, hResources, err := healthdGetResources(c, hparams)

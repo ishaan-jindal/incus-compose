@@ -9,73 +9,135 @@ Version numbering moved from `0.0.1` to `1.0.0` at beta11 (1.0.0 is the intended
 final version), and the beta suffix gained a dot (`beta.16`) from beta.16 onward
 for correct semver ordering. Headings below preserve each release's announced form.
 
-## [1.2.0] - 2026-08-04
+## [unreleased]
 
 ### Added
 
-- `--pull never` on `up`, `build` and `pull` (`--policy never`) never contacts a
-  registry and fails when the image is not already stored, for air-gapped use.
-  `pull --policy` is honoured now instead of being ignored. (by @jochumdev)
-- **library**: `StorageVolume.SFTP()` and `StorageVolume.Lock()` expose the
-  volume over SFTP and provide an advisory lock on it, with optional stale
-  takeover and heartbeat. Lock names may contain slashes; missing parent
-  directories are created. (by @jochumdev)
-- `entrypoint:` is supported and follows the compose spec: it replaces the
-  image's entrypoint, and the image's default command is discarded, so the
-  container runs exactly `entrypoint:` plus `command:`. `command:` on its own is
-  unchanged - it is still appended to the image entrypoint, because Incus
-  reports that with the image command already merged in. Use `entrypoint:` when
-  you need the command to be exactly what you wrote. (by @jochumdev)
-- **library**: `InstanceConfig.AppendEntrypoint` (a pre-quoted string) became
-  `InstanceConfig.Entrypoint` and `InstanceConfig.Command`, both `[]string`.
-  Quoting and the merge with the image entrypoint now happen at instance
-  creation, when the image is known. (by @jochumdev)
+- ic-healthd watches several projects from one event listener, and `--project` is
+  now optional: without it it watches every project whose config matches
+  `--project-marker`, by default `user.healthcheck.scope=global`. The flag takes
+  a `KEY=VALUE` pair now; a bare key still means `KEY=true`.
+  See [Health Checking](https://docs.incus-compose.org/healthd). (by @jochumdev)
+- `x-incus-compose.healthd` gained `scope`, `workers`, `restart-workers` and
+  `x-incus`. `workers`/`restart-workers` size the daemon's pools; `x-incus` is
+  Incus instance config for the sidecar, e.g. `limits.cpu`. (by @jochumdev)
+- `up` upgrades the ic-healthd container: when the image you ask for is a newer
+  release than the one it is running, the daemon is replaced by one built from
+  it. The comparison is semver and forward-only, so a machine on an older
+  incus-compose cannot downgrade a daemon shared with everyone else. Tags that
+  are not release versions - moving tags like `latest`, and `git describe`
+  builds - are not comparable and replace on any difference. (by @jochumdev)
+- the `healthd` sub-commands run without a compose file, acting on the shared
+  daemon. `incus-compose healthd up` on a bare server creates it before any
+  project exists; `logs`, `restart`, `reload` and `down` fail with `no ic-healthd
+  is running` when there is none instead of complaining about a missing
+  `compose.yaml`. (by @jochumdev)
+- `--trace`, a level below `--debug` (which it implies), on both incus-compose
+  and `ic-healthd run`. The daemon's per-event and per-check lines moved there,
+  so `--debug` stays readable on a server watching many projects; `--trace` is
+  what shows the Incus events arriving when a project is not being watched.
+  incus-compose passes it to the sidecar as `INCUS_COMPOSE_HEALTHD_TRACE`; it
+  has no level of its own in incus-compose yet. (by @jochumdev)
+- `healthd down --force` stops the shared daemon without the confirmation prompt.
+  Without it, taking down a daemon other projects rely on asks first, and
+  refuses outright when there is no terminal to ask on. (by @jochumdev)
+- **library**: `project.ErrNoComposeFile`, so a caller that can work without a
+  compose file can tell that apart from a broken one. `Load` and `LoadModel`
+  return it instead of an equivalent unwrapped error. (by @jochumdev)
+- **library**: `Client.HealthdRunning`, `GlobalClient.ProjectConfig`,
+  `GlobalClient.ProjectsWithConfig`, `GlobalClient.AddMissingProjectConfig` (was
+  unexported) and `InstanceConfig.NoRootDevice`. (by @jochumdev)
+- `entrypoint:` is supported and follows the compose spec. `command:` on its own
+  still appends rather than replacing. See
+  [Compose Compatibility](https://docs.incus-compose.org/compose-compatibility#entrypoint-and-command). (by @jochumdev)
+- `--pull never` on `up`, `build` and `pull` never contacts a registry, for
+  air-gapped use. `pull --policy` is honoured instead of ignored. (by @jochumdev)
+- **library**: `StorageVolume.SFTP()` and `StorageVolume.Lock()`. (by @jochumdev)
 
 ### Changed
 
-- the image cache moved from the Incus `default` project to `incus-compose-cache`,
-  so cached images no longer pile up in the project most people work in. Whatever
-  earlier versions cached in `default` stays there and is never read again; delete
-  it by hand (`incus image list --project default`, filter on `.properties.type ==
-"oci"`). `--image-cache` still overrides the project, and `""` still disables
-  caching. (by @jochumdev)
-- a service with `build:` no longer rebuilds in every project: the image cache
-  is checked before the builder runs, so the first `up` anywhere builds and the
-  rest copy from the cache. Use `--build` to force a rebuild after changing a
-  Dockerfile or context. (by @jochumdev)
-- image work is serialized per alias through a `ic-image-lock` volume in the
-  cache project, so parallel pulls and builds of one image no longer collide.
+- **one ic-healthd for the whole server.** `up` no longer creates a sidecar per
+  project. It creates a single shared daemon named `ic-healthd` in the Incus
+  `default` project and marks the project `user.healthcheck.scope=global` so the
+  daemon picks it up. A project that already had its own sidecar has it removed,
+  before the mark is written, so the two never watch it at once.
+
+  Keep a sidecar of your own with `up --healthd-scope project` or
+  `x-incus-compose.healthd.scope: project`; that is also the way to keep the
+  daemon's Incus certificate restricted to one project, since the shared one is
+  unrestricted by necessity. Whichever a project uses is stored on the project
+  and wins over the flag and the compose file from then on, so changing it later
+  means changing that key.
+
+  Projects last brought up by an earlier version carry no scope at all and are
+  invisible to the shared daemon, so nothing changes for them until you run `up`.
+  See [Health Checking](https://docs.incus-compose.org/healthd). (by @jochumdev)
+- **health checking is opt-in.** ic-healthd watches an instance only when it
+  carries `user.healthcheck.enabled: "true"`; a `healthcheck:` block or a restart
+  policy alone is no longer enough. incus-compose writes it automatically.
+
+  Instances created before this do not carry the key. If a project uses
+  `healthcheck:` or a restart policy, run `up` once to have those enforced again;
+  it adds the key in place, with no `--recreate` and no downtime. Projects that
+  use neither need nothing, and containers keep running either way. See
+  [Health Checking](https://docs.incus-compose.org/healthd#health-checking-is-opt-in). (by @jochumdev)
+
+- ic-healthd caps the checks and restarts it runs at once, over every project it
+  watches, with `--workers` (32) and `--restart-workers` (12). An action with no
+  worker free is retried rather than queued, so it never counts as a check that
+  timed out.
+
+  The sidecar is created with 2 CPUs and 256MB instead of 1 and 50MB. A project
+  carrying an aggregate `limits.cpu`/`limits.memory` has to budget for that;
+  existing sidecars keep their old limits until `healthd up --recreate`.
   (by @jochumdev)
-- **library**: `ImageConfig.CacheServer` (an `incus.InstanceServer`) became
-  `ImageConfig.CacheClient` (a `*client.Client`), needed to ensure the lock
-  volume. `Options.Pull` is a `PullMode` instead of a `bool`; `OptionPull()`
-  still selects `PullAlways`. (by @jochumdev)
-- `up` without `--detach` no behaves the same as `docker compose`, it creates
-  and starts the resources, then runs logs and on interrupt `down`. (by @jochumdev)
+- `user.healthcheck.status` is written by ic-healthd alone. incus-compose no
+  longer stamps `starting`/`stopped` on it, so the value always says what a
+  daemon actually saw: an instance carries no status until one reports, reports
+  `stopped` while it is down, and `unknown` for good under `up --no-healthd`.
+  `list` shows those as `Unknown` and `Stopped`. (by @jochumdev)
+- the image cache moved from the Incus `default` project to `incus-compose-cache`.
+  Whatever earlier versions cached in `default` stays there unread; delete it by
+  hand. (by @jochumdev)
+- a service with `build:` no longer rebuilds in every project - the cache is
+  checked before the builder runs. Use `--build` to force a rebuild. (by @jochumdev)
+- `up` without `--detach` now matches `docker compose`: create, start, stream
+  logs, and `down` on interrupt. (by @jochumdev)
 - `config --format=json` keeps the `x-incus` and `x-incus-compose` blocks, which
-  `docker compose` drops. As a consequence it omits docker's explicit
-  `command`/`entrypoint`/`ipam` nulls and sorts keys alphabetically, so parse the
-  JSON rather than diffing it against docker's. (by @jochumdev)
+  `docker compose` drops. Parse the JSON rather than diffing it against docker's.
+  (by @jochumdev)
+- **library**: `InstanceConfig.AppendEntrypoint` became `InstanceConfig.Entrypoint`
+  and `InstanceConfig.Command`, both `[]string`. `ImageConfig.CacheServer` became
+  `ImageConfig.CacheClient` (a `*client.Client`). `Options.Pull` is a `PullMode`,
+  not a `bool`. (by @jochumdev)
+- **library**: `Instance.Ensure` and `GlobalClient.EnsureProject` add declared
+  config keys that are missing, comparing keys only - an existing key keeps its
+  value. A changed value still needs `--recreate`. (by @jochumdev)
 
 ### Fixed
 
-- default pool detection now checks the "root" device of the "default" profile first,
-  if not found falls back to first pool found. (by @jochumdev)
+- ic-healthd reliability: stalled API calls, checker cancellation races, invalid
+  intervals, `unless-stopped` misread as a deliberate stop, and state lost on an
+  event-listener reconnect. (by @jochumdev)
 - concurrent `up` runs no longer fail creating the same volume, profile or
-  network; the loser of the race adopts what the winner made. (by @jochumdev)
-- `config --format=yaml` no longer nests the whole document under a `project:`
-  key, matching `docker compose config`. (by @jochumdev)
-- `build.dockerfile` is resolved relative to `build.context` as the compose spec
-  requires, instead of the working directory. Two services with different
-  contexts but the same `dockerfile:` name were both built from whichever
-  Dockerfile sat in the current directory. (by @jochumdev)
-- a service's `x-incus.raw.dnsmasq` lines are no longer appended a second time
-  when they already appear in the generated config. (by @jochumdev)
-- assigning a static `ipv4_address`/`ipv6_address` on a network with no explicit
-  address now fails with an explanation instead of producing a broken NIC: the
-  gateway is not known until the network exists. (by @jochumdev)
+  network. (by @jochumdev)
+- `build.dockerfile` is resolved relative to `build.context`, not the working
+  directory. (by @jochumdev)
+- `command:` arguments containing spaces, quotes or `$` are shell-quoted
+  correctly instead of being re-split. (by @jochumdev)
+- a `configs:` or `secrets:` entry whose target already exists in the image is
+  written instead of silently skipped. (by @jochumdev)
+- a static `ipv4_address`/`ipv6_address` on a network with no explicit address
+  now fails with an explanation instead of producing a broken NIC. (by @jochumdev)
+- `config --format=yaml` no longer nests the document under a `project:` key.
+  (by @jochumdev)
+- default storage pool detection checks the `default` profile's root device
+  first. (by @jochumdev)
+- a service's `x-incus.raw.dnsmasq` lines are no longer appended twice.
+  (by @jochumdev)
 - pushing directory content into a storage volume no longer closes each file
   twice. (by @jochumdev)
+<<<<<<< Updated upstream
 - a `configs:` or `secrets:` entry whose target already exists in the image is
   written instead of being silently skipped, so a config can replace a file the
   image ships (e.g. an application's own default config). (by @jochumdev)
@@ -90,6 +152,34 @@ for correct semver ordering. Headings below preserve each release's announced fo
   `condition: service_healthy` timed out. Calls are now bounded by the
   healthcheck's own `timeout`, and the daemon's HTTP transport has a
   30s response-header timeout. (by @jochumdev)
+||||||| Stash base
+- a `configs:` or `secrets:` entry whose target already exists in the image is
+  written instead of being silently skipped, so a config can replace a file the
+  image ships (e.g. an application's own default config). (by @jochumdev)
+- `command:` arguments containing spaces, quotes or `$` are shell-quoted
+  correctly. They were wrapped in double quotes with no escaping, and a
+  single-argument command was passed through unquoted, so either could be
+  re-split into the wrong arguments. (by @jochumdev)
+- ic-healthd no longer stops health checking an instance when an Incus API call
+  stalls. The Incus client takes no per-call context, so a request that was
+  accepted but never answered blocked the instance's checker for good - it
+  reported no status at all from then on, and anything waiting on
+  `condition: service_healthy` timed out. Calls are now bounded by the
+  healthcheck's own `timeout`, and the daemon's HTTP transport has a
+  30s response-header timeout. (by @jochumdev)
+- a `healthcheck` with a zero or negative `interval` or `start_interval` is
+  rejected instead of crashing ic-healthd. The value reached `time.NewTicker`,
+  whose panic took down the sidecar and stopped health checking every instance
+  in the project. (by @jochumdev)
+- an instance with `restart: unless-stopped` is restarted again after a
+  temporary Incus API error. The error was read as "stopped on purpose", so the
+  restart was skipped and the instance was dropped from health checking - and
+  since it stays stopped, nothing brought it back. (by @jochumdev)
+- ic-healthd stops health checking an instance that is no longer running,
+  instead of re-checking it forever without reporting anything. The lifecycle
+  events start a fresh checker when the instance comes back. (by @jochumdev)
+=======
+>>>>>>> Stashed changes
 
 ## [1.1.0] - 2026-07-31
 

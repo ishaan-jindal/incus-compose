@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/project"
 )
 
 func TestParseHealthdNetwork(t *testing.T) {
@@ -144,7 +146,12 @@ func TestNoHealthdSkipsHealthdInstance(t *testing.T) {
 	c, err := gc.EnsureProject(pn)
 	require.NoError(t, err)
 
-	h, err := healthdResolve(c)
+	p, err := project.New().Load(ctx,
+		project.LoadFiles([]string{compose}),
+		project.LoadName(strings.ToLower(pn)))
+	require.NoError(t, err)
+
+	_, h, err := healthdResolve(p, c)
 	require.Nil(t, h)
 	require.Error(t, err)
 }
@@ -171,7 +178,12 @@ func TestNoHealthdWhenNotNeeded(t *testing.T) {
 	c, err := gc.EnsureProject(pn)
 	require.NoError(t, err)
 
-	h, err := healthdResolve(c)
+	p, err := project.New().Load(ctx,
+		project.LoadFiles([]string{compose}),
+		project.LoadName(strings.ToLower(pn)))
+	require.NoError(t, err)
+
+	_, h, err := healthdResolve(p, c)
 	require.Nil(t, h)
 	require.Error(t, err)
 }

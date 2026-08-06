@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -22,6 +23,8 @@ import (
 	incusClient "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/pkg/sftp"
+
+	"github.com/lxc/incus-compose/shared"
 )
 
 // Reader wraps bytes.Reader to add a no-op Close.
@@ -84,6 +87,9 @@ type InstanceConfig struct {
 
 	// ExtraDevices contains additional raw device configurations.
 	ExtraDevices map[string]map[string]string
+
+	// NoRootDevice takes the root disk from the instance's profile instead.
+	NoRootDevice bool
 
 	// Dependencies maps dependency Incus instance names to the required health
 	// status (HealthStatusHealthy, HealthStatusStarting, HealthStatusUnhealthy).
@@ -363,6 +369,11 @@ func (r *Instance) Ensure(ctx context.Context, opts ...Option) error {
 	// Check if exists
 	err := r.fetch()
 	if err == nil {
+		// Keys only: a changed value still needs --recreate.
+		if addErr := r.addMissingConfig(ctx); addErr != nil {
+			return r.client.hookAfter(ctx, ActionEnsure, r, options, addErr)
+		}
+
 		err = r.ensured()
 		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 
@@ -492,9 +503,14 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 	// This is after all our configs so we allow users to override it.
 	maps.Copy(config, r.Config.Extensions)
 
+	_, hasStatus := config[HealthStatusKey]
+
 	if options.Healthd {
 		// Healthd should wait until we allow it to work with it.
 		config[HealthStoppedKey] = "true"
+	} else if !hasStatus {
+		// Without a daemon nothing will ever report on this instance.
+		config[HealthStatusKey] = shared.HealthStatusUnknown
 	}
 
 	// Create instance request
@@ -570,7 +586,7 @@ func (r *Instance) buildDevices() (map[string]map[string]string, error) {
 		devices[name] = config
 	}
 
-	if _, ok := devices["root"]; !ok {
+	if _, ok := devices["root"]; !ok && !r.Config.NoRootDevice {
 		foundInProfile := false
 		for _, profile := range profiles {
 			foundInProfile = profile.HasDevice("root")
@@ -604,14 +620,10 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 		return r.client.hookAfter(ctx, action, r, options, ErrNotEnsured)
 	}
 
-	// When already running update the instance to be
-	// "managed" by setting user.healthcheck.stopped then exit with ErrRunning.
 	if r.Running() {
-		if options.Healthd {
-			err := r.SetHealthCheckingStopped(ctx, false)
-			if err != nil {
-				return r.client.hookAfter(ctx, action, r, options, err)
-			}
+		err := r.SetHealthCheckingStopped(ctx, false)
+		if err != nil {
+			return r.client.hookAfter(ctx, action, r, options, err)
 		}
 
 		return r.client.hookAfter(ctx, action, r, options, ErrRunning)
@@ -619,29 +631,24 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 
 	// Wait for the healthcheck to success if a test is defined.
 	_, hasTest := r.IncusInstance.Config[HealthKeyPrefix+"test"]
-	restart := r.IncusInstance.Config[HealthKeyPrefix+"restart"]
+	restart := slices.Contains(shared.RestartPolicies, r.IncusInstance.Config[HealthKeyPrefix+"restart"])
 	v, ok := r.IncusInstance.Config[HealthKeyPrefix+"daemon"]
 	isHealthd := ok && v == "true"
 
-	if !isHealthd && (hasTest || restart == "true") && options.Healthd && !options.ExternalHealthd {
+	if !isHealthd && (hasTest || restart) && options.Healthd && !options.ExternalHealthd {
 		// Wait for healthd to be available for 3 seconds.
 		err := retry.New(
 			retry.Context(ctx),
 			retry.Attempts(6),
 			retry.Delay(500*time.Millisecond),
 		).Do(func() error {
-			healthd, err := r.client.FindHealthd()
+			running, err := r.client.HealthdRunning()
 			if err != nil {
 				return err
 			}
 
-			hInstState, _, err := r.conn.GetInstanceState(healthd)
-			if err != nil {
-				return fmt.Errorf("failed to get the healthd '%v' instance state: %w", healthd, err)
-			}
-
-			if hInstState.StatusCode != incusApi.Running {
-				return fmt.Errorf("healthd '%v' not running cannot wait for it to check dependencies", healthd)
+			if !running {
+				return errors.New("healthd is not running, cannot wait for it to check dependencies")
 			}
 
 			return nil
@@ -654,18 +661,18 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 	startCtx, cancel := context.WithTimeout(ctx, options.Timeout)
 	defer cancel()
 
-	err := r.start(startCtx, options)
+	err := r.SetHealthCheckingStopped(startCtx, false)
+	if err != nil {
+		return r.client.hookAfter(ctx, action, r, options, err)
+	}
+
+	err = r.start(startCtx, options)
 	if err != nil {
 		return r.client.hookAfter(ctx, action, r, options, err)
 	}
 
 	if options.Healthd {
-		err := r.SetHealthCheckingStopped(startCtx, false)
-		if err != nil {
-			return r.client.hookAfter(ctx, action, r, options, err)
-		}
-
-		if (hasTest || restart == "true") && !isHealthd {
+		if (hasTest || restart) && !isHealthd {
 			r.client.globalClient.emitProgress(action, r, options, Progress{
 				Percent: -1,
 				Text:    "Waiting for the healthcheck",
@@ -694,6 +701,33 @@ func (r *Instance) Running() bool {
 	}
 
 	return r.IncusInstance.StatusCode == incusApi.Running
+}
+
+// retryBusy waits out the instance's operation lock, then runs write. The lock
+// is taken by the driver, so a caller must do its operation wait inside write.
+func retryBusy[T any](ctx context.Context, r *Instance, write func() (T, error)) (T, error) {
+	var out T
+
+	err := retry.New(
+		retry.Context(ctx),
+		retry.Attempts(10),
+		retry.Delay(250*time.Millisecond),
+		retry.LastErrorOnly(true),
+		retry.RetryIf(func(err error) bool {
+			return strings.Contains(err.Error(), "Instance is busy")
+		}),
+	).Do(func() error {
+		err := r.waitBusyOperation(ctx)
+		if err != nil {
+			return err
+		}
+
+		out, err = write()
+
+		return err
+	})
+
+	return out, err
 }
 
 // waitBusyOperation blocks until no queryable operation holds the instance's
@@ -914,16 +948,17 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 		return ErrRunning
 	}
 
-	op, err := r.conn.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
-		Action:  "start",
-		Timeout: options.incusTimeout(),
-	}, "")
-	if err != nil {
-		return ErrOperation.WithText("creating an instance start operation").Wrap(err)
-	}
+	_, err = retryBusy(ctx, r, func() (struct{}, error) {
+		op, err := r.conn.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
+			Action:  "start",
+			Timeout: options.incusTimeout(),
+		}, "")
+		if err != nil {
+			return struct{}{}, ErrOperation.WithText("creating an instance start operation").Wrap(err)
+		}
 
-	// The operation completes once the instance is running or failed to start.
-	err = r.client.hookOperation(ctx, ActionStart, r, options, op, nil)
+		return struct{}{}, r.client.hookOperation(ctx, ActionStart, r, options, op, nil)
+	})
 	if err != nil {
 		return ErrOperation.WithText("starting an instance").Wrap(err)
 	}
@@ -1221,28 +1256,23 @@ func (r *Instance) Stop(ctx context.Context, opts ...Option) error {
 	}
 
 	if !r.Running() {
-		if options.Healthd {
-			err := r.SetHealthCheckingStopped(ctx, true)
-			if err != nil {
-				return r.client.hookAfter(ctx, ActionStop, r, options, err)
-			}
+		err := r.SetHealthCheckingStopped(ctx, true)
+		if err != nil {
+			return r.client.hookAfter(ctx, ActionStop, r, options, err)
 		}
 
 		return r.client.hookAfter(ctx, ActionStop, r, options, ErrNotRunning)
 	}
 
-	// Mark before for ic-healthd.
-	if options.Healthd {
-		err := r.SetHealthCheckingStopped(ctx, true)
-		if err != nil {
-			return r.client.hookAfter(ctx, ActionStop, r, options, err)
-		}
+	err := r.SetHealthCheckingStopped(ctx, true)
+	if err != nil {
+		return r.client.hookAfter(ctx, ActionStop, r, options, err)
 	}
 
 	stopCtx, cancel := context.WithTimeout(ctx, options.Timeout)
 	defer cancel()
 
-	err := r.stop(stopCtx, options)
+	err = r.stop(stopCtx, options)
 
 	return r.client.hookAfter(ctx, ActionStop, r, options, err)
 }
@@ -1267,17 +1297,18 @@ func (r *Instance) stop(ctx context.Context, options Options) error {
 		return nil
 	}
 
-	op, err := r.conn.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
-		Action:  "stop",
-		Force:   options.Force,
-		Timeout: options.incusTimeout(),
-	}, "")
-	if err != nil {
-		return ErrOperation.WithText("stopping instance").Wrap(err)
-	}
+	_, err = retryBusy(ctx, r, func() (struct{}, error) {
+		op, err := r.conn.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
+			Action:  "stop",
+			Force:   options.Force,
+			Timeout: options.incusTimeout(),
+		}, "")
+		if err != nil {
+			return struct{}{}, ErrOperation.WithText("stopping instance").Wrap(err)
+		}
 
-	// The operation completes once the instance is stopped or failed to stop.
-	err = r.client.hookOperation(ctx, ActionStop, r, options, op, err)
+		return struct{}{}, r.client.hookOperation(ctx, ActionStop, r, options, op, nil)
+	})
 	if err != nil {
 		return err
 	}
@@ -1290,14 +1321,11 @@ type instanceConfigPatch struct {
 	Config map[string]string `json:"config"`
 }
 
-// SetHealthCheckingStopped writes the user.healthcheck.stopped config key.
+// SetHealthCheckingStopped writes the user.healthcheck.stopped marker, which
+// tells ic-healthd a stop was deliberate. The status is ic-healthd's alone.
 func (r *Instance) SetHealthCheckingStopped(ctx context.Context, stopped bool) error {
 	if err := r.fetch(); err != nil {
 		return err
-	}
-
-	if (r.IncusInstance.Config[HealthStoppedKey] == "true") == stopped {
-		return nil
 	}
 
 	value := "false"
@@ -1305,6 +1333,15 @@ func (r *Instance) SetHealthCheckingStopped(ctx context.Context, stopped bool) e
 		value = "true"
 	}
 
+	if r.IncusInstance.Config[HealthStoppedKey] == value {
+		return nil
+	}
+
+	return r.patchConfig(ctx, map[string]string{HealthStoppedKey: value})
+}
+
+// patchConfig writes the given keys and only those.
+func (r *Instance) patchConfig(ctx context.Context, config map[string]string) error {
 	info, err := r.conn.GetConnectionInfo()
 	if err != nil {
 		return err
@@ -1316,26 +1353,38 @@ func (r *Instance) SetHealthCheckingStopped(ctx context.Context, stopped bool) e
 		Target(info.Target).
 		String()
 
-	// The instance operation lock is briefly held by a concurrent start/stop.
-	err = retry.New(
-		retry.Context(ctx),
-		retry.Attempts(6),
-		retry.Delay(250*time.Millisecond),
-		retry.RetryIf(func(err error) bool {
-			return strings.Contains(err.Error(), "Instance is busy")
-		}),
-	).Do(func() error {
-		_, _, err := r.conn.RawQuery("PATCH", path, instanceConfigPatch{
-			Config: map[string]string{HealthStoppedKey: value},
-		}, "")
+	_, err = retryBusy(ctx, r, func() (struct{}, error) {
+		_, _, err := r.conn.RawQuery("PATCH", path, instanceConfigPatch{Config: config}, "")
 
-		return err
+		return struct{}{}, err
 	})
 	if err != nil {
 		return err
 	}
 
 	return r.fetch()
+}
+
+// addMissingConfig adds declared config keys the instance does not have yet.
+func (r *Instance) addMissingConfig(ctx context.Context) error {
+	missing := map[string]string{}
+
+	for key, value := range r.Config.Extensions {
+		_, ok := r.IncusInstance.Config[key]
+		if ok {
+			continue
+		}
+
+		missing[key] = value
+	}
+
+	if len(missing) == 0 {
+		return nil
+	}
+
+	r.client.LogDebug("Adding missing instance config", "resource", r, "keys", slices.Sorted(maps.Keys(missing)))
+
+	return r.patchConfig(ctx, missing)
 }
 
 // MarkDelete marks a instance to be deleted after Ensure(),
@@ -1362,10 +1411,12 @@ func (r *Instance) Delete(ctx context.Context, opts ...Option) error {
 		return r.client.hookAfter(ctx, ActionDelete, r, options, ErrNotEnsured)
 	}
 
-	op, err := r.conn.DeleteInstance(r.incusName)
-
 	// Do the delete
-	err = r.client.hookOperation(ctx, ActionDelete, r, options, op, err)
+	_, err := retryBusy(ctx, r, func() (struct{}, error) {
+		op, err := r.conn.DeleteInstance(r.incusName)
+
+		return struct{}{}, r.client.hookOperation(ctx, ActionDelete, r, options, op, err)
+	})
 
 	if err := r.client.hookAfter(ctx, ActionDelete, r, options, err); err != nil {
 		r.IncusInstance = nil

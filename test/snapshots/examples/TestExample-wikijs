@@ -34,8 +34,8 @@
   {
     "kind": "instance",
     "name": "",
-    "description": "incus-compose: testexample-wikijs:testexample-wikijs-ic-healthd",
-    "incus_name": "testexample-wikijs-ic-healthd",
+    "description": "incus-compose: default:ic-healthd",
+    "incus_name": "ic-healthd",
     "image": "ghcr.io/lxc/incus-compose/ic-healthd:-stripped-",
     "status": "Running",
     "health": "Healthy",

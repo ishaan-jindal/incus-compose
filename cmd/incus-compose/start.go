@@ -81,7 +81,7 @@ func start(ctx context.Context, p *project.Project, c *client.Client, args start
 		client.OptionTimeout(args.Timeout),
 	}
 
-	_, err = healthdResolve(c)
+	_, _, err = healthdResolve(p, c)
 	if err != nil || (!args.WithDeps && len(args.Services) > 0) {
 		startOpts = append(startOpts, client.OptionNoHealthd())
 	}

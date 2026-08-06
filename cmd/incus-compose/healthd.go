@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/url"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,38 +19,82 @@ import (
 
 	"github.com/lxc/incus-compose/client"
 	"github.com/lxc/incus-compose/project"
+	"github.com/lxc/incus-compose/shared"
 )
 
 // DefaultHealthdImage is the default healthd image to use, a var cause overwriteable by ldflags.
 var DefaultHealthdImage = "ghcr.io/lxc/incus-compose/ic-healthd:{version}"
 
 const (
-	defaultHealthdCPULimit    = "1"
-	defaultHealthdMemoryLimit = "50MB"
+	defaultHealthdCPULimit    = "2"
+	defaultHealthdMemoryLimit = "256MB"
 )
+
+const (
+	// globalHealthdProject is where the shared daemon lives, not configurable.
+	globalHealthdProject = "default"
+	globalHealthdName    = "ic-healthd"
+
+	// healthdVolume holds the daemon's generated cert and key.
+	healthdVolume = "ic-healthd"
+)
+
+// healthdInstanceName returns the sidecar's Incus instance name.
+func healthdInstanceName(incusProject string, global bool) string {
+	if global {
+		return globalHealthdName
+	}
+
+	return incusProject + "-ic-healthd"
+}
+
+// healthdCertName returns the sidecar's name in the Incus trust store.
+func healthdCertName(incusProject string, global bool) string {
+	if global {
+		return "ic-healthd-global"
+	}
+
+	return "ic-healthd-" + incusProject
+}
 
 // healthdParams holds the image/binary options for healthd setup.
 type healthdParams struct {
-	projectName string
-	binary      string
-	image       string // already resolved via resolveHealthdImage
-	pull        string
-	incus       *url.URL
-	network     string // Incus bridge name; empty = auto-detect
-	timeout     time.Duration
-	workers     int
+	binary       string
+	image        string // already resolved via resolveHealthdImage
+	pull         string
+	incus        *url.URL
+	network      string // Incus bridge name; empty = auto-detect. Project scope only.
+	timeout      time.Duration
+	stackWorkers int // concurrency of our own resource stack, not the daemon's
+
+	// global shares one daemon in globalHealthdProject instead of one per project.
+	global bool
+
+	// trace turns on the daemon's per-event logging.
+	trace bool
+
+	// workers and restartWorkers size the daemon's pools; 0 keeps its defaults.
+	workers        int
+	restartWorkers int
+
+	// xIncus is Incus instance config for the sidecar, e.g. limits.*.
+	xIncus map[string]string
 }
 
-// healthdCreateToken creates a restricted token for the healthd to use.
-func healthdCreateToken(c *client.Client) (string, error) {
+// healthdCreateToken creates the sidecar's trust token. The shared daemon must
+// reach projects that do not exist yet, so only a per-project one is restricted.
+func healthdCreateToken(c *client.Client, global bool) (string, error) {
 	req := incusApi.CertificatesPost{
 		CertificatePut: incusApi.CertificatePut{
-			Name:       "ic-healthd-" + c.IncusProject(),
-			Type:       "client",
-			Restricted: true,
-			Projects:   []string{c.IncusProject()},
+			Name: healthdCertName(c.IncusProject(), global),
+			Type: "client",
 		},
 		Token: true,
+	}
+
+	if !global {
+		req.Restricted = true
+		req.Projects = []string{c.IncusProject()}
 	}
 
 	conn, err := c.GlobalConnection()
@@ -70,7 +117,7 @@ func healthdCreateToken(c *client.Client) (string, error) {
 }
 
 // healthdRevokeCert removes the healthd's trust-store certificate, if any.
-func healthdRevokeCert(c *client.Client) error {
+func healthdRevokeCert(c *client.Client, global bool) error {
 	gConn, err := c.GlobalConnection()
 	if err != nil {
 		return fmt.Errorf("while getting a global connection: %w", err)
@@ -81,7 +128,7 @@ func healthdRevokeCert(c *client.Client) error {
 		return fmt.Errorf("listing certificates: %w", err)
 	}
 
-	want := "ic-healthd-" + c.IncusProject()
+	want := healthdCertName(c.IncusProject(), global)
 	for _, cert := range certs {
 		if cert.Name != want {
 			continue
@@ -101,7 +148,7 @@ func healthdInUseByProject(gc *client.GlobalClient, p *project.Project) bool {
 SERVICES_LOOP:
 	for _, svc := range p.Services {
 		// https://github.com/compose-spec/compose-spec/blob/main/05-services.md#restart
-		if svc.Restart != "" && svc.Restart != "no" {
+		if slices.Contains(shared.RestartPolicies, svc.Restart) {
 			inUse = true
 			break SERVICES_LOOP
 		}
@@ -150,11 +197,11 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 
 	volRes, err := c.Resource(
 		client.KindStorageVolume,
-		"ic-healthd",
+		healthdVolume,
 		&client.StorageVolumeConfig{Shifted: true, ImageResource: imgRes},
 	)
 	if err != nil {
-		return nil, nil, client.ErrUnknown.WithKindName(client.KindStorageVolume, "ic-healthd").Wrap(err)
+		return nil, nil, client.ErrUnknown.WithKindName(client.KindStorageVolume, healthdVolume).Wrap(err)
 	}
 	volume, ok := volRes.(*client.StorageVolume)
 	if !ok {
@@ -170,11 +217,17 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			client.HealthKeyPrefix + "restart": "unless-stopped", // Needed for instance.Start to wait for it.
 			client.HealthKeyPrefix + "daemon":  "true",
 			client.HealthKeyPrefix + "ignore":  "true",
-			client.HealthStatusKey:             client.HealthStatusUnknown,
+			managedKey:                         "true",
 		},
 		Resources: []client.Resource{img},
 		Priority:  client.PriorityInstance - 1,
+
+		// The shared daemon takes root from the default project's profile.
+		NoRootDevice: params.global,
 	}
+
+	// After the defaults, so a user can raise the sidecar's limits.
+	maps.Copy(instanceConfig.Extensions, params.xIncus)
 
 	instanceConfig.Devices = append(instanceConfig.Devices, client.InstanceDevice{
 		Name: "data",
@@ -189,7 +242,7 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 		},
 	})
 
-	instRes, err := c.Resource(client.KindInstance, fmt.Sprintf("%s-ic-healthd", params.projectName), instanceConfig)
+	instRes, err := c.Resource(client.KindInstance, healthdInstanceName(c.IncusProject(), params.global), instanceConfig)
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting the healthd instance resource: %w", err)
 	}
@@ -214,97 +267,32 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			// No need to setup the instance when we already did that.
 			_, ok := incusInstance.Config["environment.INCUS_COMPOSE_HEALTHD_INCUS"]
 			if ok {
+				if drift := healthdConfigDrift(params, incusInstance.Config); len(drift) > 0 {
+					c.LogWarn("The running ic-healthd was configured by another project, ignoring",
+						"keys", strings.Join(drift, ", "), "instance", r.IncusName())
+				}
+
 				return nil
 			}
 		}
 
-		ref, err := parseHealthdNetwork(c, params.network)
+		// The shared daemon takes eth0 from the default project's profile.
+		var network *client.Network
+		if !params.global {
+			network, err = healthdEnsureNetwork(ctx, c, params.network)
+			if err != nil {
+				return err
+			}
+
+			inst.Config.Resources = append(inst.Config.Resources, network)
+		}
+
+		incusURL, err := healthdIncusURL(c, params, network)
 		if err != nil {
 			return err
 		}
 
-		var netRes client.Resource
-		switch {
-		case ref.deflt:
-			// The project's own default network. healthd may bring it up before the
-			// rest of the project, so allow creation.
-			netRes, err = c.Resource(client.KindNetwork, ref.name, &client.NetworkConfig{})
-		case ref.project != "" && ref.project != c.Project():
-			// A managed network in another project; must pre-exist (External).
-			var nc *client.Client
-			nc, err = c.Global().EnsureProject(ref.project)
-			if err != nil {
-				return fmt.Errorf("failed to fetch the healthd network: %w", err)
-			}
-
-			netRes, err = nc.Resource(client.KindNetwork, ref.name, &client.NetworkConfig{External: true})
-		default:
-			// A referenced network in this project or a host bridge; must pre-exist.
-			netRes, err = c.Resource(client.KindNetwork, ref.name, &client.NetworkConfig{External: true})
-		}
-		if err != nil {
-			return fmt.Errorf("failed to get a healthd network: %w", err)
-		}
-
-		err = client.RunAction(ctx, netRes, client.ActionEnsure)
-		if err != nil {
-			return fmt.Errorf("failed to ensure a network for healthd: %w", err)
-		}
-
-		network, ok := netRes.(*client.Network)
-		if !ok {
-			return client.ErrUnknown.WithResource(netRes).WithText("failed to cast")
-		}
-
-		if !network.IsEnsured() {
-			return client.ErrNotEnsured.WithResource(network)
-		}
-
-		inst.Config.Resources = append(inst.Config.Resources, network)
-
-		var incusURL *url.URL
-		if params.incus != nil {
-			incusURL = params.incus
-		} else {
-			// First use core.https_address if it has a host.
-			addr, err := c.Global().HTTPSAddress()
-			if err == nil {
-				host, port, err := net.SplitHostPort(addr)
-				if err == nil && host != "" && port != "" {
-					u, err := url.Parse(fmt.Sprintf("https://%s:%s", host, port))
-					if err == nil {
-						incusURL = u
-					}
-				}
-			}
-
-			// Else use the connections port and the bridges ip.
-			if incusURL == nil {
-				if !c.IsRemote() {
-					return errors.New("healthd works only with a https connection, provide one with INCUS_COMPOSE_HEALTHD_INCUS")
-				}
-
-				u, err := c.Global().URL()
-				if err != nil {
-					return fmt.Errorf("failed to get the url: %w", err)
-				}
-
-				if network.IncusNetwork.Config["ipv4.address"] == "" {
-					return fmt.Errorf("ip of network %q is empty", network.Name())
-				}
-
-				ipSplit := strings.Split(network.IncusNetwork.Config["ipv4.address"], "/")
-				ip := net.ParseIP(ipSplit[0])
-				if ip == nil {
-					return fmt.Errorf("result is nil while parsing ip '%v'", ipSplit[0])
-				}
-
-				u.Host = fmt.Sprintf("%s:%s", ip.String(), u.Port())
-				incusURL = u
-			}
-		}
-
-		token, err := healthdCreateToken(c)
+		token, err := healthdCreateToken(c, params.global)
 		if err != nil {
 			c.LogWarn("Failed to get a token", "error", err)
 			token = ""
@@ -312,9 +300,27 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 
 		inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_INCUS"] = incusURL.String()
 		// inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_TOKEN"] = token
-		inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_PROJECTS"] = c.IncusProject()
+
+		if params.global {
+			// No list, so projects that do not exist yet are picked up too.
+			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_PROJECT_MARKER"] =
+				shared.HealthScopeKey + "=" + shared.HealthScopeGlobal
+		} else {
+			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_PROJECTS"] = c.IncusProject()
+		}
+
+		if params.workers > 0 {
+			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_WORKERS"] = strconv.Itoa(params.workers)
+		}
+		if params.restartWorkers > 0 {
+			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_RESTART_WORKERS"] = strconv.Itoa(params.restartWorkers)
+		}
+
 		if c.IsDebugging() {
 			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_DEBUG"] = "true"
+		}
+		if params.trace {
+			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_TRACE"] = "true"
 		}
 
 		inst.Config.Files = append(inst.Config.Files, client.InstanceFile{
@@ -326,13 +332,15 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			DirMode: 0o700,
 		})
 
-		inst.Config.Devices = append(inst.Config.Devices, client.InstanceDevice{
-			Name: "eth0",
-			Config: client.InstanceDeviceConfig{
-				DeviceType:  client.InstanceDeviceTypeNic,
-				NetworkName: netRes.IncusName(),
-			},
-		})
+		if network != nil {
+			inst.Config.Devices = append(inst.Config.Devices, client.InstanceDevice{
+				Name: "eth0",
+				Config: client.InstanceDeviceConfig{
+					DeviceType:  client.InstanceDeviceTypeNic,
+					NetworkName: network.IncusName(),
+				},
+			})
+		}
 
 		if params.binary != "" {
 			f, err := filepath.Abs(params.binary)
@@ -352,7 +360,12 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			})
 		} else {
 			// So ic-healthd can update its own status.
-			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_OWN_PROJECT"] = c.IncusProject()
+			ownProject := c.IncusProject()
+			if params.global {
+				ownProject = globalHealthdProject
+			}
+
+			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_OWN_PROJECT"] = ownProject
 			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_OWN_NAME"] = inst.IncusName()
 
 			// c.LogDebug("Setting entrypoint")
@@ -429,23 +442,239 @@ func parseHealthdNetwork(c *client.Client, network string) (healthdNetworkRef, e
 	return healthdNetworkRef{name: network}, nil
 }
 
-// healthdResolve returns the existing healthd Instance or errors if the sidecar
-// is not running. Used by management sub-commands that require ic-healthd to exist.
-func healthdResolve(c *client.Client) (*client.Instance, error) {
-	name, err := c.FindHealthd()
-	if err != nil {
-		return nil, fmt.Errorf("finding healthd: %w", err)
+// healthdConfigDrift names the settings params asks for that the running daemon
+// does not have. First creator wins, so these are what a later project loses.
+func healthdConfigDrift(params healthdParams, config map[string]string) []string {
+	var drift []string
+
+	want := map[string]string{}
+	if params.incus != nil {
+		want["incus"] = params.incus.String()
+	}
+	if params.workers > 0 {
+		want["workers"] = strconv.Itoa(params.workers)
+	}
+	if params.restartWorkers > 0 {
+		want["restart-workers"] = strconv.Itoa(params.restartWorkers)
 	}
 
-	res, err := c.Resource(client.KindInstance, name, &client.InstanceConfig{})
+	env := map[string]string{
+		"incus":           "environment.INCUS_COMPOSE_HEALTHD_INCUS",
+		"workers":         "environment.INCUS_COMPOSE_HEALTHD_WORKERS",
+		"restart-workers": "environment.INCUS_COMPOSE_HEALTHD_RESTART_WORKERS",
+	}
+
+	for name, value := range want {
+		if config[env[name]] != value {
+			drift = append(drift, name)
+		}
+	}
+
+	for key, value := range params.xIncus {
+		if config[key] != value {
+			drift = append(drift, "x-incus."+key)
+		}
+	}
+
+	slices.Sort(drift)
+
+	return drift
+}
+
+// healthdEnsureNetwork brings up the bridge a project-scoped sidecar attaches to.
+func healthdEnsureNetwork(ctx context.Context, c *client.Client, name string) (*client.Network, error) {
+	ref, err := parseHealthdNetwork(c, name)
 	if err != nil {
 		return nil, err
 	}
+
+	var netRes client.Resource
+	switch {
+	case ref.deflt:
+		// The project's own default network. healthd may bring it up before the
+		// rest of the project, so allow creation.
+		netRes, err = c.Resource(client.KindNetwork, ref.name, &client.NetworkConfig{})
+	case ref.project != "" && ref.project != c.Project():
+		// A managed network in another project; must pre-exist (External).
+		var nc *client.Client
+		nc, err = c.Global().EnsureProject(ref.project)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch the healthd network: %w", err)
+		}
+
+		netRes, err = nc.Resource(client.KindNetwork, ref.name, &client.NetworkConfig{External: true})
+	default:
+		// A referenced network in this project or a host bridge; must pre-exist.
+		netRes, err = c.Resource(client.KindNetwork, ref.name, &client.NetworkConfig{External: true})
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get a healthd network: %w", err)
+	}
+
+	err = client.RunAction(ctx, netRes, client.ActionEnsure)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ensure a network for healthd: %w", err)
+	}
+
+	network, ok := netRes.(*client.Network)
+	if !ok {
+		return nil, client.ErrUnknown.WithResource(netRes).WithText("failed to cast")
+	}
+
+	if !network.IsEnsured() {
+		return nil, client.ErrNotEnsured.WithResource(network)
+	}
+
+	return network, nil
+}
+
+// healthdIncusURL is the endpoint the sidecar dials: --healthd-incus, then
+// core.https_address once it names a host, then the bridge gateway.
+func healthdIncusURL(c *client.Client, params healthdParams, network *client.Network) (*url.URL, error) {
+	if params.incus != nil {
+		return params.incus, nil
+	}
+
+	addr, err := c.Global().HTTPSAddress()
+	if err == nil {
+		host, port, err := net.SplitHostPort(addr)
+		if err == nil && host != "" && port != "" {
+			u, err := url.Parse(fmt.Sprintf("https://%s:%s", host, port))
+			if err == nil {
+				return u, nil
+			}
+		}
+	}
+
+	if !c.IsRemote() {
+		return nil, errors.New("healthd works only with a https connection, provide one with INCUS_COMPOSE_HEALTHD_INCUS")
+	}
+
+	u, err := c.Global().URL()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get the url: %w", err)
+	}
+
+	cidr, name, err := healthdBridgeCIDR(c, network)
+	if err != nil {
+		return nil, err
+	}
+
+	if cidr == "" {
+		return nil, fmt.Errorf("ip of network %q is empty", name)
+	}
+
+	ip := net.ParseIP(strings.Split(cidr, "/")[0])
+	if ip == nil {
+		return nil, fmt.Errorf("result is nil while parsing ip '%v'", cidr)
+	}
+
+	u.Host = net.JoinHostPort(ip.String(), u.Port())
+
+	return u, nil
+}
+
+// healthdBridgeCIDR returns the ipv4.address of the bridge the sidecar sits on,
+// read from the default profile when the sidecar brings no network of its own.
+func healthdBridgeCIDR(c *client.Client, network *client.Network) (cidr, name string, err error) {
+	if network != nil {
+		return network.IncusNetwork.Config["ipv4.address"], network.Name(), nil
+	}
+
+	conn, err := c.GlobalConnection()
+	if err != nil {
+		return "", "", err
+	}
+
+	profile, _, err := conn.GetProfile("default")
+	if err != nil {
+		return "", "", fmt.Errorf("reading the default profile of the %s project: %w", globalHealthdProject, err)
+	}
+
+	for _, device := range profile.Devices {
+		if device["type"] != "nic" || device["network"] == "" {
+			continue
+		}
+
+		incusNetwork, _, err := conn.GetNetwork(device["network"])
+		if err != nil {
+			return "", "", fmt.Errorf("reading network %q: %w", device["network"], err)
+		}
+
+		return incusNetwork.Config["ipv4.address"], device["network"], nil
+	}
+
+	return "", "", errors.New(
+		"the default profile has no managed network to reach Incus over, set --healthd-incus or x-incus-compose.healthd.incus")
+}
+
+// healthdTeardown removes a healthd sidecar, its volume and its certificate
+// from the project c belongs to.
+func healthdTeardown(ctx context.Context, c *client.Client, global bool, timeout time.Duration) error {
+	stack := client.NewStack(c, client.StackSortDescending())
+
+	volRes, err := c.Resource(client.KindStorageVolume, healthdVolume, &client.StorageVolumeConfig{})
+	if err != nil {
+		return fmt.Errorf("getting the healthd volume resource: %w", err)
+	}
+	stack.Add(volRes)
+
+	instRes, err := c.Resource(
+		client.KindInstance,
+		healthdInstanceName(c.IncusProject(), global),
+		&client.InstanceConfig{},
+	)
+	if err != nil {
+		return fmt.Errorf("getting the healthd instance resource: %w", err)
+	}
+	stack.Add(instRes)
+
+	c.LogDebug("Ensure", "resources", stack.All())
+
+	if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
+		return fmt.Errorf("ensuring healthd: %w", err)
+	}
+
+	runOpts := []client.Option{client.OptionForce(), client.OptionTimeout(timeout)}
+
+	if err := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, runOpts...); err != nil {
+		return fmt.Errorf("stopping healthd resources: %w", err)
+	}
+
+	if err := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, runOpts...); err != nil {
+		return fmt.Errorf("deleting healthd resources: %w", err)
+	}
+
+	if err := healthdRevokeCert(c, global); err != nil {
+		return fmt.Errorf("revoking the healthd cert: %w", err)
+	}
+
+	return nil
+}
+
+// healthdResolve returns the daemon watching p and the client of the project it
+// lives in, erroring when there is none.
+func healthdResolve(p *project.Project, c *client.Client) (*client.Client, *client.Instance, error) {
+	hc, _, err := healthdClient(p, c)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	name, err := hc.FindHealthd()
+	if err != nil {
+		return nil, nil, fmt.Errorf("finding healthd: %w", err)
+	}
+
+	res, err := hc.Resource(client.KindInstance, name, &client.InstanceConfig{})
+	if err != nil {
+		return nil, nil, err
+	}
 	inst, ok := res.(*client.Instance)
 	if !ok {
-		return nil, errors.New("unexpected resource type for healthd")
+		return nil, nil, errors.New("unexpected resource type for healthd")
 	}
-	return inst, nil
+
+	return hc, inst, nil
 }
 
 func healthdReload(c *client.Client, h *client.Instance) error {

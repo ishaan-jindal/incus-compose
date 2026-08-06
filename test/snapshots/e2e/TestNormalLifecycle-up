@@ -12,8 +12,8 @@
   {
     "kind": "instance",
     "name": "",
-    "description": "incus-compose: testnormallifecycle:testnormallifecycle-ic-healthd",
-    "incus_name": "testnormallifecycle-ic-healthd",
+    "description": "incus-compose: default:ic-healthd",
+    "incus_name": "ic-healthd",
     "image": "ghcr.io/lxc/incus-compose/ic-healthd:-stripped-",
     "status": "Running",
     "health": "Healthy",
@@ -28,7 +28,7 @@
     "incus_name": "web1-1",
     "image": "docker.io/alpine:edge",
     "status": "Running",
-    "health": "Unknown",
+    "health": "Healthy",
     "addresses": [
       "-stripped-"
     ]
@@ -40,7 +40,7 @@
     "incus_name": "web2-1",
     "image": "docker.io/alpine:edge",
     "status": "Running",
-    "health": "Unknown",
+    "health": "Healthy",
     "addresses": [
       "-stripped-"
     ]

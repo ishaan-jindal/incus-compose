@@ -14,8 +14,8 @@ networks:
   default:
     name: with-project-options_default
 x-incus:
-  limits.cpu: "5"
-  limits.memory: 2149MB
+  limits.cpu: "6"
+  limits.memory: 2305MB
   limits.virtual-machines: 0
 x-incus-compose:
   healthd:

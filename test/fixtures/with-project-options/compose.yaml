@@ -4,8 +4,8 @@ x-incus-compose:
 
 x-incus:
   # https://linuxcontainers.org/incus/docs/main/reference/instance_options/#instance-options-limits-cpu-container
-  limits.cpu: "5" # +1 for healthd
-  limits.memory: 2149MB # +100 for healthd, +1 MiB for calc.
+  limits.cpu: "6" # +2 for healthd
+  limits.memory: 2305MB # +256 for healthd, +1 MiB for calc.
   limits.virtual-machines: 0
 
 services:

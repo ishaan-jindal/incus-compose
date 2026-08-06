@@ -23,7 +23,12 @@ import (
 	"github.com/lxc/incus-compose/client"
 	"github.com/lxc/incus-compose/cmd/incus-compose/version"
 	"github.com/lxc/incus-compose/project"
+	"github.com/lxc/incus-compose/shared"
 )
+
+// managedKey marks a project or an instance as created by incus-compose. It
+// records ownership only; watching is HealthEnabledKey, a separate decision.
+const managedKey = "user.incus-compose.managed"
 
 type noColorKey struct{}
 
@@ -32,7 +37,15 @@ var errLogged = client.NewError("Logged error")
 
 // buildLoadOptions converts CLI flags to project.LoadOption slice.
 func buildLoadOptions(cmd *cli.Command) []project.LoadOption {
-	loadOpts := []project.LoadOption{}
+	// The project package stamps nothing unless its caller asks. On a project,
+	// HealthEnabledKey is what a hand-run healthd looks for.
+	loadOpts := []project.LoadOption{
+		project.LoadInstanceMarks(map[string]string{managedKey: "true"}),
+		project.LoadProjectMarks(map[string]string{
+			managedKey:              "true",
+			shared.HealthEnabledKey: "true",
+		}),
+	}
 
 	if name := cmd.Root().String("project-name"); name != "" {
 		loadOpts = append(loadOpts, project.LoadName(name))
@@ -122,7 +135,7 @@ func initLogger(debug bool, noColor bool, writer io.Writer) *slog.Logger {
 		writer = colorable.NewColorable(os.Stderr)
 	}
 
-	logger := slog.New(tint.NewHandler(
+	logger := slog.New(tint.NewTextHandler(
 		writer,
 		&tint.Options{
 			NoColor:    noColor,
@@ -302,6 +315,11 @@ func newRootCommand() *cli.Command {
 				Usage:   `Enable debug logging`,
 				Sources: cli.EnvVars("INCUS_COMPOSE_DEBUG"),
 			},
+			&cli.BoolFlag{
+				Name:    "trace",
+				Usage:   `Enable per-event logging, which implies --debug. Only ic-healthd reads it so far`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_TRACE"),
+			},
 			&cli.IntFlag{
 				Name:    "workers",
 				Usage:   `Number of concurrent workers`,
@@ -335,7 +353,9 @@ func newRootCommand() *cli.Command {
 			}
 
 			logWriter := client.NewSwapWriter(cmd.ErrWriter)
-			logger := initLogger(cmd.Bool("debug"), noColor, logWriter)
+			// --trace has no level of its own here yet; it turns on debug and
+			// reaches ic-healthd, which does have one.
+			logger := initLogger(cmd.Bool("debug") || cmd.Bool("trace"), noColor, logWriter)
 
 			// Commands that don't need an Incus client connection
 			noClientCommands := []string{"config", "version", "incus"}

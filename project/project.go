@@ -25,7 +25,12 @@ import (
 	"github.com/dominikbraun/graph"
 
 	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/shared"
 )
+
+// ErrNoComposeFile says there was no compose file to load, so a caller that can
+// work without one can tell that apart from a broken one.
+var ErrNoComposeFile = errors.New("no compose.yaml found, either change to a directory with a `compose.yaml` or use `--file`")
 
 // LoadOptions holds configuration for Load and LoadModel.
 type LoadOptions struct {
@@ -46,6 +51,12 @@ type LoadOptions struct {
 
 	// OsEnv includes OS environment variables in project env (default: false for portability)
 	OsEnv bool
+
+	// InstanceMarks is config stamped on every instance the project creates.
+	InstanceMarks map[string]string
+
+	// ProjectMarks is config stamped on the Incus project itself.
+	ProjectMarks map[string]string
 }
 
 // LoadOption is a functional option for LoadProject.
@@ -86,6 +97,20 @@ func LoadProfiles(profiles []string) LoadOption {
 	}
 }
 
+// LoadInstanceMarks stamps config on every instance the project creates.
+func LoadInstanceMarks(marks map[string]string) LoadOption {
+	return func(o *LoadOptions) {
+		o.InstanceMarks = marks
+	}
+}
+
+// LoadProjectMarks stamps config on the Incus project itself.
+func LoadProjectMarks(marks map[string]string) LoadOption {
+	return func(o *LoadOptions) {
+		o.ProjectMarks = marks
+	}
+}
+
 // LoadOsEnv includes OS environment variables in the project environment.
 // Without this, only .env files and compose file env vars are used (more portable).
 func LoadOsEnv() LoadOption {
@@ -120,7 +145,7 @@ func LoadModel(ctx context.Context, opts ...LoadOption) (map[string]any, error) 
 
 	model, err := cliOptions.LoadModel(ctx)
 	if errors.Is(err, errdefs.ErrNotFound) {
-		return nil, fmt.Errorf("no compose.yaml found, either change to a directory with a `compose.yaml` or use `--file`")
+		return nil, ErrNoComposeFile
 	}
 
 	return model, err
@@ -128,27 +153,43 @@ func LoadModel(ctx context.Context, opts ...LoadOption) (map[string]any, error) 
 
 // Project wraps a Docker Compose project with Incus client integration.
 type Project struct {
-	// encoding/json promotes an embedded struct's fields automatically, yaml
-	// needs ",inline" to match - without it the YAML output nests everything
-	// under a "project" key that docker compose does not emit.
 	*types.Project `yaml:",inline"`
 
 	ClientConfig XICProject `json:"-" yaml:"-"`
+
+	// InstanceMarks is stamped on every instance; see LoadInstanceMarks.
+	InstanceMarks map[string]string `json:"-" yaml:"-"`
 }
 
 // XICProject is the typed view of the top-level x-incus-compose extension.
 type XICProject struct {
-	Healthd struct {
-		Incus    string
-		Network  string
-		External bool
-	}
+	Healthd XICHealthd
+	XIncus  map[string]string
+}
+
+// XICHealthd is the x-incus-compose.healthd block.
+type XICHealthd struct {
+	Incus    string
+	Network  string
+	External bool
+
+	// Scope is HealthScopeProject or HealthScopeGlobal; empty means unset.
+	Scope string
+
+	// Workers and RestartWorkers size the daemon's pools; 0 means unset.
+	Workers        int
+	RestartWorkers int
+
+	// XIncus is Incus instance config for the sidecar, e.g. limits.*.
 	XIncus map[string]string
 }
 
 // New creates a new Project.
 func New() *Project {
-	return &Project{ClientConfig: XICProject{XIncus: map[string]string{}}}
+	return &Project{ClientConfig: XICProject{
+		Healthd: XICHealthd{XIncus: map[string]string{}},
+		XIncus:  map[string]string{},
+	}}
 }
 
 // Load loads a compose project with full interpolation and validation.
@@ -162,7 +203,7 @@ func (p *Project) Load(ctx context.Context, opts ...LoadOption) (*Project, error
 
 	cp, err := cliOptions.LoadProject(ctx)
 	if errors.Is(err, errdefs.ErrNotFound) {
-		return p, fmt.Errorf("no compose.yaml found, either change to a directory with a `compose.yaml` or use `--file`")
+		return p, ErrNoComposeFile
 	}
 
 	if err != nil {
@@ -174,9 +215,13 @@ func (p *Project) Load(ctx context.Context, opts ...LoadOption) (*Project, error
 	if p.Extensions != nil {
 		var ext struct {
 			Healthd struct {
-				Incus    string `mapstructure:"incus"`
-				Network  string `mapstructure:"network"`
-				External bool   `mapstructure:"external"`
+				Incus          string         `mapstructure:"incus"`
+				Network        string         `mapstructure:"network"`
+				External       bool           `mapstructure:"external"`
+				Scope          string         `mapstructure:"scope"`
+				Workers        int            `mapstructure:"workers"`
+				RestartWorkers int            `mapstructure:"restart-workers"`
+				XIncus         map[string]any `mapstructure:"x-incus"`
 			} `mapstructure:"healthd"`
 		}
 		ok, err := p.Extensions.Get("x-incus-compose", &ext)
@@ -184,9 +229,24 @@ func (p *Project) Load(ctx context.Context, opts ...LoadOption) (*Project, error
 			return nil, err
 		}
 		if ok {
+			switch ext.Healthd.Scope {
+			case "", shared.HealthScopeProject, shared.HealthScopeGlobal:
+			default:
+				return nil, fmt.Errorf(
+					"x-incus-compose.healthd.scope: %q must be %q or %q",
+					ext.Healthd.Scope, shared.HealthScopeProject, shared.HealthScopeGlobal)
+			}
+
 			p.ClientConfig.Healthd.Incus = ext.Healthd.Incus
 			p.ClientConfig.Healthd.Network = ext.Healthd.Network
 			p.ClientConfig.Healthd.External = ext.Healthd.External
+			p.ClientConfig.Healthd.Scope = ext.Healthd.Scope
+			p.ClientConfig.Healthd.Workers = ext.Healthd.Workers
+			p.ClientConfig.Healthd.RestartWorkers = ext.Healthd.RestartWorkers
+
+			for k, v := range ext.Healthd.XIncus {
+				p.ClientConfig.Healthd.XIncus[k] = fmt.Sprint(v)
+			}
 		}
 
 		var raw map[string]any
@@ -197,6 +257,10 @@ func (p *Project) Load(ctx context.Context, opts ...LoadOption) (*Project, error
 			}
 		}
 	}
+
+	// Last, so x-incus cannot drop them.
+	p.InstanceMarks = options.InstanceMarks
+	maps.Copy(p.ClientConfig.XIncus, options.ProjectMarks)
 
 	return p, nil
 }
@@ -227,6 +291,7 @@ func (p *Project) InstanceNames() []string {
 type ResourcesOptions struct {
 	Full  bool
 	Scale map[string]int // service name -> replica count override
+	marks map[string]string
 }
 
 // ResourcesOption is a functional option for ToStack.
@@ -257,6 +322,8 @@ func (p *Project) Resources(c *client.Client, opts ...ResourcesOption) (map[stri
 	for _, o := range opts {
 		o(options)
 	}
+
+	options.marks = p.InstanceMarks
 
 	result := map[string][]client.Resource{}
 

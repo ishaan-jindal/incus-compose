@@ -9,7 +9,6 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/lxc/incus-compose/client"
-	"github.com/lxc/incus-compose/project"
 )
 
 func newHealthdLogsCommand() *cli.Command {
@@ -35,28 +34,14 @@ func newHealthdLogsCommand() *cli.Command {
 				return err
 			}
 
-			p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
+			target, done, err := resolveHealthdTarget(ctx, cmd, globalClient)
 			if err != nil {
-				globalClient.LogError("Configuring the project", "error", err)
+				globalClient.LogError("Finding healthd", "error", err)
 				return errLogged.Wrap(err)
 			}
+			defer done()
 
-			c, err := globalClient.EnsureProject(p.Name)
-			if err != nil {
-				globalClient.LogError("Getting the incus project", "error", err)
-				return errLogged.Wrap(err)
-			}
-			if err := c.Open(); err != nil {
-				globalClient.LogError("Opening the project client", "error", err)
-				return errLogged.Wrap(err)
-			}
-			defer func() { _ = c.Done() }()
-
-			h, err := healthdResolve(c)
-			if err != nil {
-				c.LogError(err.Error())
-				return errLogged.Wrap(err)
-			}
+			c, h := target.client, target.instance
 
 			var out io.Writer
 			if f, ok := cmd.Root().Writer.(*os.File); ok {

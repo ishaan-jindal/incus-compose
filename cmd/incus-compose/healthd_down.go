@@ -1,17 +1,48 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/mattn/go-isatty"
 	"github.com/urfave/cli/v3"
 
-	"github.com/lxc/incus-compose/client"
-	"github.com/lxc/incus-compose/project"
+	"github.com/lxc/incus-compose/shared"
 )
+
+// healthdDownConfirm asks before stopping a daemon other projects rely on.
+func healthdDownConfirm(w io.Writer, others []string) (bool, error) {
+	_, err := fmt.Fprintf(w, "The shared ic-healthd also watches %d other project(s): %s\n",
+		len(others), strings.Join(others, ", "))
+	if err != nil {
+		return false, err
+	}
+
+	if !isatty.IsTerminal(os.Stdin.Fd()) {
+		return false, errors.New("refusing to stop the shared ic-healthd without a terminal to confirm on, pass --force")
+	}
+
+	_, err = fmt.Fprint(w, "Stop it anyway, leaving them unwatched? [y/N] ")
+	if err != nil {
+		return false, err
+	}
+
+	answer, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil {
+		return false, err
+	}
+
+	answer = strings.ToLower(strings.TrimSpace(answer))
+
+	return answer == "y" || answer == "yes", nil
+}
 
 func newHealthdDownCommand() *cli.Command {
 	return &cli.Command{
@@ -23,6 +54,11 @@ func newHealthdDownCommand() *cli.Command {
 				Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
 				Value:   DefaultHealthdImage,
 				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
+			},
+			&cli.BoolFlag{
+				Name:    "force",
+				Usage:   "Stop the shared ic-healthd without asking, even when other projects rely on it",
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_DOWN_FORCE"),
 			},
 			&cli.DurationFlag{
 				Name:    "timeout",
@@ -42,26 +78,40 @@ func newHealthdDownCommand() *cli.Command {
 				return err
 			}
 
-			p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
+			target, done, err := resolveHealthdTarget(ctx, cmd, globalClient)
 			if err != nil {
-				globalClient.LogError("Configuring the project", "error", err)
+				globalClient.LogError("Finding healthd", "error", err)
 				return errLogged.Wrap(err)
 			}
+			defer done()
 
-			params := healthdParams{
-				projectName: p.Name,
-			}
+			c := target.client
+			global := target.scope == shared.HealthScopeGlobal
 
-			c, err := globalClient.EnsureProject(
-				p.Name,
-				client.EnsureProjectWithCreate(),
-				client.EnsureProjectWithConfig(p.ClientConfig.XIncus),
-			)
-			if err != nil {
-				globalClient.LogError("Getting the incus project", "error", err)
-				return errLogged.Wrap(err)
+			if global && !cmd.Bool("force") {
+				others, err := globalClient.ProjectsWithConfig(shared.HealthScopeKey, shared.HealthScopeGlobal)
+				if err != nil {
+					c.LogError("Listing the projects the shared healthd watches", "error", err)
+					return errLogged.Wrap(err)
+				}
+
+				others = slices.DeleteFunc(others, func(name string) bool {
+					return name == c.IncusProject()
+				})
+
+				if len(others) > 0 {
+					ok, err := healthdDownConfirm(cmd.Root().Writer, others)
+					if err != nil {
+						c.LogError("Confirming", "error", err)
+						return errLogged.Wrap(err)
+					}
+
+					if !ok {
+						c.LogInfo("Leaving the shared ic-healthd alone")
+						return nil
+					}
+				}
 			}
-			defer c.WarnError(c.Done, "Failure during Client.Done()")
 
 			if !cmd.Root().Bool("debug") {
 				progress := newProgressRenderer(cmd.Root().Writer, noColor, isatty.IsTerminal(os.Stdout.Fd()))
@@ -69,49 +119,12 @@ func newHealthdDownCommand() *cli.Command {
 				defer progress.Stop(c)
 			}
 
-			stack := client.NewStack(c, client.StackSortDescending())
-
-			volRes, err := c.Resource(
-				client.KindStorageVolume,
-				"ic-healthd",
-				&client.StorageVolumeConfig{},
-			)
-			if err != nil {
-				c.LogError("Getting the volume resource", "error", err)
-				return errLogged.Wrap(err)
-			}
-			stack.Add(volRes)
-
-			instRes, err := c.Resource(client.KindInstance, fmt.Sprintf("%s-ic-healthd", params.projectName), &client.InstanceConfig{})
-			if err != nil {
-				c.LogError("Getting the healthd instance resource", "error", err)
-				return errLogged.Wrap(err)
-			}
-			stack.Add(instRes)
-
-			c.LogDebug("Ensure", "resources", stack.All())
-
-			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
-				c.LogError("Ensuring healthd", "error", err)
+			if err := healthdTeardown(ctx, c, global, cmd.Duration("timeout")); err != nil {
+				c.LogError("Removing healthd", "error", err)
 				return errLogged.Wrap(err)
 			}
 
-			if err := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout"))); err != nil {
-				c.LogError("Stopping healthd resources", "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			if err := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout"))); err != nil {
-				c.LogError("Deleting healthd resources", "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			if err := healthdRevokeCert(c); err != nil {
-				c.LogError("Cannot revoke the healthd cert", "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			return err
+			return nil
 		},
 	}
 }

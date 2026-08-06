@@ -40,7 +40,7 @@ func addEventHook(c *Client) {
 				return
 			}
 
-			c.resources.Range(func(r Resource) {
+			c.rangeResources(func(r Resource) {
 				if r.Kind() != KindInstance || r.IncusName() != lc.Name {
 					return
 				}

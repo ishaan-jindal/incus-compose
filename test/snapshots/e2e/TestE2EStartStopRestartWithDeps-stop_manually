@@ -16,7 +16,7 @@
     "incus_name": "backend1-1",
     "image": "docker.io/alpine:edge",
     "status": "Stopped",
-    "health": "Unknown",
+    "health": "Stopped",
     "addresses": []
   },
   {
@@ -26,7 +26,7 @@
     "incus_name": "backend2-1",
     "image": "docker.io/alpine:edge",
     "status": "Stopped",
-    "health": "Unknown",
+    "health": "Stopped",
     "addresses": []
   },
   {
@@ -36,14 +36,14 @@
     "incus_name": "frontend-1",
     "image": "docker.io/alpine:edge",
     "status": "Stopped",
-    "health": "Unknown",
+    "health": "Stopped",
     "addresses": []
   },
   {
     "kind": "instance",
     "name": "",
-    "description": "incus-compose: teste2estartstoprestartwithdeps:teste2estartstoprestartwithdeps-ic-healthd",
-    "incus_name": "teste2estartstoprestartwithdeps-ic-healthd",
+    "description": "incus-compose: default:ic-healthd",
+    "incus_name": "ic-healthd",
     "image": "ghcr.io/lxc/incus-compose/ic-healthd:-stripped-",
     "status": "Running",
     "health": "Healthy",
