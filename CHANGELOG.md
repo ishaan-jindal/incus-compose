@@ -24,6 +24,10 @@ for correct semver ordering. Headings below preserve each release's announced fo
   the daemon attaches to it. It was warned about and ignored outside project
   scope. Like `incus`, `workers` and `x-incus`, the first project to bring the
   shared daemon up supplies it. (by @jochumdev)
+- ic-healthd's default pool sizes are `workers: 128` and `restart-workers: 32`,
+  up from `32` and `12`. One daemon now watches every project, so the caps are
+  fleet-wide and the old ones queued behind a handful of slow projects.
+  (by @jochumdev)
 
 > **Upgrading from `v1.2.0-rc.1` or `rc.2`** - those left a daemon in the
 > `default` project, and nothing moves it for you. Run
