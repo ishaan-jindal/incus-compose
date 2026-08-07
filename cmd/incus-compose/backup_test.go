@@ -6,10 +6,11 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	incusClient "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
@@ -19,16 +20,6 @@ import (
 	"github.com/lxc/incus-compose/client"
 )
 
-func writeTempCompose(t *testing.T, content string) string {
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "compose.yaml")
-	err := os.WriteFile(path, []byte(content), 0o644)
-	require.NoError(t, err)
-
-	return path
-}
-
 func assertBackupVolumeExists(t *testing.T, c *client.Client, pool, name string) {
 	t.Helper()
 
@@ -36,7 +27,7 @@ func assertBackupVolumeExists(t *testing.T, c *client.Client, pool, name string)
 	require.NoError(t, err)
 
 	_, _, err = conn.GetStoragePoolVolume(pool, "custom", name)
-	require.NoError(t, err, "volume %s should exist in pool %s", name, pool)
+	require.NoError(t, err, "volume %q should exist in pool %q", name, pool)
 }
 
 func assertBackupSnapshotExists(t *testing.T, c *client.Client, pool, volumeName, snapshotName string) {
@@ -48,38 +39,7 @@ func assertBackupSnapshotExists(t *testing.T, c *client.Client, pool, volumeName
 	names, err := conn.GetStoragePoolVolumeSnapshotNames(pool, "custom", volumeName)
 	require.NoError(t, err)
 
-	for _, n := range names {
-		if n == snapshotName {
-			return
-		}
-	}
-
-	t.Errorf("snapshot %s not found on volume %s in pool %s", snapshotName, volumeName, pool)
-}
-
-func readBackupManifest(t *testing.T, bp *client.Client) []client.BackupEntry {
-	t.Helper()
-
-	conn, err := bp.Connection()
-	require.NoError(t, err)
-
-	data, _, err := conn.GetStorageVolumeFile(bp.Config().DefaultStoragePool, "custom", "ic-backup-manifest", "backups.json")
-	if incusApi.StatusErrorCheck(err, http.StatusNotFound) {
-		return nil
-	}
-	require.NoError(t, err)
-	defer data.Close()
-
-	content, err := io.ReadAll(data)
-	require.NoError(t, err)
-
-	var m struct {
-		Backups []client.BackupEntry `json:"backups"`
-	}
-	err = json.Unmarshal(content, &m)
-	require.NoError(t, err)
-
-	return m.Backups
+	assert.Contains(t, names, snapshotName, "on volume %s in pool %s", volumeName, pool)
 }
 
 func openBackupProject(ctx context.Context, t *testing.T, composeProject string) *client.Client {
@@ -101,7 +61,7 @@ func openBackupProject(ctx context.Context, t *testing.T, composeProject string)
 	return c
 }
 
-func deleteBackupProject(ctx context.Context, t *testing.T, composeProject string) {
+func deleteBackupProject(ctx context.Context, _ *testing.T, composeProject string) {
 	gc, err := client.NewTestClient(ctx)
 	if err != nil {
 		return
@@ -111,21 +71,91 @@ func deleteBackupProject(ctx context.Context, t *testing.T, composeProject strin
 	_ = gc.DeleteProject(composeProject+"-backup", true)
 }
 
-func assertNoLockFile(t *testing.T, c *client.Client) {
+// backupManifestIncusName resolves the manifest volume's Incus name. It goes
+// through Resource(), so it carries the vol- prefix that the mirrors, copied
+// under a raw name, do not.
+func backupManifestIncusName(t *testing.T, c *client.Client) string {
+	t.Helper()
+
+	r, err := c.Resource(client.KindStorageVolume, backupManifestVolume, &client.StorageVolumeConfig{})
+	require.NoError(t, err)
+
+	return r.IncusName()
+}
+
+// backupManifestDir lists the manifest volume, which holds both the per-run
+// manifests and the lock files. A missing volume reads as empty.
+func backupManifestDir(t *testing.T, c *client.Client) []string {
 	t.Helper()
 
 	conn, err := c.Connection()
 	require.NoError(t, err)
 
-	_, _, err = conn.GetStorageVolumeFile(c.Config().DefaultStoragePool, "custom", "ic-backup-manifest", "backup.lock")
+	_, resp, err := conn.GetStorageVolumeFile(c.Config().DefaultStoragePool, "custom", backupManifestIncusName(t, c), "/")
 	if incusApi.StatusErrorCheck(err, http.StatusNotFound) {
-		return
+		return nil
+	}
+	require.NoError(t, err)
+
+	return resp.Entries
+}
+
+// readBackupManifest returns every recorded backup run, oldest first.
+func readBackupManifest(t *testing.T, c *client.Client) []backupManifest {
+	t.Helper()
+
+	conn, err := c.Connection()
+	require.NoError(t, err)
+
+	manifests := []backupManifest{}
+	for _, name := range backupManifestDir(t, c) {
+		if !strings.HasSuffix(name, ".json") {
+			continue
+		}
+
+		data, _, err := conn.GetStorageVolumeFile(c.Config().DefaultStoragePool, "custom", backupManifestIncusName(t, c), name)
+		require.NoError(t, err)
+
+		m := backupManifest{}
+		err = json.NewDecoder(data).Decode(&m)
+		_ = data.Close()
+		require.NoError(t, err, "decoding manifest %q", name)
+
+		manifests = append(manifests, m)
 	}
 
-	t.Errorf("lock file should not exist after backup completes, but it was found")
+	// RFC3339Nano trims trailing zeros, so file order is not run order.
+	slices.SortFunc(manifests, func(a, b backupManifest) int {
+		return backupTime(t, a).Compare(backupTime(t, b))
+	})
+
+	return manifests
+}
+
+func backupTime(t *testing.T, m backupManifest) time.Time {
+	t.Helper()
+
+	ts, err := time.Parse(time.RFC3339Nano, m.Timestamp)
+	require.NoError(t, err, "manifest timestamp %q", m.Timestamp)
+
+	return ts
+}
+
+// assertNoLockFile checks that both lock kinds - the metadata lock and the
+// per-volume ones - were released.
+func assertNoLockFile(t *testing.T, c *client.Client) {
+	t.Helper()
+
+	for _, name := range backupManifestDir(t, c) {
+		if strings.HasSuffix(name, ".lock") {
+			t.Errorf("lock file %q should not exist after backup completes", name)
+		}
+	}
 }
 
 func TestE2EBackupCreate(t *testing.T) {
+	skipE2E(t)
+	skipLocal(t)
 	t.Parallel()
 
 	compose := "../../test/fixtures/with-backup/compose.yaml"
@@ -135,29 +165,29 @@ func TestE2EBackupCreate(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 		deleteBackupProject(context.Background(), t, pn)
 	})
 
 	_, err := runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
-	stdout, err := runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create")
+	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create")
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), "created with timestamp")
 
 	bp := openBackupProject(ctx, t, pn)
 	defer func() { _ = bp.Done() }()
 
 	entries := readBackupManifest(t, bp)
 	require.Len(t, entries, 1)
-	assert.Equal(t, "backup", entries[0].Name)
-	assert.NotEmpty(t, entries[0].Pool)
-	assert.Equal(t, []string{"data"}, entries[0].Volumes)
+	require.Len(t, entries[0].Volumes, 1)
+	assert.Equal(t, "vol-data", entries[0].Volumes[0].Source.Name)
+	assert.Equal(t, "ic-backup-data", entries[0].Volumes[0].Backup.Name)
 
-	pool := entries[0].Pool
-	assertBackupVolumeExists(t, bp, pool, "ic-backup-vol-data")
-	assertBackupSnapshotExists(t, bp, pool, "ic-backup-vol-data", entries[0].Timestamp)
+	pool := entries[0].Volumes[0].Backup.Pool
+	require.NotEmpty(t, pool, "the manifest must name the pool the backup volume lives in")
+	assertBackupVolumeExists(t, bp, pool, "ic-backup-data")
+	assertBackupSnapshotExists(t, bp, pool, "ic-backup-data", entries[0].Timestamp)
 	assertNoLockFile(t, bp)
 
 	c := projectClient(ctx, t, pn)
@@ -167,6 +197,8 @@ func TestE2EBackupCreate(t *testing.T) {
 }
 
 func TestE2EBackupCreateLive(t *testing.T) {
+	skipE2E(t)
+	skipLocal(t)
 	t.Parallel()
 
 	compose := "../../test/fixtures/with-backup/compose.yaml"
@@ -176,7 +208,7 @@ func TestE2EBackupCreateLive(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 		deleteBackupProject(context.Background(), t, pn)
 	})
 
@@ -191,14 +223,23 @@ func TestE2EBackupCreateLive(t *testing.T) {
 
 	entries := readBackupManifest(t, bp)
 	require.Len(t, entries, 1)
+	require.Len(t, entries[0].Volumes, 1)
 
-	pool := entries[0].Pool
-	assertBackupVolumeExists(t, bp, pool, "ic-backup-vol-data")
-	assertBackupSnapshotExists(t, bp, pool, "ic-backup-vol-data", entries[0].Timestamp)
+	pool := entries[0].Volumes[0].Backup.Pool
+	require.NotEmpty(t, pool, "the manifest must name the pool the backup volume lives in")
+	assertBackupVolumeExists(t, bp, pool, "ic-backup-data")
+	assertBackupSnapshotExists(t, bp, pool, "ic-backup-data", entries[0].Timestamp)
 	assertNoLockFile(t, bp)
+
+	c := projectClient(ctx, t, pn)
+	exists, err := c.InstanceExists("app-1")
+	require.NoError(t, err)
+	assert.True(t, exists, "a live backup must not stop the service")
 }
 
 func TestE2EBackupCreateNamed(t *testing.T) {
+	skipE2E(t)
+	skipLocal(t)
 	t.Parallel()
 
 	compose := "../../test/fixtures/with-backup/compose.yaml"
@@ -208,7 +249,7 @@ func TestE2EBackupCreateNamed(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 		deleteBackupProject(context.Background(), t, pn)
 	})
 
@@ -228,6 +269,8 @@ func TestE2EBackupCreateNamed(t *testing.T) {
 }
 
 func TestE2EBackupCreateIncremental(t *testing.T) {
+	skipE2E(t)
+	skipLocal(t)
 	t.Parallel()
 
 	compose := "../../test/fixtures/with-backup/compose.yaml"
@@ -237,7 +280,7 @@ func TestE2EBackupCreateIncremental(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 		deleteBackupProject(context.Background(), t, pn)
 	})
 
@@ -260,16 +303,22 @@ func TestE2EBackupCreateIncremental(t *testing.T) {
 	assert.NotEqual(t, entries[0].Timestamp, entries[1].Timestamp)
 	assertNoLockFile(t, bp)
 
-	pool := entries[0].Pool
-	assertBackupVolumeExists(t, bp, pool, "ic-backup-vol-data")
-	assertBackupSnapshotExists(t, bp, pool, "ic-backup-vol-data", entries[0].Timestamp)
-	assertBackupSnapshotExists(t, bp, pool, "ic-backup-vol-data", entries[1].Timestamp)
+	// The second run refreshes the same mirror, so both snapshots sit on it.
+	require.Len(t, entries[0].Volumes, 1)
+	pool := entries[0].Volumes[0].Backup.Pool
+	require.NotEmpty(t, pool, "the manifest must name the pool the backup volume lives in")
+	assertBackupVolumeExists(t, bp, pool, "ic-backup-data")
+	assertBackupSnapshotExists(t, bp, pool, "ic-backup-data", entries[0].Timestamp)
+	assertBackupSnapshotExists(t, bp, pool, "ic-backup-data", entries[1].Timestamp)
 }
 
 func TestE2EBackupCreateFiltered(t *testing.T) {
+	skipE2E(t)
+	skipLocal(t)
 	t.Parallel()
 
-	compose := writeTempCompose(t, `
+	projectDir := writeTempFiles(t, map[string]string{
+		"compose.yaml": `
 services:
   db:
     image: docker.io/library/busybox:glibc
@@ -289,21 +338,19 @@ services:
 volumes:
   db-data:
   app-data:
-`)
-	projectDir := t.TempDir()
-
+`})
 	ctx := t.Context()
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "--project-directory", projectDir, "down", "--project")
 		deleteBackupProject(context.Background(), t, pn)
 	})
 
-	_, err := runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "up", "--detach")
+	_, err := runCommand(ctx, t, pn, "--project-directory", projectDir, "up", "--detach")
 	require.NoError(t, err)
 
-	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create", "db")
+	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "backup", "create", "db")
 	require.NoError(t, err)
 
 	bp := openBackupProject(ctx, t, pn)
@@ -311,11 +358,21 @@ volumes:
 
 	entries := readBackupManifest(t, bp)
 	require.Len(t, entries, 1)
-	assert.Equal(t, []string{"db-data"}, entries[0].Volumes)
+	require.Len(t, entries[0].Volumes, 1, "app-data must not be backed up")
+	assert.Equal(t, "vol-db-data", entries[0].Volumes[0].Source.Name)
+	assert.Equal(t, "ic-backup-db-data", entries[0].Volumes[0].Backup.Name)
 	assertNoLockFile(t, bp)
+
+	conn, err := bp.Connection()
+	require.NoError(t, err)
+
+	_, _, err = conn.GetStoragePoolVolume(bp.Config().DefaultStoragePool, "custom", "ic-backup-app-data")
+	assert.True(t, incusApi.StatusErrorCheck(err, http.StatusNotFound), "app-data must not have a backup mirror")
 }
 
 func TestE2EBackupCreateNoVolumes(t *testing.T) {
+	skipE2E(t)
+	skipLocal(t)
 	t.Parallel()
 
 	compose := "../../test/fixtures/with-backup/compose.yaml"
@@ -325,7 +382,7 @@ func TestE2EBackupCreateNoVolumes(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 		deleteBackupProject(context.Background(), t, pn)
 	})
 
@@ -338,15 +395,19 @@ func TestE2EBackupCreateNoVolumes(t *testing.T) {
 	bp := openBackupProject(ctx, t, pn)
 	defer func() { _ = bp.Done() }()
 
-	assertBackupVolumeExists(t, bp, bp.Config().DefaultStoragePool, "ic-backup-manifest")
+	assertBackupVolumeExists(t, bp, bp.Config().DefaultStoragePool, backupManifestIncusName(t, bp))
 	entries := readBackupManifest(t, bp)
-	require.Len(t, entries, 0)
+	require.Empty(t, entries)
+	assertNoLockFile(t, bp)
 }
 
 func TestE2EBackupCreateDefaultPool(t *testing.T) {
+	skipE2E(t)
+	skipLocal(t)
 	t.Parallel()
 
-	compose := writeTempCompose(t, `
+	projectDir := writeTempFiles(t, map[string]string{
+		"compose.yaml": `
 services:
   app:
     image: docker.io/library/busybox:glibc
@@ -358,21 +419,20 @@ services:
 
 volumes:
   data:
-`)
-	projectDir := t.TempDir()
+`})
 
 	ctx := t.Context()
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "--project-directory", projectDir, "down", "--project")
 		deleteBackupProject(context.Background(), t, pn)
 	})
 
-	_, err := runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "up", "--detach")
+	_, err := runCommand(ctx, t, pn, "--project-directory", projectDir, "up", "--detach")
 	require.NoError(t, err)
 
-	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create")
+	_, err = runCommand(ctx, t, pn, "--project-directory", projectDir, "backup", "create")
 	require.NoError(t, err)
 
 	bp := openBackupProject(ctx, t, pn)
@@ -380,13 +440,17 @@ volumes:
 
 	entries := readBackupManifest(t, bp)
 	require.Len(t, entries, 1)
+	require.Len(t, entries[0].Volumes, 1)
 
 	pool := bp.Config().DefaultStoragePool
-	assertBackupVolumeExists(t, bp, pool, "ic-backup-vol-data")
+	assert.Equal(t, pool, entries[0].Volumes[0].Backup.Pool, "an unconfigured pool must resolve to the default one")
+	assertBackupVolumeExists(t, bp, pool, "ic-backup-data")
 	assertNoLockFile(t, bp)
 }
 
 func TestE2EBackupCreateParallel(t *testing.T) {
+	skipE2E(t)
+	skipLocal(t)
 	t.Parallel()
 
 	compose := "../../test/fixtures/with-backup/compose.yaml"
@@ -396,7 +460,7 @@ func TestE2EBackupCreateParallel(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 		deleteBackupProject(context.Background(), t, pn)
 	})
 
@@ -405,11 +469,11 @@ func TestE2EBackupCreateParallel(t *testing.T) {
 
 	var wg sync.WaitGroup
 	errs := make([]error, 2)
-	for i := 0; i < 2; i++ {
+	for i := range errs {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			_, errs[i] = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create")
+			_, errs[i] = runCommand(ctx, t, pn, "--project-directory", projectDir, "-f", compose, "backup", "create", "--live")
 		}(i)
 	}
 	wg.Wait()
@@ -422,10 +486,20 @@ func TestE2EBackupCreateParallel(t *testing.T) {
 
 	entries := readBackupManifest(t, bp)
 	require.Len(t, entries, 2)
+	require.Len(t, entries[0].Volumes, 1)
+
+	// Both runs refresh the one mirror, so the lock has to serialize them well
+	// enough that neither snapshot is lost.
+	pool := entries[0].Volumes[0].Backup.Pool
+	require.NotEmpty(t, pool, "the manifest must name the pool the backup volume lives in")
+	assertBackupSnapshotExists(t, bp, pool, "ic-backup-data", entries[0].Timestamp)
+	assertBackupSnapshotExists(t, bp, pool, "ic-backup-data", entries[1].Timestamp)
 	assertNoLockFile(t, bp)
 }
 
 func TestE2EBackupCreateDataIntegrity(t *testing.T) {
+	skipE2E(t)
+	skipLocal(t)
 	t.Parallel()
 
 	compose := "../../test/fixtures/with-backup/compose.yaml"
@@ -435,7 +509,7 @@ func TestE2EBackupCreateDataIntegrity(t *testing.T) {
 	pn := t.Name()
 
 	t.Cleanup(func() {
-		runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
 		deleteBackupProject(context.Background(), t, pn)
 	})
 
@@ -464,7 +538,7 @@ func TestE2EBackupCreateDataIntegrity(t *testing.T) {
 	bConn, err := bp.Connection()
 	require.NoError(t, err)
 
-	data, _, err := bConn.GetStorageVolumeFile(bp.Config().DefaultStoragePool, "custom", "ic-backup-vol-data", "backup-test.txt")
+	data, _, err := bConn.GetStorageVolumeFile(bp.Config().DefaultStoragePool, "custom", "ic-backup-data", "backup-test.txt")
 	require.NoError(t, err)
 	defer data.Close()
 

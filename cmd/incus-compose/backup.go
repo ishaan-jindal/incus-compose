@@ -1,23 +1,65 @@
 package main
 
 import (
-	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
-	"slices"
+	"os"
 	"time"
 
+	incus "github.com/lxc/incus/v7/client"
+	"github.com/mattn/go-isatty"
+	"github.com/pkg/sftp"
 	"github.com/urfave/cli/v3"
 
 	"github.com/lxc/incus-compose/client"
 	"github.com/lxc/incus-compose/project"
 )
 
+// backupManifest represents a single backup run.
+type backupManifest struct {
+	Timestamp string                `json:"timestamp"`
+	Name      string                `json:"name"`
+	Volumes   []client.BackupVolume `json:"volumes"`
+}
+
+const (
+	backupManifestVolume = client.BackupVolumePrefix + "manifest"
+)
+
+// func backupReadManifest(c *client.Client, sc *sftp.Client, cfg client.BackupConfig) (*backupManifest, error) {
+// 	f, err := sc.Open(cfg.Timestamp + ".json")
+// 	if err != nil {
+// 		return nil, fmt.Errorf("open manifest: %w", err)
+// 	}
+
+// 	m := &backupManifest{}
+// 	err = json.NewDecoder(f).Decode(m)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("unmarshal manifest: %w", err)
+// 	}
+
+// 	return m, nil
+// }
+
+func backupWriteManifest(c *client.Client, sc *sftp.Client, cfg client.BackupConfig, m *backupManifest) error {
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal manifest: %w", err)
+	}
+
+	return client.SFTPCreateFile(c, sc, cfg.Timestamp+".json", incus.InstanceFileArgs{
+		Content:   client.NewReaderFromBytes(data),
+		Type:      "file",
+		WriteMode: "overwrite",
+	}, true)
+}
+
 func newBackupCommand() *cli.Command {
 	return &cli.Command{
 		Name:     "backup",
 		Usage:    "Snapshot project data volumes into a backup project",
-		Category: "resource",
+		Category: "extensions",
 		Commands: []*cli.Command{
 			newBackupCreateCommand(),
 		},
@@ -74,25 +116,62 @@ func newBackupCreateCommand() *cli.Command {
 			}
 			defer func() { _ = c.Done() }()
 
-			composePool := c.Config().DefaultStoragePool
-
 			backupConfig := p.ClientConfig.Backup
-			if pool := cmd.String("pool"); pool != "" {
-				backupConfig.Pool = pool
+			if cmd.String("pool") != "" {
+				backupConfig.Pool = cmd.String("pool")
 			}
+			if backupConfig.Pool == "" {
+				backupConfig.Pool = c.Config().DefaultStoragePool
+			}
+			if cmd.String("name") != "" {
+				backupConfig.Name = cmd.String("name")
+			}
+			if backupConfig.MetaVolume == "" {
+				backupConfig.MetaVolume = "ic-backup-manifest"
+			}
+			backupConfig.Timestamp = time.Now().UTC().Format(time.RFC3339Nano)
 
-			bm, err := client.NewBackuper(globalClient, c, composePool, backupConfig)
+			bc, err := c.Global().EnsureProject(
+				c.Project()+"-backup",
+				client.EnsureProjectWithCreate(),
+				client.EnsureProjectWithConfig(map[string]string{"restricted": "false"}),
+			)
 			if err != nil {
-				c.LogError("Setting up backup", "error", err)
+				c.LogError("Ensuring the backup project", "project", c.Project()+"-backup", "error", err)
 				return errLogged.Wrap(err)
 			}
-			defer func() { _ = bm.Done() }()
+			err = bc.Open()
+			if err != nil {
+				globalClient.LogError("Opening the backup client", "error", err)
+				return errLogged.Wrap(err)
+			}
+			defer func() { _ = bc.Done() }()
 
-			services := cmd.Args().Slice()
+			lock, err := client.BackupLock(ctx, bc, backupConfig, 1*time.Minute, "metadata.lock")
+			if err != nil {
+				globalClient.LogError("Failed to lock metadata", "error", err)
+			}
+			defer c.WarnError(lock.Unlock, "Failed to release the metadata lock")
+
+			resources, err := p.Resources(c)
+			if err != nil {
+				c.LogError("Getting project resources", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			myResources := filterResources(p, resources, filterResourcesArgs{
+				OnlyServices: cmd.Args().Slice(),
+				IncludeKinds: []client.Kind{client.KindStorageVolume},
+			})
+
+			if len(myResources) == 0 {
+				c.LogWarn("No volumes to backup found")
+				return nil
+			}
 
 			if !cmd.Bool("live") {
-				err = stop(ctx, p, c, stopArgs{
-					Services: services,
+				err = stop(ctx, p, c.Clone(), stopArgs{
+					Services: cmd.Args().Slice(),
 					Timeout:  2 * time.Minute,
 					Workers:  cmd.Root().Int("workers"),
 					Debug:    cmd.Root().Bool("debug"),
@@ -104,71 +183,80 @@ func newBackupCreateCommand() *cli.Command {
 				}
 			}
 
-			resources, err := p.Resources(c)
+			var progress *progressRenderer
+			if !cmd.Root().Bool("debug") {
+				progress = newProgressRenderer(cmd.Root().Writer, noColor(ctx), isatty.IsTerminal(os.Stdout.Fd()))
+				progress.Start(c)
+			}
+
+			order, err := p.ServiceOrder(false)
 			if err != nil {
-				c.LogError("Getting project resources", "error", err)
+				c.LogError("Getting the service dependency order", "error", err)
 				return errLogged.Wrap(err)
 			}
 
-			seen := map[string]bool{}
-			var volumes []string
-			for svcName, svcResources := range resources {
-				if len(services) > 0 {
-					included := false
-					for _, s := range services {
-						if s == svcName {
-							included = true
-							break
-						}
-					}
+			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
+			stack.AddOrdered(order, myResources)
 
-					if !included {
-						continue
-					}
-				}
+			c.LogDebug("Ensure", "resources", stack.All())
 
-				for _, r := range svcResources {
+			err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure)
+			if err != nil {
+				c.LogError("Ensuring resources", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			ensuredFilter := func(r client.Resource) bool { return r.IsEnsured() }
+
+			err = stack.ForActionF(client.ActionBackup, ensuredFilter).Run(ctx, client.ActionBackup, client.OptionBackup(bc, backupConfig))
+			if err != nil {
+				c.LogError("Backing up resources", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			if progress != nil {
+				progress.Stop(c)
+			}
+
+			bMVol, err := client.BackupManifestVolume(ctx, bc, backupConfig)
+			if err != nil {
+				c.LogError("Opening the backup manifest volume", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			sc, err := bMVol.SFTP()
+			if err != nil {
+				c.LogError("Opening an SFTP client", "error", err)
+			}
+
+			m := backupManifest{
+				Name:      backupConfig.Name,
+				Timestamp: backupConfig.Timestamp,
+				Volumes:   []client.BackupVolume{},
+			}
+			for _, res := range myResources {
+				for _, r := range res {
 					if r.Kind() != client.KindStorageVolume {
 						continue
 					}
 
-					vol, ok := r.(*client.StorageVolume)
-					if !ok || vol.Config.HostPath != "" {
+					v, ok := r.(*client.StorageVolume)
+					if !ok {
 						continue
 					}
 
-					if !seen[r.Name()] {
-						seen[r.Name()] = true
-						volumes = append(volumes, r.Name())
-					}
+					m.Volumes = append(m.Volumes, v.BackupEntry(backupConfig, bc.IncusProject()))
 				}
 			}
-			slices.SortFunc(volumes, cmp.Compare)
 
-			if len(volumes) == 0 {
-				c.LogWarn("No volumes to backup")
-				return nil
-			}
-
-			name := cmd.String("name")
-			if name == "" {
-				name = "backup"
-			}
-
-			ts, err := bm.Create(ctx, name, volumes)
+			err = backupWriteManifest(c, sc, backupConfig, &m)
 			if err != nil {
-				c.LogError("Creating backup", "error", err)
-				return errLogged.Wrap(err)
-			}
-
-			_, err = fmt.Fprintf(cmd.Root().Writer, "Backup %q created with timestamp %s\n", name, ts)
-			if err != nil {
-				c.LogWarn("Writing backup output", "error", err)
+				c.LogError("Failed to write the backup manifest", "error", err)
 			}
 
 			if !cmd.Bool("live") {
-				err = start(ctx, p, c, startArgs{
-					Services: services,
+				err = start(ctx, p, c.Clone(), startArgs{
+					Services: cmd.Args().Slice(),
 					Timeout:  2 * time.Minute,
 					Workers:  cmd.Root().Int("workers"),
 					Debug:    cmd.Root().Bool("debug"),
