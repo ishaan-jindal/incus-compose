@@ -1063,7 +1063,7 @@ func networkExtensions(networkDef types.NetworkConfig) map[string]string {
 	var raw map[string]any
 	ok, err := networkDef.Extensions.Get("x-incus", &raw)
 	if !ok || err != nil || len(raw) == 0 {
-		return nil
+		return map[string]string{}
 	}
 
 	result := make(map[string]string, len(raw))
