@@ -192,7 +192,7 @@ build: lint update-healthd
     #!/usr/bin/env bash
     set -euo pipefail
 
-    image="${INCUS_COMPOSE_HEALTHD_IMAGE:-}"
+    image=$(source .env; echo "${INCUS_COMPOSE_HEALTHD_IMAGE:-}")
     version="${image##*:}"
 
     if [[ "${version}" == "${image}" ]]; then

@@ -39,6 +39,11 @@ for correct semver ordering. Headings below preserve each release's announced fo
 
 ### Fixed
 
+- `up` no longer fetches the ic-healthd image when the daemon already runs the
+  one asked for. It pulled on every run, so a tag that had gone from the
+  registry - or a registry that was simply unreachable - failed the whole
+  project even though the daemon was healthy and nothing needed replacing.
+  (by @jochumdev)
 - Containers on a network that pins its own subnet can reach the outside again.
   Incus turns `ipv4.nat`/`ipv6.nat` on only for a subnet it picked itself, so a
   network given an explicit `ipv4.address` through `x-incus` came up without

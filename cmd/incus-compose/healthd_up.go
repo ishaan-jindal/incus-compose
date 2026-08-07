@@ -248,12 +248,6 @@ func healthdEnsure(ctx context.Context, hc *client.Client, stack *client.Stack, 
 		ensureOpts = append(ensureOpts, client.OptionPull())
 	}
 
-	if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, ensureOpts...); err != nil {
-		hc.LogError("Creating healthd resources", "error", err)
-		return errLogged.Wrap(err)
-	}
-
-	// A newer image means the sidecar is replaced by one built from it.
 	var wantAlias string
 	for _, r := range hResources {
 		if r.Kind() == client.KindImage {
@@ -261,6 +255,38 @@ func healthdEnsure(ctx context.Context, hc *client.Client, stack *client.Stack, 
 			break
 		}
 	}
+
+	// Only creating or replacing the sidecar needs the image. Read it rather
+	// than ensure it, so an unreachable tag cannot fail a daemon that is
+	// already running the one asked for.
+	conn, err := hc.Connection()
+	if err != nil {
+		hc.LogError("Connecting to the healthd project", "error", err)
+		return errLogged.Wrap(err)
+	}
+
+	current, _, err := conn.GetInstance(hInst.IncusName())
+	fetchImage := err != nil ||
+		params.pull == "always" ||
+		healthdNeedsUpgrade(current.Config["user.image_alias"], wantAlias)
+
+	// The image and the volume only exist to create the sidecar, and the
+	// volume's Start validates itself against the image we did not fetch. One
+	// already on the image asked for needs neither, only starting.
+	needed := func(r client.Resource) bool {
+		if fetchImage {
+			return true
+		}
+
+		return r.Kind() != client.KindImage && r.Kind() != client.KindStorageVolume
+	}
+
+	if err := stack.ForActionF(client.ActionEnsure, needed).Run(ctx, client.ActionEnsure, ensureOpts...); err != nil {
+		hc.LogError("Creating healthd resources", "error", err)
+		return errLogged.Wrap(err)
+	}
+
+	// A newer image means the sidecar is replaced by one built from it.
 	if hInst.IsEnsured() && healthdNeedsUpgrade(hInst.IncusInstance.Config["user.image_alias"], wantAlias) {
 		maps.Copy(params.carry, healthdCarriedConfig(hInst.IncusInstance.Config))
 
@@ -290,7 +316,7 @@ func healthdEnsure(ctx context.Context, hc *client.Client, stack *client.Stack, 
 		}
 	}
 
-	if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, client.OptionTimeout(params.timeout)); err != nil {
+	if err := stack.ForActionF(client.ActionStart, needed).Run(ctx, client.ActionStart, client.OptionTimeout(params.timeout)); err != nil {
 		hc.LogError("Starting healthd resources", "error", err)
 		return errLogged.Wrap(err)
 	}
