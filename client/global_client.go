@@ -74,6 +74,9 @@ type ClientConfig struct {
 	// CacheProject is the project name to use as image cache.
 	// If set, the project will be created if it doesn't exist.
 	CacheProject string
+
+	// SystemProject is the project holding the instances the library runs.
+	SystemProject string
 }
 
 // ClientOption is a functional option for configuring the Client.
@@ -133,6 +136,11 @@ func ClientCacheProject(n string) ClientOption {
 	return func(c *ClientConfig) { c.CacheProject = n }
 }
 
+// ClientSystemProject sets the project holding the library's own instances.
+func ClientSystemProject(n string) ClientOption {
+	return func(c *ClientConfig) { c.SystemProject = n }
+}
+
 // GlobalClient provides a high-level interface to Incus operations.
 type GlobalClient struct {
 	ctx    context.Context
@@ -174,7 +182,8 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 		Logger:             slog.Default(),
 		DefaultStoragePool: "detect",
 		NetworkPrefix:      "ic-",
-		DescriptionFormat:  "incus-compose: %s",
+		DescriptionFormat:  DefaultSystemProject + ": %s",
+		SystemProject:      DefaultSystemProject,
 		Stdout:             os.Stdout,
 		Stderr:             NewSwapWriter(os.Stderr),
 	}

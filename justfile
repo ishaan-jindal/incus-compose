@@ -178,7 +178,7 @@ update-healthd *args="--trace": build-healthd-image
     remote="${INCUS_REMOTE:-local}"
 
     echo "Deleting the global ic-healthd on remote '${remote}'"
-    echo "yes" | incus project rm --force "incus-compose-healthd" || true
+    echo "yes" | incus project rm --force "incus-compose" || true
 
     # New image
     export INCUS_COMPOSE_HEALTHD_IMAGE=$(source .env; echo "$INCUS_COMPOSE_HEALTHD_IMAGE")

@@ -69,12 +69,12 @@ func resolveHealthdTarget(ctx context.Context, cmd *cli.Command, gc *client.Glob
 			return nil, nil, fmt.Errorf("resolving the healthd scope: %w", err)
 		}
 	} else {
-		target.client, err = gc.EnsureProject(globalHealthdProject)
+		target.client, err = gc.EnsureProject(systemProject)
 		if errors.Is(err, client.ErrNotFound) {
 			return nil, nil, errNoHealthd
 		}
 		if err != nil {
-			return nil, nil, fmt.Errorf("getting the %s project: %w", globalHealthdProject, err)
+			return nil, nil, fmt.Errorf("getting the %s project: %w", systemProject, err)
 		}
 	}
 

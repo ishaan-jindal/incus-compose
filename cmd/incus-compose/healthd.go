@@ -33,8 +33,7 @@ const (
 
 const (
 	// globalHealthdProject is where the shared daemon lives, not configurable.
-	globalHealthdProject = client.HealthdProject
-	globalHealthdName    = "ic-healthd"
+	globalHealthdName = "ic-healthd"
 
 	// globalHealthdNetwork is the shared daemon's own bridge, so it depends on
 	// nothing about how the default project is set up.

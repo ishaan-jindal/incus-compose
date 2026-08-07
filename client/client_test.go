@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -75,9 +76,9 @@ func TestClientDescriptionFormat(t *testing.T) {
 	t.Parallel()
 	client := NewOfflineClient(t.Context(), "my_project")
 
-	require.Equal(t, "incus-compose: %s", client.globalClient.config.DescriptionFormat)
-	require.Equal(t, "incus-compose: my_project:%s", client.Config().DescriptionFormat)
-	require.Equal(t, "incus-compose: my_project:web", fmt.Sprintf(client.Config().DescriptionFormat, "web"))
+	assert.Equal(t, "incus-client: %s", client.globalClient.config.DescriptionFormat)
+	assert.Equal(t, "incus-client: my_project:%s", client.Config().DescriptionFormat)
+	assert.Equal(t, "incus-client: my_project:web", fmt.Sprintf(client.Config().DescriptionFormat, "web"))
 }
 
 func TestClientCustomDescriptionFormat(t *testing.T) {
