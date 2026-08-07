@@ -214,13 +214,13 @@ func newUpCommand() *cli.Command {
 					Images:     false,
 					Timeout:    cmd.Duration("timeout"),
 					NoDeps:     cmd.Bool("no-deps"),
-					NoNetworks: true,
+					NoNetworks: len(cmd.Args().Slice()) != 0,
 					Services:   cmd.Args().Slice(),
 					Workers:    cmd.Root().Int("workers"),
 					Debug:      cmd.Root().Bool("debug"),
 					Scale:      parseScale(cmd.StringSlice("scale")),
 					Writer:     cmd.Root().Writer,
-					Reverse:    false,
+					Reverse:    true,
 					NoHealthd:  !usesHealthd,
 				})
 				if err != nil {
