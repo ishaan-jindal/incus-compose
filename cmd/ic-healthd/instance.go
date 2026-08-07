@@ -686,6 +686,7 @@ func runInstanceActions(ctx context.Context, conn incus.InstanceServer, pool *po
 			actionCtx, cancel := context.WithCancel(ctx)
 			name := inst.name
 
+			log.Info("Restarting", "instance", name)
 			err := pool.restart.Submit(func() {
 				res := instanceRestartAction(actionCtx, conn, name)
 				res.ctx = actionCtx
@@ -902,6 +903,7 @@ func handleInstanceResult(ctx context.Context, conn incus.InstanceServer, instan
 			return
 		}
 
+		log.Info("Restarted", "instance", inst.name)
 		instanceStarted(inst, time.Now())
 	case instanceResultRoster:
 		if res.err != nil {
