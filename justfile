@@ -141,14 +141,6 @@ incus *args:
     @echo "Using remote '${INCUS_REMOTE-"local"}':"
     incus {{ args }}
 
-# Build a release binary
-build-release: lint
-    go build -ldflags="-w -s -X github.com/lxc/incus-compose/cmd/incus-compose/version.Version=`git describe --tags --always --long --dirty="-dirty"`" -o bin/incus-compose ./cmd/incus-compose
-
-# Build a dev binary
-build: lint
-    go build -o bin/incus-compose ./cmd/incus-compose
-
 # Build ic-healthd binary
 build-healthd: lint
     CGO_ENABLED=0 go build -tags=netgo -ldflags="-w -s -X github.com/lxc/incus-compose/cmd/ic-healthd/version.Version=`git describe --tags --always --long --dirty="-dirty"`" -trimpath -o bin/ic-healthd ./cmd/ic-healthd
@@ -163,7 +155,9 @@ build-healthd-image tag_base="ghcr.io/lxc/incus-compose/ic-healthd":
     fi
 
     # The random suffix gives a clear sign that your version is running.
-    export VERSION="`git describe --tags --always --long --dirty="-dirty"`-`openssl rand -hex 4`"
+    VERSION="`git describe --tags --always --long --dirty="-dirty"`-`openssl rand -hex 4`"
+    # Container tags carry no v prefix, `release` pushes them without one too.
+    export VERSION="${VERSION#v}"
     echo ${VERSION}
 
     echo "Building for the 'default' cache on '${INCUS_REMOTE}'"
@@ -183,8 +177,8 @@ update-healthd *args="--trace": build-healthd-image
 
     remote="${INCUS_REMOTE:-local}"
 
-    echo "Deleting the shared ic-healthd on remote '${remote}'"
-    incus delete --force "ic-healthd" --project default 2>/dev/null || true
+    echo "Deleting the global ic-healthd on remote '${remote}'"
+    echo "yes" | incus project rm --force "incus-compose-healthd" || true
 
     # New image
     export INCUS_COMPOSE_HEALTHD_IMAGE=$(source .env; echo "$INCUS_COMPOSE_HEALTHD_IMAGE")
@@ -192,6 +186,20 @@ update-healthd *args="--trace": build-healthd-image
 
     # The healthd-scope project is left behind as the handle for `healthd logs`.
     just run healthd up {{ args }}
+
+# Build a dev binary
+build: lint update-healthd
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    image="${INCUS_COMPOSE_HEALTHD_IMAGE:-}"
+    version="${image##*:}"
+
+    if [[ "${version}" == "${image}" ]]; then
+      version="`git describe --tags --always --long --dirty="-dirty"`"
+    fi
+
+    go build -ldflags="-X github.com/lxc/incus-compose/cmd/incus-compose/version.Version=v${version#v}" -o bin/incus-compose ./cmd/incus-compose
 
 # Build ic-healthd container image
 release-healthd-image tag="ghcr.io/lxc/incus-compose/ic-healthd:latest": build-healthd-image
