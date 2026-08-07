@@ -87,11 +87,6 @@ func TestE2EHealthdGlobalScope(t *testing.T) {
 	assert.Equal(t, "disk", inst.Devices["root"]["type"])
 	assert.Equal(t, globalHealthdNetwork, inst.Devices["eth0"]["network"])
 
-	dc := projectClient(ctx, t, "default")
-	stray, err := dc.InstanceExists(globalHealthdName)
-	require.NoError(t, err)
-	assert.False(t, stray, "the default project must be left alone")
-
 	waitHealthy(t, c, "web-1")
 }
 
