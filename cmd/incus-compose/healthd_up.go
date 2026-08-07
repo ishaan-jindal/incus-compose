@@ -273,7 +273,8 @@ func healthdEnsure(ctx context.Context, hc *client.Client, stack *client.Stack, 
 		}
 		downStack.Add(hInst)
 
-		if err := downStack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionTimeout(params.timeout)); err != nil {
+		err := downStack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionTimeout(params.timeout))
+		if err != nil && !errors.Is(err, client.ErrNotRunning) {
 			hc.LogError("Stoping healthd resources for a new image", "error", err)
 			return errLogged.Wrap(err)
 		}
