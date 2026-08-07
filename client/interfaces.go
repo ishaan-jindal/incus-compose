@@ -28,6 +28,9 @@ const (
 	HealthStoppedKey = shared.HealthStoppedKey
 )
 
+// HealthdProject is the Incus project the shared ic-healthd runs in.
+const HealthdProject = "incus-compose-healthd"
+
 // Kind identifies a resource type.
 type Kind string
 

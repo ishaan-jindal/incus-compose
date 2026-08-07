@@ -18,6 +18,7 @@ func TestParseHealthdNetwork(t *testing.T) {
 	tests := []struct {
 		name    string
 		network string
+		global  bool
 		want    healthdNetworkRef
 		wantErr bool
 	}{
@@ -25,6 +26,22 @@ func TestParseHealthdNetwork(t *testing.T) {
 			name:    "empty is the project default network",
 			network: "",
 			want:    healthdNetworkRef{name: "default", deflt: true},
+		},
+		{
+			name:    "empty is the shared daemon's own bridge",
+			network: "",
+			global:  true,
+			want: healthdNetworkRef{
+				name:      globalHealthdNetwork,
+				deflt:     true,
+				incusName: globalHealthdNetwork,
+			},
+		},
+		{
+			name:    "an explicit bridge wins for the shared daemon too",
+			network: "incusbr0",
+			global:  true,
+			want:    healthdNetworkRef{name: "incusbr0"},
 		},
 		{
 			name:    "project:network references a managed network",
@@ -58,7 +75,7 @@ func TestParseHealthdNetwork(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := parseHealthdNetwork(c, tt.network)
+			got, err := parseHealthdNetwork(c, tt.network, tt.global)
 			if tt.wantErr {
 				require.Error(t, err)
 				return

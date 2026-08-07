@@ -9,6 +9,30 @@ Version numbering moved from `0.0.1` to `1.0.0` at beta11 (1.0.0 is the intended
 final version), and the beta suffix gained a dot (`beta.16`) from beta.16 onward
 for correct semver ordering. Headings below preserve each release's announced form.
 
+## [Unreleased]
+
+### Changed
+
+- The shared ic-healthd runs in an Incus project of its own,
+  `incus-compose-healthd`, on a bridge of its own, `ic-healthd`, with its own
+  root disk. It took all three from the `default` project's `default` profile
+  before, so a server whose default profile uses an unmanaged bridge - or no
+  NIC - could not bring the shared daemon up at all. No instance or volume of
+  ours lands in the `default` project any more. (by @jochumdev)
+- `--healthd-network` / `x-incus-compose.healthd.network` now applies to the
+  shared daemon too, and a network the compose file declares is created before
+  the daemon attaches to it. It was warned about and ignored outside project
+  scope. Like `incus`, `workers` and `x-incus`, the first project to bring the
+  shared daemon up supplies it. (by @jochumdev)
+
+> **Upgrading from `v1.2.0-rc.1` or `rc.2`** - those left a daemon in the
+> `default` project, and nothing moves it for you. Run
+> `incus-compose healthd down --force` **before** upgrading, or afterwards
+> delete the `ic-healthd` instance and volume in the `default` project and its
+> `ic-healthd-global` certificate. Two daemons watching the same projects
+> otherwise both restart the same instances. Releases before `v1.2.0-rc.1` had
+> no shared daemon and need nothing.
+
 ## [v1.2.0-rc.2] - 2026-08-06
 
 ### Fixed

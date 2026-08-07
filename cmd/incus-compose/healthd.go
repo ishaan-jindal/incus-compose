@@ -33,8 +33,12 @@ const (
 
 const (
 	// globalHealthdProject is where the shared daemon lives, not configurable.
-	globalHealthdProject = "default"
+	globalHealthdProject = client.HealthdProject
 	globalHealthdName    = "ic-healthd"
+
+	// globalHealthdNetwork is the shared daemon's own bridge, so it depends on
+	// nothing about how the default project is set up.
+	globalHealthdNetwork = "ic-healthd"
 
 	// healthdVolume holds the daemon's generated cert and key.
 	healthdVolume = "ic-healthd"
@@ -64,7 +68,7 @@ type healthdParams struct {
 	image        string // already resolved via resolveHealthdImage
 	pull         string
 	incus        *url.URL
-	network      string // Incus bridge name; empty = auto-detect. Project scope only.
+	network      string // Incus bridge name; empty = the scope's own default network
 	timeout      time.Duration
 	stackWorkers int // concurrency of our own resource stack, not the daemon's
 
@@ -325,9 +329,6 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 		},
 		Resources: []client.Resource{img},
 		Priority:  client.PriorityInstance - 1,
-
-		// The shared daemon takes root from the default project's profile.
-		NoRootDevice: params.global,
 	}
 
 	// After the defaults, so a user can raise the sidecar's limits.
@@ -356,8 +357,10 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 		return nil, nil, client.ErrUnknown.WithResource(instRes)
 	}
 
+	// The kind matters: the sidecar's network is called ic-healthd too, and
+	// ensuring it from in here would re-enter this hook forever.
 	c.AddHookBefore(func(ctx context.Context, action client.Action, r client.Resource, _ client.Options, err error) error {
-		if err != nil || action != client.ActionEnsure || r.IncusName() != inst.IncusName() {
+		if err != nil || action != client.ActionEnsure || r.Kind() != client.KindInstance || r.IncusName() != inst.IncusName() {
 			return err
 		}
 
@@ -380,16 +383,12 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			}
 		}
 
-		// The shared daemon takes eth0 from the default project's profile.
-		var network *client.Network
-		if !params.global {
-			network, err = healthdEnsureNetwork(ctx, c, params.network)
-			if err != nil {
-				return err
-			}
-
-			inst.Config.Resources = append(inst.Config.Resources, network)
+		network, err := healthdEnsureNetwork(ctx, c, params)
+		if err != nil {
+			return err
 		}
+
+		inst.Config.Resources = append(inst.Config.Resources, network)
 
 		// A carried endpoint stands, so replacing a daemon does not require
 		// being able to derive the one it already dials.
@@ -429,15 +428,13 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			DirMode: 0o700,
 		})
 
-		if network != nil {
-			inst.Config.Devices = append(inst.Config.Devices, client.InstanceDevice{
-				Name: "eth0",
-				Config: client.InstanceDeviceConfig{
-					DeviceType:  client.InstanceDeviceTypeNic,
-					NetworkName: network.IncusName(),
-				},
-			})
-		}
+		inst.Config.Devices = append(inst.Config.Devices, client.InstanceDevice{
+			Name: "eth0",
+			Config: client.InstanceDeviceConfig{
+				DeviceType:  client.InstanceDeviceTypeNic,
+				NetworkName: network.IncusName(),
+			},
+		})
 
 		if params.binary != "" {
 			f, err := filepath.Abs(params.binary)
@@ -457,12 +454,7 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			})
 		} else {
 			// So ic-healthd can update its own status.
-			ownProject := c.IncusProject()
-			if params.global {
-				ownProject = globalHealthdProject
-			}
-
-			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_OWN_PROJECT"] = ownProject
+			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_OWN_PROJECT"] = c.IncusProject()
 			inst.Config.Extensions["environment.INCUS_COMPOSE_HEALTHD_OWN_NAME"] = inst.IncusName()
 
 			// c.LogDebug("Setting entrypoint")
@@ -473,7 +465,7 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 	})
 
 	c.AddHookAfter(func(ctx context.Context, action client.Action, r client.Resource, args client.Options, err error) error {
-		if err != nil || action != client.ActionStart || r.IncusName() != inst.IncusName() {
+		if err != nil || action != client.ActionStart || r.Kind() != client.KindInstance || r.IncusName() != inst.IncusName() {
 			return err
 		}
 
@@ -510,16 +502,22 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 // healthdNetworkRef describes the network ic-healthd attaches to, decoded from
 // params.network (the --healthd-network flag / x-incus-compose.healthd.network).
 type healthdNetworkRef struct {
-	project string // Incus project of a managed network; empty for a bridge or the default
-	name    string // network or bridge name
-	deflt   bool   // the project's own default network, created if missing
+	project   string // Incus project of a managed network; empty for a bridge or the default
+	name      string // network or bridge name
+	deflt     bool   // the project's own default network, created if missing
+	incusName string // pins the bridge name instead of deriving it from the project
 }
 
 // parseHealthdNetwork decodes the healthd network selector. An empty value means
-// the project's default network. A "<project>:<network>" value references a
-// managed network that must already exist; anything else is a host bridge name.
-func parseHealthdNetwork(c *client.Client, network string) (healthdNetworkRef, error) {
+// the project's default network, or the shared daemon's own bridge. A
+// "<project>:<network>" value references a managed network that must already
+// exist; anything else is a host bridge name.
+func parseHealthdNetwork(c *client.Client, network string, global bool) (healthdNetworkRef, error) {
 	if network == "" {
+		if global {
+			return healthdNetworkRef{name: globalHealthdNetwork, deflt: true, incusName: globalHealthdNetwork}, nil
+		}
+
 		return healthdNetworkRef{name: "default", deflt: true}, nil
 	}
 
@@ -578,9 +576,9 @@ func healthdConfigDrift(params healthdParams, config map[string]string) []string
 	return drift
 }
 
-// healthdEnsureNetwork brings up the bridge a project-scoped sidecar attaches to.
-func healthdEnsureNetwork(ctx context.Context, c *client.Client, name string) (*client.Network, error) {
-	ref, err := parseHealthdNetwork(c, name)
+// healthdEnsureNetwork brings up the bridge the sidecar attaches to.
+func healthdEnsureNetwork(ctx context.Context, c *client.Client, params healthdParams) (*client.Network, error) {
+	ref, err := parseHealthdNetwork(c, params.network, params.global)
 	if err != nil {
 		return nil, err
 	}
@@ -590,7 +588,7 @@ func healthdEnsureNetwork(ctx context.Context, c *client.Client, name string) (*
 	case ref.deflt:
 		// The project's own default network. healthd may bring it up before the
 		// rest of the project, so allow creation.
-		netRes, err = c.Resource(client.KindNetwork, ref.name, &client.NetworkConfig{})
+		netRes, err = c.Resource(client.KindNetwork, ref.name, &client.NetworkConfig{OverrideName: ref.incusName})
 	case ref.project != "" && ref.project != c.Project():
 		// A managed network in another project; must pre-exist (External).
 		var nc *client.Client
@@ -608,7 +606,7 @@ func healthdEnsureNetwork(ctx context.Context, c *client.Client, name string) (*
 		return nil, fmt.Errorf("failed to get a healthd network: %w", err)
 	}
 
-	err = client.RunAction(ctx, netRes, client.ActionEnsure)
+	err = client.RunAction(ctx, netRes, client.ActionEnsure, client.OptionCreate())
 	if err != nil {
 		return nil, fmt.Errorf("failed to ensure a network for healthd: %w", err)
 	}
@@ -662,9 +660,14 @@ func healthdIncusURL(c *client.Client, params healthdParams, network *client.Net
 			return nil, fmt.Errorf("failed to get the url: %w", err)
 		}
 
-		ip, _, err := healthdBridgeIP(c, network)
+		cidr := network.IncusNetwork.Config["ipv4.address"]
+		if cidr == "" {
+			return nil, fmt.Errorf("ip of network %q is empty", network.Name())
+		}
+
+		ip, _, err := net.ParseCIDR(cidr)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("parsing the address of network %q: %w", network.Name(), err)
 		}
 
 		u.Host = net.JoinHostPort(ip.String(), u.Port())
@@ -677,57 +680,6 @@ func healthdIncusURL(c *client.Client, params healthdParams, network *client.Net
 	}
 
 	return u, nil
-}
-
-// healthdBridgeIP returns the gateway of the bridge the sidecar sits on and its
-// network, taken from the default profile when the sidecar brings none.
-func healthdBridgeIP(c *client.Client, network *client.Network) (net.IP, string, error) {
-	var cidr, name string
-
-	if network != nil {
-		cidr, name = network.IncusNetwork.Config["ipv4.address"], network.Name()
-	} else {
-		conn, err := c.GlobalConnection()
-		if err != nil {
-			return nil, "", err
-		}
-
-		profile, _, err := conn.GetProfile("default")
-		if err != nil {
-			return nil, "", fmt.Errorf("reading the default profile of the %s project: %w", globalHealthdProject, err)
-		}
-
-		for _, device := range profile.Devices {
-			if device["type"] != "nic" || device["network"] == "" {
-				continue
-			}
-
-			incusNetwork, _, err := conn.GetNetwork(device["network"])
-			if err != nil {
-				return nil, "", fmt.Errorf("reading network %q: %w", device["network"], err)
-			}
-
-			cidr, name = incusNetwork.Config["ipv4.address"], device["network"]
-
-			break
-		}
-
-		if name == "" {
-			return nil, "", errors.New(
-				"the default profile has no managed network to reach Incus over, set --healthd-incus or x-incus-compose.healthd.incus")
-		}
-	}
-
-	if cidr == "" {
-		return nil, name, fmt.Errorf("ip of network %q is empty", name)
-	}
-
-	ip, _, err := net.ParseCIDR(cidr)
-	if err != nil {
-		return nil, name, fmt.Errorf("parsing the address of network %q: %w", name, err)
-	}
-
-	return ip, name, nil
 }
 
 // healthdTeardown removes a healthd sidecar, its volume and its certificate
