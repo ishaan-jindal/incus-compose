@@ -466,7 +466,7 @@ func (c *Client) healthdTarget() (*incusClient.ProtocolIncus, string, error) {
 
 	conn := c.incus
 	if cfg[shared.HealthScopeKey] == shared.HealthScopeGlobal {
-		global, ok := c.globalClient.incus.UseProject(HealthdProject).(*incusClient.ProtocolIncus)
+		global, ok := c.globalClient.incus.UseProject(c.config.SystemProject).(*incusClient.ProtocolIncus)
 		if !ok {
 			return nil, "", ErrConnectionFailed.WithText("cannot cast the healthd project client to ProtocolIncus")
 		}

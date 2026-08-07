@@ -118,7 +118,7 @@ func healthdUp(ctx context.Context, p *project.Project, c *client.Client, args h
 		}
 
 		hc, err = c.Global().EnsureProject(
-			globalHealthdProject,
+			systemProject,
 			client.EnsureProjectWithCreate(),
 			client.EnsureProjectWithConfig(map[string]string{managedKey: "true"}),
 		)
@@ -196,7 +196,7 @@ func healthdUpGlobal(ctx context.Context, gc *client.GlobalClient, args healthdU
 	}
 
 	hc, err := gc.EnsureProject(
-		globalHealthdProject,
+		systemProject,
 		client.EnsureProjectWithCreate(),
 		client.EnsureProjectWithConfig(map[string]string{managedKey: "true"}),
 	)

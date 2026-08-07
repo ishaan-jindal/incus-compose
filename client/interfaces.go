@@ -28,8 +28,9 @@ const (
 	HealthStoppedKey = shared.HealthStoppedKey
 )
 
-// HealthdProject is the Incus project the shared ic-healthd runs in.
-const HealthdProject = "incus-compose-healthd"
+// DefaultSystemProject is the Incus project the library runs its own instances
+// in.
+const DefaultSystemProject = "incus-client"
 
 // Kind identifies a resource type.
 type Kind string

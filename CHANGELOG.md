@@ -13,12 +13,12 @@ for correct semver ordering. Headings below preserve each release's announced fo
 
 ### Changed
 
-- The shared ic-healthd runs in an Incus project of its own,
-  `incus-compose-healthd`, on a bridge of its own, `ic-healthd`, with its own
-  root disk. It took all three from the `default` project's `default` profile
-  before, so a server whose default profile uses an unmanaged bridge - or no
-  NIC - could not bring the shared daemon up at all. No instance or volume of
-  ours lands in the `default` project any more. (by @jochumdev)
+- The shared ic-healthd runs in an Incus project of its own, `incus-compose`, on
+  a bridge of its own, `ic-healthd`, with its own root disk. It took all three
+  from the `default` project's `default` profile before, so a server whose
+  default profile uses an unmanaged bridge - or no NIC - could not bring the
+  shared daemon up at all. No instance or volume of ours lands in the `default`
+  project any more. (by @jochumdev)
 - `--healthd-network` / `x-incus-compose.healthd.network` now applies to the
   shared daemon too, and a network the compose file declares is created before
   the daemon attaches to it. It was warned about and ignored outside project

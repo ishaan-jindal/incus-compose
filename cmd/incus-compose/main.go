@@ -30,6 +30,8 @@ import (
 // records ownership only; watching is HealthEnabledKey, a separate decision.
 const managedKey = "user.incus-compose.managed"
 
+const systemProject = "incus-compose"
+
 type noColorKey struct{}
 
 // errLogged is an internal sentinel error, return it to silence the error but exit 1.
@@ -388,6 +390,8 @@ func newRootCommand() *cli.Command {
 			// }
 
 			opts := []client.ClientOption{
+				client.ClientSystemProject(systemProject),
+				client.ClientDescriptionFormat("incus-compose: %s"),
 				client.ClientLogger(logger),
 				client.ClientStdout(cmd.Writer),
 				client.ClientStderrWriter(logWriter),

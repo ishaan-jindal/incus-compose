@@ -72,7 +72,7 @@ func TestE2EHealthdGlobalScope(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, local, "the project must not carry a sidecar of its own")
 
-	hc := projectClient(ctx, t, globalHealthdProject)
+	hc := projectClient(ctx, t, systemProject)
 	global, err := hc.InstanceExists(globalHealthdName)
 	require.NoError(t, err)
 	assert.True(t, global, "the shared daemon must exist in its own project")
@@ -144,7 +144,7 @@ services:
 	require.NoError(t, err)
 
 	c := projectClient(ctx, t, pn)
-	hc := projectClient(ctx, t, globalHealthdProject)
+	hc := projectClient(ctx, t, systemProject)
 
 	conn, err := hc.Connection()
 	require.NoError(t, err)
@@ -239,7 +239,7 @@ func TestE2EHealthdCoexistence(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, local)
 
-	dc := projectClient(ctx, t, globalHealthdProject)
+	dc := projectClient(ctx, t, systemProject)
 	global, err := dc.InstanceExists(globalHealthdName)
 	require.NoError(t, err)
 	assert.True(t, global, "the shared daemon must survive a project-scoped healthd down")
@@ -262,7 +262,7 @@ func TestE2EHealthdNoComposeFile(t *testing.T) {
 		return runCommand(ctx, t, t.Name(), append([]string{"-P", dir}, args...)...)
 	}
 
-	dc := projectClient(ctx, t, globalHealthdProject)
+	dc := projectClient(ctx, t, systemProject)
 
 	// Start from no daemon at all, whatever earlier tests left behind.
 	_, _ = noProject("healthd", "down", "--force")
@@ -317,7 +317,7 @@ func TestE2EHealthdDownNeedsForce(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	dc := projectClient(ctx, t, globalHealthdProject)
+	dc := projectClient(ctx, t, systemProject)
 
 	// Two projects carry scope=global, so taking the daemon down is refused:
 	// the tests have no terminal to confirm on.
@@ -380,7 +380,7 @@ func TestE2EHealthdMigratesToGlobal(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, local, "the project sidecar must be gone after the migration")
 
-	dc := projectClient(ctx, t, globalHealthdProject)
+	dc := projectClient(ctx, t, systemProject)
 	global, err := dc.InstanceExists(globalHealthdName)
 	require.NoError(t, err)
 	assert.True(t, global)
