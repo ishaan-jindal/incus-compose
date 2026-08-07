@@ -374,6 +374,15 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 					}
 					gateway6 = ip.String()
 				}
+
+				_, ok = netConfig.Extensions["ipv4.nat"]
+				if !ok {
+					netConfig.Extensions["ipv4.nat"] = "true"
+				}
+				_, ok = netConfig.Extensions["ipv6.nat"]
+				if !ok {
+					netConfig.Extensions["ipv6.nat"] = "true"
+				}
 			}
 		}
 

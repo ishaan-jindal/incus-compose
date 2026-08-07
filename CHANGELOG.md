@@ -37,6 +37,16 @@ for correct semver ordering. Headings below preserve each release's announced fo
 > otherwise both restart the same instances. Releases before `v1.2.0-rc.1` had
 > no shared daemon and need nothing.
 
+### Fixed
+
+- Containers on a network that pins its own subnet can reach the outside again.
+  Incus turns `ipv4.nat`/`ipv6.nat` on only for a subnet it picked itself, so a
+  network given an explicit `ipv4.address` through `x-incus` came up without
+  NAT and nothing on it could route out. Both now default to `true` for any
+  non-`internal` network, matching docker; set them in `x-incus` to say
+  otherwise. Networks that already exist keep the setting they were created
+  with. (by @jochumdev)
+
 ## [v1.2.0-rc.2] - 2026-08-06
 
 ### Fixed
