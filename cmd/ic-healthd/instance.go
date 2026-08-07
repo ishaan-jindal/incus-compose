@@ -829,12 +829,19 @@ func handleInstanceResult(ctx context.Context, conn incus.InstanceServer, instan
 			inst.config = res.config
 		}
 
-		// The instance stopped, which is a lifecycle fact, not a health
-		// verdict: the stop event owns bringing it back.
+		// The instance stopped, which is a lifecycle fact and not a health
+		// verdict, so it earns no failure. A stop event may never arrive -
+		// one already stopped at discovery never had one - so the restart is
+		// scheduled here too, and the event path leaves a queued one alone.
 		if errors.Is(res.err, ErrNotRunning) {
 			reportStatus(ctx, conn, results, inst, shared.HealthStatusStopped)
 
-			inst.due = now.Add(inst.config.interval)
+			if slices.Contains(shared.RestartPolicies, inst.config.restart) {
+				inst.action = instanceActionRestart
+				inst.due = time.Now().Add(inst.restartDelay)
+				inst.restartDelay = min(inst.restartDelay*2, maxRestartDelay)
+			}
+
 			return
 		}
 
