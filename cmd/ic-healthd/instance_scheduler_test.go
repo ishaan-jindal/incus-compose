@@ -573,14 +573,58 @@ func TestCheckResultNotRunningIsNotAVerdict(t *testing.T) {
 	s.result(s.checked(t, inst, ErrNotRunning))
 
 	require.Equal(t, 1, inst.failures, "a stopped instance is a lifecycle fact, not a failed check")
-	require.Equal(t, instanceActionCheck, inst.action, "the stop event owns bringing it back")
-	requireDue(t, inst, now, inst.config.interval)
+
+	// A stop event may never arrive, so the check path queues the restart
+	// itself rather than waiting for one.
+	require.Equal(t, instanceActionRestart, inst.action)
+	requireDue(t, inst, now, baseRestartDelay(inst.config))
 
 	// It is still not a health verdict, but the daemon owns the key: leaving
 	// the last one there would report a stopped instance as healthy.
 	res := s.next(t)
 	require.Equal(t, instanceResultStatus, res.kind)
 	require.Equal(t, shared.HealthStatusStopped, res.status)
+}
+
+// TestCheckResultNotRunningHonoursRestartPolicy pins the gate the stop event
+// path applies: an instance watched only for its healthcheck is reported
+// stopped and left alone, never started behind the user's back.
+func TestCheckResultNotRunningHonoursRestartPolicy(t *testing.T) {
+	t.Parallel()
+
+	s := newScheduler(t)
+
+	cfg := testConfig()
+	cfg.restart = "no"
+
+	inst := s.add("web-1", cfg)
+	s.result(s.checked(t, inst, ErrNotRunning))
+
+	require.NotEqual(t, instanceActionRestart, inst.action)
+
+	res := s.next(t)
+	require.Equal(t, instanceResultStatus, res.kind)
+	require.Equal(t, shared.HealthStatusStopped, res.status)
+}
+
+// TestCheckResultNotRunningBacksOff pins that a crash loop found by the check
+// path widens its window the same way the stop event path does.
+func TestCheckResultNotRunningBacksOff(t *testing.T) {
+	t.Parallel()
+
+	s := newScheduler(t)
+
+	inst := s.add("web-1", testConfig())
+	base := baseRestartDelay(inst.config)
+
+	now := time.Now()
+	s.result(s.checked(t, inst, ErrNotRunning))
+	requireDue(t, inst, now, base)
+
+	inst.state = instanceIdle
+	now = time.Now()
+	s.result(s.checked(t, inst, ErrNotRunning))
+	requireDue(t, inst, now, base*2)
 }
 
 func TestCheckResultStaleIsDropped(t *testing.T) {

@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,7 +48,7 @@ func waitHealthy(t *testing.T, c *client.Client, name string) {
 }
 
 // TestE2EHealthdGlobalScope is the new default: no sidecar of the project's
-// own, one shared daemon in the default project, and the project marked so the
+// own, one shared daemon in its own project, and the project marked so the
 // daemon picks it up.
 func TestE2EHealthdGlobalScope(t *testing.T) {
 	skipLocal(t)
@@ -70,11 +72,88 @@ func TestE2EHealthdGlobalScope(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, local, "the project must not carry a sidecar of its own")
 
-	dc := projectClient(ctx, t, globalHealthdProject)
-	global, err := dc.InstanceExists(globalHealthdName)
+	hc := projectClient(ctx, t, globalHealthdProject)
+	global, err := hc.InstanceExists(globalHealthdName)
 	require.NoError(t, err)
-	assert.True(t, global, "the shared daemon must exist in the default project")
+	assert.True(t, global, "the shared daemon must exist in its own project")
 
+	// It brings its own root disk and NIC, so nothing about the default
+	// project's profile can break it.
+	conn, err := hc.Connection()
+	require.NoError(t, err)
+
+	inst, _, err := conn.GetInstance(globalHealthdName)
+	require.NoError(t, err)
+	assert.Equal(t, "disk", inst.Devices["root"]["type"])
+	assert.Equal(t, globalHealthdNetwork, inst.Devices["eth0"]["network"])
+
+	dc := projectClient(ctx, t, "default")
+	stray, err := dc.InstanceExists(globalHealthdName)
+	require.NoError(t, err)
+	assert.False(t, stray, "the default project must be left alone")
+
+	waitHealthy(t, c, "web-1")
+}
+
+// TestE2EHealthdGlobalComposeNetwork attaches the shared daemon to a network
+// the compose file declares. Before it had a project of its own it took eth0
+// from the default profile and the setting was warned about and dropped.
+//
+// Not parallel: it recreates the daemon every other project uses.
+func TestE2EHealthdGlobalComposeNetwork(t *testing.T) {
+	skipLocal(t)
+	skipE2E(t)
+
+	ctx := t.Context()
+	pn := strings.ToLower(t.Name())
+
+	dir := writeTempFiles(t, map[string]string{"compose.yaml": `x-incus-compose:
+  healthd:
+    network: ` + pn + `:hnet
+networks:
+  hnet:
+services:
+  web:
+    image: docker.io/library/busybox:glibc
+    restart: unless-stopped
+    networks: [hnet]
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /www && echo web-ok > /www/index.html && httpd -f -v -p 8080 -h /www"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+`})
+	compose := filepath.Join(dir, "compose.yaml")
+
+	// An empty directory is how a healthd command is left with no compose file
+	// to read, which is what makes it act on the shared daemon.
+	noProject := t.TempDir()
+
+	t.Cleanup(func() {
+		// Before the project, or the daemon still holds a NIC on hnet.
+		_, _ = runCommand(context.Background(), t, pn, "-P", noProject, "healthd", "down", "--force")
+		_, _ = runCommand(context.Background(), t, pn, "-f", compose, "down", "--project")
+	})
+
+	// The first project to create the daemon supplies its settings, so this only
+	// takes effect with nothing running.
+	_, _ = runCommand(ctx, t, pn, "-P", noProject, "healthd", "down", "--force")
+
+	_, err := runCommand(ctx, t, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	c := projectClient(ctx, t, pn)
+	hc := projectClient(ctx, t, globalHealthdProject)
+
+	conn, err := hc.Connection()
+	require.NoError(t, err)
+
+	inst, _, err := conn.GetInstance(globalHealthdName)
+	require.NoError(t, err)
+	assert.Equal(t, plannedNetworkNames(ctx, t, pn, compose), []string{inst.Devices["eth0"]["network"]})
+
+	// It reaches Incus over that bridge, so it reports at all.
 	waitHealthy(t, c, "web-1")
 }
 

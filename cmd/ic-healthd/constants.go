@@ -15,8 +15,8 @@ const apiTimeout = 30 * time.Second
 // Worker counts over every watched project. Restarts count apart: one holds its
 // worker for up to restartTimeout.
 const (
-	defaultWorkers        = 32
-	defaultRestartWorkers = 12
+	defaultWorkers        = 128
+	defaultRestartWorkers = 32
 )
 
 // poolRetryDelay is how long a refused action waits. It also puts the instance

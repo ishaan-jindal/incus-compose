@@ -101,11 +101,6 @@ func healthdUp(ctx context.Context, p *project.Project, c *client.Client, args h
 	hc := c
 
 	if params.global {
-		if params.network != "" {
-			c.LogWarn("The shared ic-healthd takes its NIC from the default profile, ignoring the healthd network",
-				"network", params.network)
-		}
-
 		// Before the marking below, or both daemons watch this project at once.
 		exists, err := c.InstanceExists(healthdInstanceName(c.IncusProject(), false))
 		if err != nil {
@@ -122,15 +117,19 @@ func healthdUp(ctx context.Context, p *project.Project, c *client.Client, args h
 			}
 		}
 
-		hc, err = c.Global().EnsureProject(globalHealthdProject)
+		hc, err = c.Global().EnsureProject(
+			globalHealthdProject,
+			client.EnsureProjectWithCreate(),
+			client.EnsureProjectWithConfig(map[string]string{managedKey: "true"}),
+		)
 		if err != nil {
-			c.LogError("Getting the default project", "error", err)
+			c.LogError("Getting the healthd project", "error", err)
 			return errLogged.Wrap(err)
 		}
 
 		// Open before any stack action, as Client.Open documents.
 		if err := hc.Open(); err != nil {
-			c.LogError("Opening the default project client", "error", err)
+			c.LogError("Opening the healthd project client", "error", err)
 			return errLogged.Wrap(err)
 		}
 		defer hc.WarnError(hc.Done, "Failure during Client.Done()")
@@ -148,26 +147,24 @@ func healthdUp(ctx context.Context, p *project.Project, c *client.Client, args h
 
 	stack := client.NewStack(hc, client.StackWorkers(params.stackWorkers))
 
-	// Only a project-scoped sidecar needs a network of ours.
-	if !params.global {
-		pResources, err := p.Resources(c)
-		if err != nil {
-			c.LogError("Getting the service resources", "error", err)
-			return errLogged.Wrap(err)
-		}
-
-		filterArgs := filterResourcesArgs{
-			IncludeKinds: []client.Kind{client.KindNetwork},
-		}
-		myPResources := filterResources(p, pResources, filterArgs)
-
-		order, err := p.ServiceOrder(true)
-		if err != nil {
-			c.LogError("Getting the service dependency order", "error", err)
-			return errLogged.Wrap(err)
-		}
-		stack.AddOrdered(order, myPResources)
+	// Either sidecar may attach to a network of ours, so those come up first.
+	pResources, err := p.Resources(c)
+	if err != nil {
+		c.LogError("Getting the service resources", "error", err)
+		return errLogged.Wrap(err)
 	}
+
+	filterArgs := filterResourcesArgs{
+		IncludeKinds: []client.Kind{client.KindNetwork},
+	}
+	myPResources := filterResources(p, pResources, filterArgs)
+
+	order, err := p.ServiceOrder(true)
+	if err != nil {
+		c.LogError("Getting the service dependency order", "error", err)
+		return errLogged.Wrap(err)
+	}
+	stack.AddOrdered(order, myPResources)
 
 	return healthdEnsure(ctx, hc, stack, params)
 }
@@ -193,18 +190,23 @@ func healthdUpGlobal(ctx context.Context, gc *client.GlobalClient, args healthdU
 		image:        resolveHealthdImage(args.Image),
 		pull:         args.Pull,
 		incus:        incus,
+		network:      args.Network,
 		timeout:      args.Timeout,
 		stackWorkers: args.Workers,
 	}
 
-	hc, err := gc.EnsureProject(globalHealthdProject)
+	hc, err := gc.EnsureProject(
+		globalHealthdProject,
+		client.EnsureProjectWithCreate(),
+		client.EnsureProjectWithConfig(map[string]string{managedKey: "true"}),
+	)
 	if err != nil {
-		gc.LogError("Getting the default project", "error", err)
+		gc.LogError("Getting the healthd project", "error", err)
 		return errLogged.Wrap(err)
 	}
 
 	if err := hc.Open(); err != nil {
-		gc.LogError("Opening the default project client", "error", err)
+		gc.LogError("Opening the healthd project client", "error", err)
 		return errLogged.Wrap(err)
 	}
 	defer hc.WarnError(hc.Done, "Failure during Client.Done()")
@@ -246,12 +248,6 @@ func healthdEnsure(ctx context.Context, hc *client.Client, stack *client.Stack, 
 		ensureOpts = append(ensureOpts, client.OptionPull())
 	}
 
-	if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, ensureOpts...); err != nil {
-		hc.LogError("Creating healthd resources", "error", err)
-		return errLogged.Wrap(err)
-	}
-
-	// A newer image means the sidecar is replaced by one built from it.
 	var wantAlias string
 	for _, r := range hResources {
 		if r.Kind() == client.KindImage {
@@ -259,6 +255,38 @@ func healthdEnsure(ctx context.Context, hc *client.Client, stack *client.Stack, 
 			break
 		}
 	}
+
+	// Only creating or replacing the sidecar needs the image. Read it rather
+	// than ensure it, so an unreachable tag cannot fail a daemon that is
+	// already running the one asked for.
+	conn, err := hc.Connection()
+	if err != nil {
+		hc.LogError("Connecting to the healthd project", "error", err)
+		return errLogged.Wrap(err)
+	}
+
+	current, _, err := conn.GetInstance(hInst.IncusName())
+	fetchImage := err != nil ||
+		params.pull == "always" ||
+		healthdNeedsUpgrade(current.Config["user.image_alias"], wantAlias)
+
+	// The image and the volume only exist to create the sidecar, and the
+	// volume's Start validates itself against the image we did not fetch. One
+	// already on the image asked for needs neither, only starting.
+	needed := func(r client.Resource) bool {
+		if fetchImage {
+			return true
+		}
+
+		return r.Kind() != client.KindImage && r.Kind() != client.KindStorageVolume
+	}
+
+	if err := stack.ForActionF(client.ActionEnsure, needed).Run(ctx, client.ActionEnsure, ensureOpts...); err != nil {
+		hc.LogError("Creating healthd resources", "error", err)
+		return errLogged.Wrap(err)
+	}
+
+	// A newer image means the sidecar is replaced by one built from it.
 	if hInst.IsEnsured() && healthdNeedsUpgrade(hInst.IncusInstance.Config["user.image_alias"], wantAlias) {
 		maps.Copy(params.carry, healthdCarriedConfig(hInst.IncusInstance.Config))
 
@@ -271,7 +299,8 @@ func healthdEnsure(ctx context.Context, hc *client.Client, stack *client.Stack, 
 		}
 		downStack.Add(hInst)
 
-		if err := downStack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionTimeout(params.timeout)); err != nil {
+		err := downStack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionTimeout(params.timeout))
+		if err != nil && !errors.Is(err, client.ErrNotRunning) {
 			hc.LogError("Stoping healthd resources for a new image", "error", err)
 			return errLogged.Wrap(err)
 		}
@@ -287,7 +316,7 @@ func healthdEnsure(ctx context.Context, hc *client.Client, stack *client.Stack, 
 		}
 	}
 
-	if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, client.OptionTimeout(params.timeout)); err != nil {
+	if err := stack.ForActionF(client.ActionStart, needed).Run(ctx, client.ActionStart, client.OptionTimeout(params.timeout)); err != nil {
 		hc.LogError("Starting healthd resources", "error", err)
 		return errLogged.Wrap(err)
 	}
@@ -318,12 +347,12 @@ func newHealthdUpCommand() *cli.Command {
 			},
 			&cli.StringFlag{
 				Name:    "network",
-				Usage:   "Incus bridge for healthd to use (default: auto-detect), project scope only",
+				Usage:   "Incus bridge for healthd to use (default: the network of the project it runs in)",
 				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_NETWORK"),
 			},
 			&cli.StringFlag{
 				Name:    "scope",
-				Usage:   "Which healthd watches this project: `global` (shared, in the default project) or `project` (a sidecar of its own); loses to a scope the project already carries",
+				Usage:   "Which healthd watches this project: `global` (shared, in its own project) or `project` (a sidecar of its own); loses to a scope the project already carries",
 				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_SCOPE"),
 			},
 			&cli.StringFlag{

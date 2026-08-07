@@ -118,7 +118,8 @@ func TestNetworkExtensionsExtractsXIncus(t *testing.T) {
 		"ipv4.dhcp.ranges": "10.200.0.100-10.200.0.200",
 		"ipv6.address":     "fd42:1::1/64",
 	}, networkExtensions(proj.Networks["backend"]))
-	assert.Nil(t, networkExtensions(types.NetworkConfig{}))
+	// Never nil: callers write defaults such as ipv4.nat into it.
+	assert.Equal(t, map[string]string{}, networkExtensions(types.NetworkConfig{}))
 }
 
 func TestServiceXIncusExtensionsExtractsXIncus(t *testing.T) {

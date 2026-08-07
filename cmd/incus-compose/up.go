@@ -109,12 +109,12 @@ func newUpCommand() *cli.Command {
 			},
 			&cli.StringFlag{
 				Name:    "healthd-network",
-				Usage:   "Incus bridge for healthd to use (default: auto-detect), project scope only",
+				Usage:   "Incus bridge for healthd to use (default: the network of the project it runs in)",
 				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_NETWORK"),
 			},
 			&cli.StringFlag{
 				Name:    "healthd-scope",
-				Usage:   "Which healthd watches this project: `global` (shared, in the default project) or `project` (a sidecar of its own); loses to a scope the project already carries",
+				Usage:   "Which healthd watches this project: `global` (shared, in its own project) or `project` (a sidecar of its own); loses to a scope the project already carries",
 				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_SCOPE"),
 			},
 		},
@@ -214,13 +214,13 @@ func newUpCommand() *cli.Command {
 					Images:     false,
 					Timeout:    cmd.Duration("timeout"),
 					NoDeps:     cmd.Bool("no-deps"),
-					NoNetworks: true,
+					NoNetworks: len(cmd.Args().Slice()) != 0,
 					Services:   cmd.Args().Slice(),
 					Workers:    cmd.Root().Int("workers"),
 					Debug:      cmd.Root().Bool("debug"),
 					Scale:      parseScale(cmd.StringSlice("scale")),
 					Writer:     cmd.Root().Writer,
-					Reverse:    false,
+					Reverse:    true,
 					NoHealthd:  !usesHealthd,
 				})
 				if err != nil {

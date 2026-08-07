@@ -184,12 +184,21 @@ func newListCommand() *cli.Command {
 			if !cmd.Bool("no-healthd") {
 				// The shared daemon lives outside this project.
 				hc, scope, err := healthdClient(p, c)
-				if err != nil {
+
+				switch {
+				// No project to hold the shared daemon means no daemon.
+				case errors.Is(err, client.ErrNotFound):
+					c.LogWarn("Couldn't find healthd")
+				case err != nil:
 					c.LogError("Resolving the healthd scope", "error", err)
 					return errLogged.Wrap(err)
-				}
+				default:
+					name, err := hc.FindHealthd()
+					if err != nil {
+						c.LogWarn("Couldn't find healthd")
+						break
+					}
 
-				if name, err := hc.FindHealthd(); err == nil {
 					c.LogDebug("Found healthd name", "name", name, "scope", scope, "project", hc.IncusProject())
 
 					inst, err := hc.Resource(client.KindInstance, name, &client.InstanceConfig{Full: true})
@@ -199,8 +208,6 @@ func newListCommand() *cli.Command {
 					}
 
 					stack.Add(inst)
-				} else {
-					c.LogWarn("Couldn't find healthd")
 				}
 			}
 
